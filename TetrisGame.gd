@@ -5,33 +5,72 @@ const BOARD_ROWS := 20
 const CELL_SIZE := 28
 const BOARD_ORIGIN := Vector2(96, 72)
 const FALL_INTERVAL := 0.7
+const BLOCK_COLLISION_HORIZONTAL_INSET := 1.0
+const BLOCK_COLLISION_VERTICAL_INSET := 2.0
 
 const PLAYER_SIZE := Vector2(CELL_SIZE, CELL_SIZE * 2)
 const PLAYER_SPEED := 150.0
 const PLAYER_GRAVITY := 1000.0
-const JUMP_VELOCITY := -335.0
+const JUMP_VELOCITY := -350.0
 const WALL_JUMP_SPEED := 185.0
 const CLIMB_SPEED := 78.0
 const GRAB_DURATION := 3.0
-const ATTACK_DURATION := 0.12
-const ATTACK_COOLDOWN := 0.28
+const ATTACK_DURATION := 0.4
+const ATTACK_COOLDOWN := 0.48
 
-const EMPTY_CELL := Color(0.075, 0.09, 0.14)
-const GRID_LINE := Color(0.16, 0.19, 0.27)
+const BACKGROUND_COLOR := Color("f7f8fb")
+const EMPTY_CELL := Color("dce3ed")
+const GRID_LINE := Color("8390a3")
+const HUD_PRIMARY := Color("152033")
+const HUD_TEXT := Color("344158")
+const BLOCK_SPRITES := preload("res://assets/block_sprites.png")
+const PLAYER_SPRITES := preload("res://assets/player_sprites.png")
+const PLAYER_ANIMATIONS := preload("res://assets/player_animations.png")
+const PLAYER_HANG_ANIMATIONS := preload("res://assets/player_hang_animations.png")
+const PLAYER_ATTACK_ANIMATIONS := preload("res://assets/player_attack_animations.png")
+const PLAYER_JUMP_ANIMATIONS := preload("res://assets/player_jump_animations.png")
+const BLOCK_SPRITE_REGIONS := {
+	"I": Rect2(80, 255, 210, 215),
+	"O": Rect2(360, 255, 210, 215),
+	"T": Rect2(640, 255, 210, 215),
+	"S": Rect2(915, 255, 210, 215),
+	"Z": Rect2(1190, 255, 210, 215),
+	"J": Rect2(1470, 255, 210, 215),
+	"L": Rect2(1745, 255, 210, 215),
+}
+const PLAYER_SPRITE_REGIONS := {
+	"idle": Rect2(170, 180, 240, 620),
+	"pull_legacy": Rect2(525, 205, 440, 590),
+	"attack": Rect2(1000, 225, 485, 570),
+}
+const PLAYER_ANIMATION_REGIONS := {
+	"idle": [Rect2(45, 55, 165, 270), Rect2(255, 55, 165, 270), Rect2(455, 55, 165, 270), Rect2(655, 55, 165, 270)],
+	"hang": [Rect2(30, 80, 365, 700), Rect2(470, 80, 365, 700), Rect2(910, 80, 365, 700), Rect2(1350, 80, 365, 700)],
+	"pull": [Rect2(25, 770, 200, 285), Rect2(235, 770, 200, 285), Rect2(435, 770, 200, 285), Rect2(635, 770, 200, 285)],
+	"attack": [Rect2(30, 180, 380, 550), Rect2(465, 180, 380, 550), Rect2(900, 180, 380, 550), Rect2(1335, 180, 380, 550)],
+	"jump": [Rect2(20, 260, 240, 390), Rect2(270, 310, 250, 340), Rect2(530, 370, 225, 280), Rect2(780, 180, 220, 420), Rect2(1015, 140, 220, 400), Rect2(1260, 115, 200, 360), Rect2(1490, 190, 230, 460), Rect2(1750, 320, 220, 330)],
+}
+const PLAYER_ANIMATION_FRAME_DURATIONS := {
+	"idle": 0.18,
+	"hang": 0.16,
+	"pull": 0.16,
+	"attack": ATTACK_DURATION / 4.0,
+	"jump": 0.0875,
+}
 const TETROMINOES := {
-	"I": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0)], "color": Color("4ddcff")},
-	"O": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)], "color": Color("ffd84d")},
-	"T": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(1, 1)], "color": Color("ba6cff")},
-	"S": {"cells": [Vector2i(1, 0), Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1)], "color": Color("62df77")},
-	"Z": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(2, 1)], "color": Color("ff5b6e")},
-	"J": {"cells": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)], "color": Color("5c8dff")},
-	"L": {"cells": [Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)], "color": Color("ff9b4d")},
+	"I": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0)]},
+	"O": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]},
+	"T": {"cells": [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)]},
+	"S": {"cells": [Vector2i(1, 0), Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1)]},
+	"Z": {"cells": [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(2, 1)]},
+	"J": {"cells": [Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)]},
+	"L": {"cells": [Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)]},
 }
 
 var board: Array = []
 var bag: Array[String] = []
 var active_piece_name := ""
-var next_piece_name := ""
+var next_piece_names: Array[String] = []
 var active_position := Vector2i.ZERO
 var score := 0
 var cleared_lines := 0
@@ -45,11 +84,16 @@ var is_grabbing := false
 var grab_side := 0
 var grab_timer := 0.0
 var grab_exhausted := false
+var grab_requires_release := false
+var was_player_grounded := false
 var attack_timer := 0.0
 var attack_cooldown := 0.0
+var player_animation_state := "idle"
+var player_animation_time := 0.0
 
 
 func _ready() -> void:
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	randomize()
 	reset_game()
 
@@ -59,21 +103,26 @@ func _process(delta: float) -> void:
 		return
 
 	_update_player(delta)
-	if _active_overlaps_player():
-		_trigger_game_over()
-		queue_redraw()
-		return
+	_update_player_animation(delta)
 
 	drop_timer += delta
 	if drop_timer >= FALL_INTERVAL:
 		drop_timer -= FALL_INTERVAL
-		if _can_place(active_piece_name, active_position + Vector2i.DOWN):
-			active_position += Vector2i.DOWN
+		var next_position := active_position + Vector2i.DOWN
+		var follows_active_piece := is_grabbing and _is_grabbing_active_piece()
+		if _can_place(active_piece_name, next_position):
+			if _active_overlaps_player_at(next_position):
+				if is_grabbing:
+					_release_grab_from_falling_block()
+				elif _is_player_supported_by_board():
+					_trigger_game_over()
+			else:
+				active_position = next_position
+				if follows_active_piece:
+					_move_with_active_piece()
 		else:
 			_lock_active_piece()
 
-	if _active_overlaps_player():
-		_trigger_game_over()
 	queue_redraw()
 
 
@@ -103,11 +152,13 @@ func reset_game() -> void:
 		board.append(empty_row)
 
 	bag.clear()
+	next_piece_names.clear()
 	score = 0
 	cleared_lines = 0
 	drop_timer = 0.0
 	game_over = false
-	next_piece_name = _take_piece_name()
+	next_piece_names.append(_take_piece_name())
+	next_piece_names.append(_take_piece_name())
 	_spawn_piece()
 	player_position = Vector2(CELL_SIZE * 4, CELL_SIZE * (BOARD_ROWS - 2))
 	player_velocity = Vector2.ZERO
@@ -115,8 +166,12 @@ func reset_game() -> void:
 	is_grabbing = false
 	grab_timer = 0.0
 	grab_exhausted = false
+	grab_requires_release = false
+	was_player_grounded = false
 	attack_timer = 0.0
 	attack_cooldown = 0.0
+	player_animation_state = "idle"
+	player_animation_time = 0.0
 	queue_redraw()
 
 
@@ -138,10 +193,11 @@ func _update_player(delta: float) -> void:
 	attack_timer = maxf(attack_timer - delta, 0.0)
 	attack_cooldown = maxf(attack_cooldown - delta, 0.0)
 	if not Input.is_key_pressed(KEY_C):
-		grab_exhausted = false
+		grab_requires_release = false
 
 	if is_grabbing:
 		_update_grab(delta)
+		_refresh_grab_stamina_on_landing()
 		return
 
 	var movement := 0.0
@@ -155,13 +211,13 @@ func _update_player(delta: float) -> void:
 	player_velocity.y += PLAYER_GRAVITY * delta
 	_move_player(Vector2(player_velocity.x * delta, 0.0))
 	_move_player(Vector2(0.0, player_velocity.y * delta))
+	_refresh_grab_stamina_on_landing()
 
-	if Input.is_key_pressed(KEY_C) and not grab_exhausted:
+	if Input.is_key_pressed(KEY_C) and not grab_exhausted and not grab_requires_release:
 		var side := _find_grab_side()
 		if side != 0:
 			is_grabbing = true
 			grab_side = side
-			grab_timer = 0.0
 			player_velocity = Vector2.ZERO
 
 
@@ -192,11 +248,13 @@ func _update_grab(delta: float) -> void:
 
 func _try_jump() -> void:
 	if is_grabbing:
+		_start_jump_animation()
 		player_velocity = Vector2(-grab_side * WALL_JUMP_SPEED, JUMP_VELOCITY)
 		is_grabbing = false
-		grab_exhausted = false
+		grab_requires_release = true
 		return
 	if _is_player_grounded():
+		_start_jump_animation()
 		player_velocity.y = JUMP_VELOCITY
 
 
@@ -212,6 +270,12 @@ func _start_attack() -> void:
 func _release_grab() -> void:
 	is_grabbing = false
 	player_velocity.y = 0.0
+
+
+func _release_grab_from_falling_block() -> void:
+	_release_grab()
+	grab_requires_release = true
+	player_velocity.y = PLAYER_GRAVITY * 0.1
 
 
 func _move_player(motion: Vector2) -> void:
@@ -241,6 +305,25 @@ func _is_player_grounded() -> bool:
 	return _player_collides(player_position + Vector2(0.0, 1.0))
 
 
+func _is_player_supported_by_board() -> bool:
+	var foot_rect := Rect2(player_position + Vector2(0.0, 1.0), PLAYER_SIZE)
+	if foot_rect.end.y > BOARD_ROWS * CELL_SIZE:
+		return true
+	for row in BOARD_ROWS:
+		for column in BOARD_COLUMNS:
+			if board[row][column] != null and _rect_overlaps_cell(foot_rect, Vector2i(column, row)):
+				return true
+	return false
+
+
+func _refresh_grab_stamina_on_landing() -> void:
+	var is_grounded := _is_player_grounded()
+	if is_grounded and not was_player_grounded:
+		grab_timer = 0.0
+		grab_exhausted = false
+	was_player_grounded = is_grounded
+
+
 func _player_collides(position: Vector2) -> bool:
 	return _rect_hits_solid(Rect2(position, PLAYER_SIZE))
 
@@ -263,16 +346,19 @@ func _rect_hits_solid(rect: Rect2) -> bool:
 
 
 func _rect_overlaps_cell(rect: Rect2, board_cell: Vector2i) -> bool:
-	var cell_rect := Rect2(Vector2(board_cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))
+	var collision_inset := Vector2(BLOCK_COLLISION_HORIZONTAL_INSET, BLOCK_COLLISION_VERTICAL_INSET)
+	var collision_size := Vector2(CELL_SIZE - BLOCK_COLLISION_HORIZONTAL_INSET * 2.0, CELL_SIZE - BLOCK_COLLISION_VERTICAL_INSET * 2.0)
+	var cell_rect := Rect2(Vector2(board_cell) * CELL_SIZE + collision_inset, collision_size)
 	return rect.intersects(cell_rect)
 
 
 func _find_grab_side() -> int:
 	var player_rect := Rect2(player_position, PLAYER_SIZE)
-	var left_probe := Rect2(player_rect.position + Vector2(-1.0, 0.0), player_rect.size)
+	var probe_distance := BLOCK_COLLISION_HORIZONTAL_INSET + 1.0
+	var left_probe := Rect2(player_rect.position + Vector2(-probe_distance, 0.0), player_rect.size)
 	if _rect_hits_solid(left_probe):
 		return -1
-	var right_probe := Rect2(player_rect.position + Vector2(1.0, 0.0), player_rect.size)
+	var right_probe := Rect2(player_rect.position + Vector2(probe_distance, 0.0), player_rect.size)
 	if _rect_hits_solid(right_probe):
 		return 1
 	return 0
@@ -282,17 +368,85 @@ func _punch_hits_active_piece() -> bool:
 	var fist_x := player_position.x + (PLAYER_SIZE.x if player_facing > 0 else -CELL_SIZE * 0.45)
 	var fist_rect := Rect2(Vector2(fist_x, player_position.y + CELL_SIZE * 0.8), Vector2(CELL_SIZE * 0.45, CELL_SIZE * 0.45))
 	for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
-		if fist_rect.intersects(Rect2(Vector2(active_position + cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))):
+		if _rect_overlaps_cell(fist_rect, active_position + cell):
 			return true
 	return false
 
 
 func _active_overlaps_player() -> bool:
+	return _active_overlaps_player_at(active_position)
+
+
+func _active_overlaps_player_at(piece_position: Vector2i) -> bool:
 	var player_rect := Rect2(player_position, PLAYER_SIZE)
 	for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
-		if player_rect.intersects(Rect2(Vector2(active_position + cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))):
+		if _rect_overlaps_cell(player_rect, piece_position + cell):
 			return true
 	return false
+
+
+func _is_grabbing_active_piece() -> bool:
+	if grab_side == 0:
+		return false
+	var grab_probe := Rect2(player_position + Vector2(grab_side * (BLOCK_COLLISION_HORIZONTAL_INSET + 1.0), 0.0), PLAYER_SIZE)
+	for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
+		if _rect_overlaps_cell(grab_probe, active_position + cell):
+			return true
+	return false
+
+
+func _move_with_active_piece() -> void:
+	var candidate := player_position + Vector2(0.0, CELL_SIZE)
+	if _player_collides(candidate):
+		_release_grab()
+		return
+	player_position = candidate
+	player_velocity = Vector2.ZERO
+
+
+func _start_jump_animation() -> void:
+	player_animation_state = "jump"
+	player_animation_time = 0.0
+
+
+func _update_player_animation(delta: float) -> void:
+	var next_state := _get_player_animation_state()
+	if next_state != player_animation_state:
+		player_animation_state = next_state
+		player_animation_time = 0.0
+	else:
+		player_animation_time += delta
+
+
+func _get_player_animation_state() -> String:
+	if attack_timer > 0.0:
+		return "attack"
+	if is_grabbing:
+		return "hang"
+	if not _is_player_grounded():
+		return "jump"
+	return "idle"
+
+
+func _player_animation_region(state: String) -> Rect2:
+	var frames: Array = PLAYER_ANIMATION_REGIONS[state]
+	var frame_duration: float = PLAYER_ANIMATION_FRAME_DURATIONS[state]
+	var frame_index := int(player_animation_time / frame_duration)
+	if state == "attack" or state == "jump":
+		frame_index = mini(frame_index, frames.size() - 1)
+	else:
+		frame_index %= frames.size()
+	return frames[frame_index]
+
+
+func _player_animation_texture(state: String) -> Texture2D:
+	if state == "hang":
+		return PLAYER_HANG_ANIMATIONS
+	if state == "attack":
+		return PLAYER_ATTACK_ANIMATIONS
+	if state == "jump":
+		return PLAYER_JUMP_ANIMATIONS
+	return PLAYER_ANIMATIONS
 
 
 func _trigger_game_over() -> void:
@@ -302,9 +456,14 @@ func _trigger_game_over() -> void:
 
 
 func _spawn_piece() -> void:
-	active_piece_name = next_piece_name
-	next_piece_name = _take_piece_name()
-	active_position = Vector2i(BOARD_COLUMNS / 2 - 2, 0)
+	active_piece_name = next_piece_names.pop_front()
+	next_piece_names.append(_take_piece_name())
+	var leftmost_cell := 0
+	var rightmost_cell := 0
+	for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
+		leftmost_cell = mini(leftmost_cell, cell.x)
+		rightmost_cell = maxi(rightmost_cell, cell.x)
+	active_position = Vector2i(randi_range(-leftmost_cell, BOARD_COLUMNS - rightmost_cell - 1), 0)
 	if not _can_place(active_piece_name, active_position):
 		_trigger_game_over()
 
@@ -327,10 +486,9 @@ func _can_place(piece_name: String, position: Vector2i) -> bool:
 
 
 func _lock_active_piece() -> void:
-	var color: Color = TETROMINOES[active_piece_name]["color"]
 	for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
 		var board_cell := active_position + cell
-		board[board_cell.y][board_cell.x] = color
+		board[board_cell.y][board_cell.x] = active_piece_name
 
 	var removed := _clear_full_rows()
 	if removed > 0:
@@ -368,24 +526,26 @@ func _is_row_full(row: Array) -> bool:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color("10131d"))
+	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), BACKGROUND_COLOR)
 	for row in BOARD_ROWS:
 		for column in BOARD_COLUMNS:
-			var color: Color = board[row][column] if board.size() > row and board[row][column] != null else EMPTY_CELL
-			_draw_cell(Vector2i(column, row), color)
+			var piece_name: String = board[row][column] if board.size() > row and board[row][column] != null else ""
+			_draw_cell(Vector2i(column, row), piece_name)
 
 	if not active_piece_name.is_empty() and not game_over:
-		var active_color: Color = TETROMINOES[active_piece_name]["color"]
 		for cell: Vector2i in TETROMINOES[active_piece_name]["cells"]:
-			_draw_cell(active_position + cell, active_color)
+			_draw_cell(active_position + cell, active_piece_name)
 
 	_draw_player()
 	_draw_hud()
 
 
-func _draw_cell(board_cell: Vector2i, color: Color) -> void:
+func _draw_cell(board_cell: Vector2i, piece_name: String) -> void:
 	var rect := Rect2(BOARD_ORIGIN + Vector2(board_cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))
-	draw_rect(rect, color)
+	if piece_name.is_empty():
+		draw_rect(rect, EMPTY_CELL)
+	else:
+		draw_texture_rect_region(BLOCK_SPRITES, rect, BLOCK_SPRITE_REGIONS[piece_name])
 	draw_rect(rect, GRID_LINE, false, 1.0)
 
 
@@ -393,42 +553,43 @@ func _draw_player() -> void:
 	if game_over:
 		return
 	var origin := BOARD_ORIGIN + player_position
-	var robe := Color("d8e1e8")
-	var sleeve := Color("b6c3cf")
-	var hat := Color("3f3424")
-	draw_rect(Rect2(origin + Vector2(3, 6), Vector2(CELL_SIZE - 6, CELL_SIZE - 7)), robe)
-	draw_rect(Rect2(origin + Vector2(3, CELL_SIZE), Vector2(CELL_SIZE - 6, CELL_SIZE - 4)), sleeve)
-	draw_rect(Rect2(origin + Vector2(2, CELL_SIZE + 8), Vector2(CELL_SIZE - 4, 4)), Color("28303b"))
-	draw_rect(Rect2(origin + Vector2(8, 12), Vector2(CELL_SIZE - 16, 10)), Color("d5a07b"))
-	draw_rect(Rect2(origin + Vector2(1, 4), Vector2(CELL_SIZE - 2, 5)), hat)
-	draw_rect(Rect2(origin + Vector2(7, 0), Vector2(CELL_SIZE - 14, 5)), hat)
+	var state := player_animation_state
+	var size := Vector2(CELL_SIZE * 1.25, CELL_SIZE * 2)
+	var facing := player_facing
 	if is_grabbing:
-		var hand_x := 0.0 if grab_side < 0 else CELL_SIZE - 5.0
-		draw_rect(Rect2(origin + Vector2(hand_x, CELL_SIZE + 2), Vector2(6, 6)), Color("d5a07b"))
+		facing = grab_side
 	elif attack_timer > 0.0:
-		var hand_x := CELL_SIZE - 2.0 if player_facing > 0 else -8.0
-		draw_rect(Rect2(origin + Vector2(hand_x, CELL_SIZE + 4), Vector2(10, 8)), Color("d5a07b"))
+		size.x = CELL_SIZE * 1.8
+
+	draw_set_transform(origin + Vector2(CELL_SIZE * 0.5, 0.0), 0.0, Vector2(facing, 1.0))
+	draw_texture_rect_region(_player_animation_texture(state), Rect2(Vector2(-size.x * 0.5, 0.0), size), _player_animation_region(state))
+	draw_set_transform(Vector2.ZERO)
 
 
 func _draw_hud() -> void:
 	var font := ThemeDB.fallback_font
-	var panel_x := BOARD_ORIGIN.x + BOARD_COLUMNS * CELL_SIZE + 42
-	draw_string(font, Vector2(panel_x, 112), "KUNGFU TETRIS", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("f4f6ff"))
-	draw_string(font, Vector2(panel_x, 162), "SCORE  %d" % score, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("d8def5"))
-	draw_string(font, Vector2(panel_x, 194), "LINES  %d" % cleared_lines, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("d8def5"))
-	draw_string(font, Vector2(panel_x, 230), "ARROWS move / climb", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("aeb8d8"))
-	draw_string(font, Vector2(panel_x, 250), "Z jump   X punch", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("aeb8d8"))
-	draw_string(font, Vector2(panel_x, 270), "C grab  %.1fs" % maxf(0.0, GRAB_DURATION - grab_timer), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("aeb8d8"))
-	draw_string(font, Vector2(panel_x, 310), "NEXT", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("d8def5"))
+	draw_string(font, Vector2(BOARD_ORIGIN.x, 36), "SCORE  %d" % score, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, HUD_PRIMARY)
+	draw_string(font, Vector2(BOARD_ORIGIN.x + 156, 36), "LINES  %d" % cleared_lines, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, HUD_PRIMARY)
 
-	var preview_origin := Vector2i(BOARD_COLUMNS + 2, 9)
-	var preview_color: Color = TETROMINOES[next_piece_name]["color"]
-	for cell: Vector2i in TETROMINOES[next_piece_name]["cells"]:
-		var rect := Rect2(BOARD_ORIGIN + Vector2(preview_origin + cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))
-		draw_rect(rect, preview_color)
-		draw_rect(rect, GRID_LINE, false, 1.0)
+	var preview_x := BOARD_ORIGIN.x + BOARD_COLUMNS * CELL_SIZE + 42
+	draw_string(font, Vector2(preview_x, 108), "NEXT", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, HUD_TEXT)
+	_draw_piece_preview(next_piece_names[0], Vector2(preview_x, 122))
+	_draw_piece_preview(next_piece_names[1], Vector2(preview_x, 232))
+
+	var stamina_rect := Rect2(BOARD_ORIGIN + Vector2(0.0, BOARD_ROWS * CELL_SIZE + 14.0), Vector2(BOARD_COLUMNS * CELL_SIZE, 14.0))
+	var stamina_ratio := maxf(0.0, GRAB_DURATION - grab_timer) / GRAB_DURATION
+	draw_rect(stamina_rect, Color("c8d1dd"))
+	draw_rect(Rect2(stamina_rect.position + Vector2(2.0, 2.0), Vector2((stamina_rect.size.x - 4.0) * stamina_ratio, stamina_rect.size.y - 4.0)), Color("2c8fd6"))
+	draw_rect(stamina_rect, HUD_PRIMARY, false, 2.0)
 
 	if game_over:
 		draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, 230), Vector2(BOARD_COLUMNS * CELL_SIZE, 100)), Color(0.02, 0.03, 0.06, 0.88))
 		draw_string(font, BOARD_ORIGIN + Vector2(56, 272), "GAME OVER", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color("ff8090"))
 		draw_string(font, BOARD_ORIGIN + Vector2(69, 302), "Press R to restart", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("f4f6ff"))
+
+
+func _draw_piece_preview(piece_name: String, origin: Vector2) -> void:
+	for cell: Vector2i in TETROMINOES[piece_name]["cells"]:
+		var rect := Rect2(origin + Vector2(cell) * CELL_SIZE, Vector2(CELL_SIZE, CELL_SIZE))
+		draw_texture_rect_region(BLOCK_SPRITES, rect, BLOCK_SPRITE_REGIONS[piece_name])
+		draw_rect(rect, GRID_LINE, false, 1.0)

@@ -23,12 +23,12 @@ const EMPTY_CELL := Color("dce3ed")
 const GRID_LINE := Color("8390a3")
 const HUD_PRIMARY := Color("152033")
 const HUD_TEXT := Color("344158")
-const BLOCK_SPRITES := preload("res://assets/block_sprites.png")
-const PLAYER_SPRITES := preload("res://assets/player_sprites.png")
-const PLAYER_ANIMATIONS := preload("res://assets/player_animations.png")
-const PLAYER_HANG_ANIMATIONS := preload("res://assets/player_hang_animations.png")
-const PLAYER_ATTACK_ANIMATIONS := preload("res://assets/player_attack_animations.png")
-const PLAYER_JUMP_ANIMATIONS := preload("res://assets/player_jump_animations.png")
+const BLOCK_SPRITES := preload("res://assets/sprites/block_sprites.png")
+const PLAYER_SPRITES := preload("res://assets/sprites/player_sprites.png")
+const PLAYER_ANIMATIONS := preload("res://assets/sprites/player_animations.png")
+const PLAYER_HANG_ANIMATIONS := preload("res://assets/sprites/player_hang_animations.png")
+const PLAYER_ATTACK_ANIMATIONS := preload("res://assets/sprites/player_attack_animations.png")
+const PLAYER_JUMP_ANIMATIONS := preload("res://assets/sprites/player_jump_animations.png")
 const BLOCK_SPRITE_REGIONS := {
 	"I": Rect2(80, 255, 210, 215),
 	"O": Rect2(360, 255, 210, 215),

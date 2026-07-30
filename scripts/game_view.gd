@@ -33,7 +33,7 @@ const CYAN: Color = Color("#2c8fd6") # stamina/캐릭터 강조색.
 const ORANGE: Color = Color("#e47719") # charge/feedback 강조색.
 
 # sprite atlas와 piece 이름 -> atlas source Rect 매핑.
-const BLOCK_TEXTURE: Texture2D = preload("res://assets/block_sprites.png")
+const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"I": Rect2(80, 255, 210, 215),
 	"O": Rect2(360, 255, 210, 215),
@@ -43,7 +43,7 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
-const CHARACTER_TEXTURE: Texture2D = preload("res://assets/player_animations.png") # HUD 초상화 시트.
+const CHARACTER_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # HUD 초상화 시트.
 const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 원본 영역.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.

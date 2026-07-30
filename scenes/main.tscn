@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://scripts/game_controller.gd" id="2_controller"]
 [ext_resource type="Script" path="res://scripts/board_physics.gd" id="3_physics"]
 [ext_resource type="Script" path="res://scripts/character_controller.gd" id="4_character"]
-[ext_resource type="Texture2D" path="res://assets/player_animations.png" id="5_character_texture"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player_animations.png" id="5_character_texture"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_character"]
 size = Vector2(28, 64)

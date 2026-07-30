@@ -64,6 +64,19 @@ const PULL_ANIMATION_DURATION: float = 0.64 # 당기기 animation 우선 표시 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # InputMap 기본값 유틸.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
+const SFX_HURT: AudioStream = preload("res://assets/sfx/01_player_hurt.wav")
+const SFX_PUNCH: AudioStream = preload("res://assets/sfx/02_block_punch.wav")
+const SFX_FLIP: AudioStream = preload("res://assets/sfx/03a_block_flip.wav")
+const SFX_JUMP: AudioStream = preload("res://assets/sfx/04_jump.wav")
+const SFX_MEDITATION_START: AudioStream = preload("res://assets/sfx/05a_meditation_start.wav")
+const SFX_MEDITATION_LOOP: AudioStream = preload("res://assets/sfx/05b_meditation_loop.wav")
+const SFX_MEDITATION_END: AudioStream = preload("res://assets/sfx/05c_meditation_end.wav")
+const SFX_CHARGE_START: AudioStream = preload("res://assets/sfx/06a_charge_start.wav")
+const SFX_CHARGE_LOOP: AudioStream = preload("res://assets/sfx/06b_charge_loop.wav")
+const SFX_CHARGE_TIER1: AudioStream = preload("res://assets/sfx/06c_charge_tier1.wav")
+const SFX_CHARGE_READY: AudioStream = preload("res://assets/sfx/06d_charge_ready.wav")
+const SFX_CHARGE_RELEASE: AudioStream = preload("res://assets/sfx/06e_charge_release.wav")
+const SFX_BLOCK_ELIMINATION: AudioStream = preload("res://assets/sfx/07_block_elimination.wav")
 
 # 기존 공개 상수는 유지하고 실제 데이터만 전용 모듈에서 관리한다.
 const PLAYER_ANIMATIONS: Texture2D = ANIMATION_DATA.IDLE_TEXTURE # 외부/테스트 호환용 idle 별칭.
@@ -85,6 +98,11 @@ const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상
 @onready var sprite: Sprite2D = $Sprite # animation/flip/회전/색/깜빡임 대상.
 @onready var left_ray: RayCast2D = $LeftRay # 왼쪽 매달릴 collision 탐지기.
 @onready var right_ray: RayCast2D = $RightRay # 오른쪽 매달릴 collision 탐지기.
+
+var _sfx_player: AudioStreamPlayer
+var _sfx_cue_player: AudioStreamPlayer
+var _meditation_loop_player: AudioStreamPlayer
+var _charge_loop_player: AudioStreamPlayer
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
@@ -127,8 +145,15 @@ var _animation_time: float = 0.0 # 현재 animation_state에 머문 경과시간
 ## 결과: 첫 physics frame 전에 노드 참조와 모든 캐릭터 상태가 준비된다.
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_sfx_player = _create_sfx_player()
+	_sfx_cue_player = _create_sfx_player()
+	_meditation_loop_player = _create_sfx_player()
+	_charge_loop_player = _create_sfx_player()
+	_meditation_loop_player.finished.connect(_restart_meditation_loop)
+	_charge_loop_player.finished.connect(_restart_charge_loop)
 	INPUT_ACTIONS.ensure_defaults()
 	controller.game_restarted.connect(_reset_character)
+	controller.lines_cleared.connect(_play_block_elimination_sfx)
 	_reset_character()
 
 
@@ -354,6 +379,7 @@ func _handle_jump_input(jump_pressed: bool) -> void:
 ##       → variable jump flag 활성화.
 ## 결과: 캐릭터가 상승하기 시작하며 키를 일찍 놓아 높이를 줄일 수 있다.
 func _start_ground_jump() -> void:
+	_play_sfx(SFX_JUMP)
 	velocity.y = JUMP_VELOCITY
 	_jump_buffer_remaining = 0.0
 	_coyote_remaining = 0.0
@@ -483,6 +509,7 @@ func _finish_hanging_frame(delta: float) -> void:
 ##       → facing을 벽 반대로 변경 → 반대 x속도/위 y속도 → feedback.
 ## 결과: 즉시 벽에서 떨어져 상승하며 잠시 같은 벽 재매달림이 금지된다.
 func _perform_wall_jump() -> void:
+	_play_sfx(SFX_JUMP)
 	var wall_facing: int = _hang_jump_facing # 해제 후에도 사용할 출발 벽 방향 snapshot.
 	_exit_hang()
 	_hang_regrab_remaining = HANG_REGRAB_COOLDOWN
@@ -529,6 +556,8 @@ func _start_punch_sequence() -> void:
 	_punch_stage = 0
 	_punch_blocked = false
 	_attack_cooldown_remaining = ATTACK_COOLDOWN
+	_play_sfx(SFX_CHARGE_START)
+	_start_charge_loop()
 	_advance_punch_stages()
 
 
@@ -553,6 +582,7 @@ func _advance_punch_stages() -> void:
 ## 순서: charging=false → charge_time=0 → blocked=false → stats signal.
 ## 결과: 현재 stage 표시가 0으로 돌아가고 다음 cooldown 이후 새 sequence가 가능하다.
 func _release_charge_punch() -> void:
+	_stop_charge_loop(true)
 	_charging = false
 	charge_time = 0.0
 	_punch_blocked = false
@@ -579,6 +609,11 @@ func _attempt_incremental_punch(target_stage: int, stamina_cost: float) -> bool:
 		return false
 
 	stamina -= stamina_cost
+	_play_sfx(SFX_PUNCH)
+	if target_stage == 2:
+		_play_sfx_cue(SFX_CHARGE_TIER1)
+	elif target_stage == 3:
+		_play_sfx_cue(SFX_CHARGE_READY)
 	_punch_stage = target_stage
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_animation_state = ANIMATION_DATA.ATTACK
@@ -594,6 +629,7 @@ func _attempt_incremental_punch(target_stage: int, stamina_cost: float) -> bool:
 func _cancel_punch_sequence() -> void:
 	if not _charging:
 		return
+	_stop_charge_loop(true)
 	_charging = false
 	charge_time = 0.0
 	_punch_blocked = false
@@ -618,6 +654,8 @@ func _set_meditating(active: bool) -> void:
 	is_meditating = next_state
 	controller.set_meditation_active(next_state)
 	if is_meditating:
+		_play_sfx(SFX_MEDITATION_START)
+		_start_meditation_loop()
 		_cancel_punch_sequence()
 		_jump_buffer_remaining = 0.0
 		_hang_jump_grace_remaining = 0.0
@@ -625,8 +663,11 @@ func _set_meditating(active: bool) -> void:
 		_cancel_wall_jump_control()
 		velocity.x = 0.0
 		_set_feedback("명상 ×2")
-	elif controller.state == Stage4GameController.GameState.PLAYING:
-		_set_feedback("명상 종료")
+	else:
+		_stop_meditation_loop()
+		if controller.state == Stage4GameController.GameState.PLAYING:
+			_play_sfx(SFX_MEDITATION_END)
+			_set_feedback("명상 종료")
 	stats_changed.emit()
 
 
@@ -705,6 +746,7 @@ func _attempt_rotation_kick() -> void:
 	stamina -= ROTATION_STAMINA_COST
 	_spin_remaining = 0.35
 	if controller.try_rotate(facing):
+		_play_sfx(SFX_FLIP)
 		velocity.y = -260.0
 		rotation_cooldown_remaining = ROTATION_COOLDOWN
 		_set_feedback("공중 회전 킥 성공")
@@ -838,10 +880,12 @@ func take_damage() -> void:
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
 	_set_meditating(false)
+	_play_sfx(SFX_HURT)
 	_exit_hang()
 	_hang_jump_grace_remaining = 0.0
 	_cancel_wall_jump_control()
 	_charging = false
+	_stop_charge_loop()
 	_punch_blocked = false
 	velocity = Vector2.ZERO
 	_set_feedback("압착 피해! 목숨 -1")
@@ -1110,11 +1154,65 @@ func _set_feedback(message: String) -> void:
 	feedback_changed.emit()
 
 
+func _create_sfx_player() -> AudioStreamPlayer:
+	var player: AudioStreamPlayer = AudioStreamPlayer.new()
+	player.bus = &"SFX"
+	add_child(player)
+	return player
+
+
+func _play_sfx(stream: AudioStream) -> void:
+	_sfx_player.stream = stream
+	_sfx_player.play()
+
+
+func _play_sfx_cue(stream: AudioStream) -> void:
+	_sfx_cue_player.stream = stream
+	_sfx_cue_player.play()
+
+
+func _play_block_elimination_sfx() -> void:
+	_play_sfx_cue(SFX_BLOCK_ELIMINATION)
+
+
+func _start_meditation_loop() -> void:
+	_meditation_loop_player.stream = SFX_MEDITATION_LOOP
+	_meditation_loop_player.play()
+
+
+func _stop_meditation_loop() -> void:
+	_meditation_loop_player.stop()
+
+
+func _restart_meditation_loop() -> void:
+	if is_meditating:
+		_meditation_loop_player.play()
+
+
+func _start_charge_loop() -> void:
+	_charge_loop_player.stream = SFX_CHARGE_LOOP
+	_charge_loop_player.play()
+
+
+func _stop_charge_loop(play_release: bool = false) -> void:
+	_charge_loop_player.stop()
+	if play_release:
+		_play_sfx(SFX_CHARGE_RELEASE)
+
+
+func _restart_charge_loop() -> void:
+	if _charging:
+		_charge_loop_player.play()
+
+
 ## 상황: 캐릭터 최초 준비 또는 GameController.reset_game()의 restart signal에서 호출한다.
 ## 순서: 공개 stats/모든 timer·flag 초기화 → 시작 position/velocity
 ##       → sprite transform/color/visibility → 첫 animation frame → 두 signal.
 ## 결과: 이전 게임의 hang body, charge, 무적, animation이 남지 않는 새 캐릭터가 된다.
 func _reset_character() -> void:
+	if _meditation_loop_player:
+		_stop_meditation_loop()
+		_stop_charge_loop()
 	lives = MAX_LIVES
 	stamina = MAX_STAMINA
 	facing = 1

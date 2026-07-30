@@ -18,10 +18,10 @@ const PULL: String = "pull" # 블록 당기기 일회성 동작 key.
 const ATTACK: String = "attack" # 펀치 일회성 동작 key.
 const JUMP: String = "jump" # 공중 이동 상태 key.
 
-const IDLE_TEXTURE: Texture2D = preload("res://assets/player_animations.png") # idle과 pull frame 시트.
-const HANG_TEXTURE: Texture2D = preload("res://assets/player_hang_animations.png") # hang frame 시트.
-const ATTACK_TEXTURE: Texture2D = preload("res://assets/player_attack_animations.png") # punch 시트.
-const JUMP_TEXTURE: Texture2D = preload("res://assets/player_jump_animations.png") # jump frame 시트.
+const IDLE_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # idle과 pull frame 시트.
+const HANG_TEXTURE: Texture2D = preload("res://assets/sprites/player_hang_animations.png") # hang frame 시트.
+const ATTACK_TEXTURE: Texture2D = preload("res://assets/sprites/player_attack_animations.png") # punch 시트.
+const JUMP_TEXTURE: Texture2D = preload("res://assets/sprites/player_jump_animations.png") # jump frame 시트.
 
 # 상태별 sprite-sheet source frame 목록.
 const REGIONS: Dictionary = {

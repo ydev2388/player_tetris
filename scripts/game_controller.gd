@@ -16,6 +16,7 @@ extends Node
 
 signal game_changed # 피스/점수/상태 변경 후 View와 BoardPhysics에 동기화를 요구한다.
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
+signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
 
 enum GameState {
 	PLAYING,
@@ -288,6 +289,7 @@ func lock_active_piece() -> void:
 		score += line_clear_score(cleared, level)
 		total_lines += cleared
 		level = level_for_lines(total_lines)
+		lines_cleared.emit()
 
 	if board.has_blocks_in_hidden_rows():
 		end_game()

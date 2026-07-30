@@ -1,9 +1,9 @@
 class_name StartScreenTutorialCanvas
 extends Control
 
-const PORTRAIT: Texture2D = preload("res://assets/player_animations.png")
+const PORTRAIT: Texture2D = preload("res://assets/sprites/player_animations.png")
 const PORTRAIT_SOURCE: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0)
-const BLOCK_TEXTURE: Texture2D = preload("res://assets/block_sprites.png")
+const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"cyan": Rect2(80.0, 255.0, 210.0, 215.0),
 	"orange": Rect2(1745.0, 255.0, 210.0, 215.0),

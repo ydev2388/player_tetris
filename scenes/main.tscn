@@ -1,0 +1,68 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/game_view.gd" id="1_view"]
+[ext_resource type="Script" path="res://scripts/game_controller.gd" id="2_controller"]
+[ext_resource type="Script" path="res://scripts/board_physics.gd" id="3_physics"]
+[ext_resource type="Script" path="res://scripts/character_controller.gd" id="4_character"]
+[ext_resource type="Texture2D" path="res://assets/player_animations.png" id="5_character_texture"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_character"]
+size = Vector2(28, 64)
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_view")
+
+[node name="GameController" type="Node" parent="."]
+script = ExtResource("2_controller")
+
+[node name="BoardPhysics" type="Node2D" parent="."]
+position = Vector2(60, 80)
+script = ExtResource("3_physics")
+
+[node name="Boundaries" type="StaticBody2D" parent="BoardPhysics"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="LockedBlocks" type="StaticBody2D" parent="BoardPhysics"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="ActivePiece" type="AnimatableBody2D" parent="BoardPhysics"]
+collision_layer = 1
+collision_mask = 0
+sync_to_physics = true
+
+[node name="Character" type="CharacterBody2D" parent="BoardPhysics"]
+position = Vector2(160, 608)
+collision_layer = 2
+collision_mask = 1
+floor_snap_length = 6.0
+floor_stop_on_slope = true
+safe_margin = 0.02
+script = ExtResource("4_character")
+
+[node name="Collider" type="CollisionShape2D" parent="BoardPhysics/Character"]
+shape = SubResource("RectangleShape2D_character")
+
+[node name="Sprite" type="Sprite2D" parent="BoardPhysics/Character"]
+texture_filter = 1
+texture = ExtResource("5_character_texture")
+region_enabled = true
+region_rect = Rect2(45, 55, 165, 270)
+scale = Vector2(0.242424, 0.237037)
+
+[node name="LeftRay" type="RayCast2D" parent="BoardPhysics/Character"]
+enabled = true
+target_position = Vector2(-20, 0)
+collision_mask = 1
+
+[node name="RightRay" type="RayCast2D" parent="BoardPhysics/Character"]
+enabled = true
+target_position = Vector2(20, 0)
+collision_mask = 1

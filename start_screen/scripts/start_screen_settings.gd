@@ -10,6 +10,8 @@ const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
+const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
+const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
@@ -173,6 +175,8 @@ func load_settings() -> void:
 		return
 
 	_load_bindings_from_config(config)
+	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
+		_migrate_self_respawn_binding()
 	_load_audio_from_config(config)
 	_restore_defaults_for_duplicate_keys()
 
@@ -192,9 +196,24 @@ func _load_bindings_from_config(config: ConfigFile) -> void:
 			String(action_name),
 			_bindings[action_name]
 		)
-		var parsed: Array[int] = _parse_key_array(stored_value, slot_count)
+		var parsed: Array[int] = _parse_key_array(
+			stored_value,
+			slot_count,
+			action_name == SELF_RESPAWN_ACTION
+		)
 		if not parsed.is_empty():
 			_bindings[action_name] = parsed
+
+
+## 상황: 기존 설정 파일에 새 자력 재스폰 동작이 아직 없을 때 한 번 계산한다.
+## 순서: Q→K→Backspace 중 다른 동작이 쓰지 않는 첫 키 선택, 모두 충돌하면 미지정.
+## 결과: 기존 사용자 키 전체를 기본값으로 되돌리지 않고 새 동작만 안전하게 보충한다.
+func _migrate_self_respawn_binding() -> void:
+	for key_code: int in SELF_RESPAWN_MIGRATION_KEYS:
+		if find_conflict(key_code, SELF_RESPAWN_ACTION, 0).is_empty():
+			_bindings[SELF_RESPAWN_ACTION] = [key_code]
+			return
+	_bindings[SELF_RESPAWN_ACTION] = [KEY_NONE]
 
 
 func _load_audio_from_config(config: ConfigFile) -> void:
@@ -260,7 +279,11 @@ func _load_default_bindings() -> void:
 		)
 
 
-func _parse_key_array(stored_value: Variant, slot_count: int) -> Array[int]:
+func _parse_key_array(
+	stored_value: Variant,
+	slot_count: int,
+	allow_unassigned_primary: bool = false
+) -> Array[int]:
 	var parsed: Array[int] = []
 	if not (stored_value is Array):
 		return parsed
@@ -268,8 +291,10 @@ func _parse_key_array(stored_value: Variant, slot_count: int) -> Array[int]:
 		if not (value is int or value is float):
 			return []
 		parsed.append(int(value))
-	if parsed.is_empty() or parsed[0] == KEY_NONE:
+	if parsed.is_empty():
 		return []
+	if parsed[0] == KEY_NONE:
+		return [KEY_NONE] if allow_unassigned_primary else []
 	while parsed.size() < slot_count:
 		parsed.append(KEY_NONE)
 	if parsed.size() > slot_count:

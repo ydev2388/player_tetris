@@ -493,12 +493,12 @@ func _build_key_rows(screen: Control) -> void:
 
 func _build_key_row(screen: Control, definition: Dictionary, index: int) -> void:
 	var action_name: StringName = definition["action"]
-	var y_value: float = 150.0 + index * 46.0
+	var y_value: float = 150.0 + index * 40.0
 	_add_key_row_stripe(screen, y_value, index % 2 == 0)
 	_create_label(
 		screen,
 		String(definition["label"]),
-		Rect2(108.0, y_value + 8.0, 210.0, 28.0),
+		Rect2(108.0, y_value + 5.0, 210.0, 26.0),
 		15,
 		TEXT
 	)
@@ -507,7 +507,7 @@ func _build_key_row(screen: Control, definition: Dictionary, index: int) -> void
 	var primary: Button = _create_button(
 		screen,
 		"",
-		Rect2(350.0, y_value, 150.0, 38.0),
+		Rect2(350.0, y_value, 150.0, 34.0),
 		CYAN,
 		13
 	)
@@ -527,8 +527,8 @@ func _add_key_row_stripe(screen: Control, y_value: float, visible: bool) -> void
 	if not visible:
 		return
 	var stripe: ColorRect = ColorRect.new()
-	stripe.position = Vector2(96.0, y_value - 3.0)
-	stripe.size = Vector2(768.0, 43.0)
+	stripe.position = Vector2(96.0, y_value - 2.0)
+	stripe.size = Vector2(768.0, 38.0)
 	stripe.color = Color(0.86, 0.89, 0.93, 0.82)
 	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(stripe)
@@ -545,7 +545,7 @@ func _build_secondary_key_control(
 		_create_label(
 			screen,
 			"—",
-			Rect2(520.0, y_value + 8.0, 150.0, 24.0),
+			Rect2(520.0, y_value + 5.0, 150.0, 24.0),
 			15,
 			Color(0.45, 0.55, 0.68),
 			HORIZONTAL_ALIGNMENT_CENTER
@@ -555,7 +555,7 @@ func _build_secondary_key_control(
 	var secondary: Button = _create_button(
 		screen,
 		"",
-		Rect2(520.0, y_value, 150.0, 38.0),
+		Rect2(520.0, y_value, 150.0, 34.0),
 		ORANGE,
 		13
 	)
@@ -564,7 +564,7 @@ func _build_secondary_key_control(
 	var clear_button: Button = _create_button(
 		screen,
 		"지우기",
-		Rect2(688.0, y_value, 74.0, 38.0),
+		Rect2(688.0, y_value, 74.0, 34.0),
 		MUTED,
 		12
 	)

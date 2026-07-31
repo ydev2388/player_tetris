@@ -16,6 +16,7 @@ extends Node
 
 signal game_changed # 피스/점수/상태 변경 후 View와 BoardPhysics에 동기화를 요구한다.
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
+signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
 
 enum GameState {
@@ -118,8 +119,10 @@ func _advance_gravity(effective_delta: float) -> void:
 	while _fall_accumulator >= interval:
 		_fall_accumulator -= interval
 		if board.can_place(active_type, active_rotation, active_origin + Vector2i.DOWN):
+			var previous_origin: Vector2i = active_origin
 			active_origin += Vector2i.DOWN
 			game_changed.emit()
+			active_piece_descended.emit(previous_origin, active_origin)
 		else:
 			_fall_accumulator = 0.0
 			break
@@ -246,12 +249,22 @@ func push_active_piece(direction: int, distance: int) -> bool:
 
 ## 상황: 캐릭터 회전 킥이 활성 피스를 시계/반시계 방향으로 돌릴 때 호출한다.
 ## 순서: state/O 검사 → 새 회전/SRS key 계산 → kick 표 선택
-##       → 후보를 순서대로 can_place → 최초 성공 적용/timer reset/emit.
-## 결과: 가능한 보정 위치가 있으면 true와 새 회전, 모두 막히면 false다.
-func try_rotate(direction: int) -> bool:
+##       → 후보를 순서대로 can_place/금지 셀 검사 → 최초 성공 적용/timer reset/emit.
+## 결과: 보드와 캐릭터 점유 셀을 모두 피하는 보정 위치가 있으면 true, 모두 막히면 false다.
+func try_rotate(
+	direction: int,
+	forbidden_cells: Array[Vector2i] = []
+) -> bool:
 	if state != GameState.PLAYING:
 		return false
 	if active_type == Stage4TetrominoData.Type.O:
+		if _piece_overlaps_forbidden_cells(
+			active_type,
+			active_rotation,
+			active_origin,
+			forbidden_cells
+		):
+			return false
 		game_changed.emit()
 		return true
 
@@ -266,11 +279,35 @@ func try_rotate(direction: int) -> bool:
 	for kick_variant: Variant in kick_tests:
 		var kick: Vector2i = kick_variant # Variant 원소를 명시형 좌표로 변환.
 		var target: Vector2i = active_origin + kick # 이번 offset을 적용한 원점.
-		if board.can_place(active_type, new_rotation, target):
-			active_rotation = new_rotation
-			active_origin = target
-			_reset_lock_after_transform(was_grounded)
-			game_changed.emit()
+		if not board.can_place(active_type, new_rotation, target):
+			continue
+		if _piece_overlaps_forbidden_cells(
+			active_type,
+			new_rotation,
+			target,
+			forbidden_cells
+		):
+			continue
+		active_rotation = new_rotation
+		active_origin = target
+		_reset_lock_after_transform(was_grounded)
+		game_changed.emit()
+		return true
+	return false
+
+
+## 상황: SRS 후보가 캐릭터처럼 BoardModel 밖에서 전달된 점유 셀을 침범하는지 검사한다.
+## 결과: 후보 피스 네 셀 중 하나라도 forbidden_cells에 있으면 true다.
+func _piece_overlaps_forbidden_cells(
+	piece_type: int,
+	rotation: int,
+	origin: Vector2i,
+	forbidden_cells: Array[Vector2i]
+) -> bool:
+	if forbidden_cells.is_empty():
+		return false
+	for local_cell: Vector2i in Stage4TetrominoData.get_cells(piece_type, rotation):
+		if origin + local_cell in forbidden_cells:
 			return true
 	return false
 

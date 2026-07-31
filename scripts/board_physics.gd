@@ -4,19 +4,20 @@ extends Node2D
 ## [역할 / C++ 대응]
 ## 논리 BoardModel을 Godot 2D 충돌체로 투영하는 어댑터다.
 ## BoardModel이 authoritative state이고, 이 노드는 StaticBody2D/AnimatableBody2D를
-## 재구성할 뿐 게임 규칙을 결정하지 않는다.
+## 재구성할 뿐 게임 규칙을 결정하지 않는다. 자연 낙하 압사 규칙은
+## GameController의 전용 신호를 받은 CharacterController가 처리한다.
 ##
 ## [호출 관계]
 ## Godot가 `_ready()`를 호출한다. 이후 GameController의 `game_changed` /
 ## `game_restarted` signal이 동기화를 호출한다. 동기화 뒤에는
-## CharacterController.validate_position()을 deferred call로 호출한다.
+## CharacterController.validate_position()을 안전망으로 deferred call한다.
 ## 씬 경로 `$Node`는 C++에서 미리 주입받은 자식 노드 포인터와 비슷하다.
 
-const CELL_SIZE: float = 32.0 # 논리 셀 한 칸의 가로·세로 픽셀 크기.
+const CELL_SIZE: float = Stage4Layout.CELL_SIZE # 화면·물리가 공유하는 48px 셀.
 const BOARD_PIXEL_SIZE: Vector2 = Vector2(
 	Stage4BoardModel.WIDTH * CELL_SIZE,
 	Stage4BoardModel.VISIBLE_HEIGHT * CELL_SIZE
-) # 화면에 보이는 보드의 전체 픽셀 크기(320×640).
+) # 화면에 보이는 보드의 전체 픽셀 크기(480×960).
 
 # main.tscn에서 주입되는 협력 노드들.
 @onready var controller: Stage4GameController = $"../GameController" # authoritative BoardModel 소유자.
@@ -67,24 +68,24 @@ func _build_boundaries() -> void:
 	var boundaries: StaticBody2D = $Boundaries # 세 외곽 collision shape를 소유할 정적 body.
 	_add_box_shape(
 		boundaries,
-		Vector2(BOARD_PIXEL_SIZE.x * 0.5, BOARD_PIXEL_SIZE.y + 16.0),
-		Vector2(BOARD_PIXEL_SIZE.x, 32.0)
+		Vector2(BOARD_PIXEL_SIZE.x * 0.5, BOARD_PIXEL_SIZE.y + CELL_SIZE * 0.5),
+		Vector2(BOARD_PIXEL_SIZE.x, CELL_SIZE)
 	)
 	_add_box_shape(
 		boundaries,
-		Vector2(-16.0, BOARD_PIXEL_SIZE.y * 0.5 - 32.0),
-		Vector2(32.0, BOARD_PIXEL_SIZE.y + 128.0)
+		Vector2(-CELL_SIZE * 0.5, BOARD_PIXEL_SIZE.y * 0.5 - CELL_SIZE),
+		Vector2(CELL_SIZE, BOARD_PIXEL_SIZE.y + CELL_SIZE * 4.0)
 	)
 	_add_box_shape(
 		boundaries,
-		Vector2(BOARD_PIXEL_SIZE.x + 16.0, BOARD_PIXEL_SIZE.y * 0.5 - 32.0),
-		Vector2(32.0, BOARD_PIXEL_SIZE.y + 128.0)
+		Vector2(BOARD_PIXEL_SIZE.x + CELL_SIZE * 0.5, BOARD_PIXEL_SIZE.y * 0.5 - CELL_SIZE),
+		Vector2(CELL_SIZE, BOARD_PIXEL_SIZE.y + CELL_SIZE * 4.0)
 	)
 
 
 ## 상황: `_sync_from_model()`이 고정 셀 hash 변화를 감지했을 때 호출한다.
 ## 순서: ① 이전 shape 전부 제거 ② 전체 cells 순회 ③ EMPTY 건너뜀
-##       ④ 논리 셀 중심을 픽셀 좌표로 변환 ⑤ 32×32 shape 추가.
+##       ④ 논리 셀 중심을 픽셀 좌표로 변환 ⑤ 48×48 shape 추가.
 ## 결과: locked_body의 자식 collision들이 현재 BoardModel과 정확히 대응한다.
 func _rebuild_locked_colliders() -> void:
 	_clear_shapes(locked_body)
@@ -159,7 +160,7 @@ func _board_signature() -> int:
 
 ## 상황: 새 collision이 물리 공간에 반영된 다음 frame 끝에서 deferred 호출된다.
 ## 순서: ① character 참조가 아직 유효한지 검사 ② `validate_position()` 호출.
-## 결과: 새 블록과 겹친 캐릭터가 피해/안전 위치 처리되며 삭제된 객체 호출은 피한다.
+## 결과: 비정상 보드 이탈만 무피해 안전 위치로 복구하며 삭제된 객체 호출은 피한다.
 func _validate_character() -> void:
 	if is_instance_valid(character):
 		character.validate_position()

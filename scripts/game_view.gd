@@ -14,13 +14,23 @@ extends Control
 ## `@onready var x = $Path`는 노드가 씬 트리에 준비된 뒤 child pointer를 캐시한다.
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
-const CELL_SIZE: float = 32.0 # 논리 셀 한 칸을 화면에 그릴 픽셀 크기.
-const BOARD_ORIGIN: Vector2 = Vector2(60.0, 80.0) # 보드 좌상단의 View 로컬 픽셀 좌표.
-const BOARD_SIZE: Vector2 = Vector2(
-	Stage4BoardModel.WIDTH * CELL_SIZE,
-	Stage4BoardModel.VISIBLE_HEIGHT * CELL_SIZE
-) # 화면에 보이는 10×20 보드의 픽셀 크기.
-const PANEL_RECT: Rect2 = Rect2(Vector2(410.0, 80.0), Vector2(490.0, 640.0)) # 우측 HUD 영역.
+const DISPLAY_SCALE: float = Stage4Layout.DISPLAY_SCALE
+const CELL_SIZE: float = Stage4Layout.CELL_SIZE
+const GAME_VIEWPORT_SIZE: Vector2i = Stage4Layout.GAME_VIEWPORT_SIZE
+const BOARD_ORIGIN: Vector2 = Stage4Layout.BOARD_ORIGIN
+const BOARD_SIZE: Vector2 = Stage4Layout.BOARD_SIZE
+const PANEL_RECT: Rect2 = Stage4Layout.HUD_RECT
+const STAMINA_BAR_RECT: Rect2 = Rect2(584.0, 878.0, 352.0, 14.0)
+const PUNCH_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
+const ROTATION_BAR_RECT: Rect2 = Rect2(584.0, 998.0, 352.0, 14.0)
+const SELF_RESPAWN_BAR_RECT: Rect2 = Rect2(
+	Stage4Layout.BOARD_ORIGIN + Vector2(84.0, Stage4Layout.BOARD_SIZE.y - 78.0),
+	Vector2(312.0, 12.0)
+)
+const SELF_RESPAWN_PANEL_RECT: Rect2 = Rect2(
+	Stage4Layout.BOARD_ORIGIN + Vector2(48.0, Stage4Layout.BOARD_SIZE.y - 94.0),
+	Vector2(384.0, 76.0)
+)
 
 # 고정 UI theme 색상.
 const BACKGROUND_COLOR: Color = Color("#f7f8fb") # 전체 창 배경.
@@ -54,10 +64,14 @@ const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 �
 var _title_label: Label # 고정 게임 제목.
 var _next_label: Label # 다음 블록 preview 제목.
 var _stats_label: Label # score/level/line 수치.
-var _character_label: Label # 생명/stamina/charge/cooldown 텍스트.
-var _controls_label: Label # 키 조작법.
+var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
+var _stamina_label: Label # 스태미나 숫자.
+var _punch_label: Label # 보조 정보인 펀치 단계.
+var _rotation_label: Label # 회전 킥 준비/남은 초.
 var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
+var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
+var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색 막대.
 var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
 
 
@@ -65,6 +79,7 @@ var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지�
 ## 순서: SystemFont 생성/후보 지정 → `_build_interface()` → 세 signal 연결 → `_refresh()`.
 ## 결과: retained Label UI가 만들어지고 이후 상태 변경을 자동 반영한다.
 func _ready() -> void:
+	_apply_game_viewport_size()
 	_system_font = SystemFont.new()
 	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
 	_build_interface()
@@ -83,6 +98,7 @@ func _draw() -> void:
 	_draw_panel(PANEL_RECT)
 	_draw_board()
 	_draw_meditation_effect()
+	_draw_hud_sections()
 	_draw_next_piece()
 	_draw_character_card()
 	_draw_character_bars()
@@ -90,14 +106,14 @@ func _draw() -> void:
 
 
 ## 상황: `_ready()`에서 값이 바뀌는 텍스트 UI를 최초 한 번 구성할 때 호출한다.
-## 순서: 제목/next/stats/character/controls/feedback/status Label을 순서대로 생성
+## 순서: 제목/next/stats/목숨/stamina/punch/rotation/feedback/status Label 생성
 ##       → 각 Label별 shadow/alignment/z-index/line spacing을 설정.
 ## 결과: 이후 `_refresh()`가 참조할 멤버 Label들이 모두 유효해진다.
 func _build_interface() -> void:
 	_title_label = _create_label(
 		"KUNG FU TETRIS : STAGE 4",
-		Vector2(60.0, 22.0),
-		Vector2(840.0, 42.0),
+		Vector2(40.0, 22.0),
+		Vector2(920.0, 42.0),
 		28,
 		TEXT_COLOR
 	)
@@ -107,59 +123,89 @@ func _build_interface() -> void:
 
 	_next_label = _create_label(
 		"다음 블록",
-		Vector2(438.0, 104.0),
-		Vector2(180.0, 32.0),
-		18,
+		Vector2(584.0, 102.0),
+		Vector2(352.0, 34.0),
+		20,
 		TEXT_COLOR
 	)
 	_stats_label = _create_label(
 		"",
-		Vector2(438.0, 292.0),
-		Vector2(180.0, 190.0),
-		19,
+		Vector2(584.0, 330.0),
+		Vector2(352.0, 170.0),
+		20,
 		TEXT_COLOR
 	)
-	_stats_label.add_theme_constant_override("line_spacing", 5)
+	_stats_label.name = "StatsLabel"
+	_stats_label.add_theme_constant_override("line_spacing", 9)
 
-	_character_label = _create_label(
+	_life_label = _create_label(
 		"",
-		Vector2(646.0, 310.0),
-		Vector2(226.0, 150.0),
-		16,
+		Vector2(584.0, 770.0),
+		Vector2(352.0, 44.0),
+		24,
 		TEXT_COLOR
 	)
-	_character_label.add_theme_constant_override("line_spacing", 5)
+	_life_label.name = "LifeLabel"
 
-	_controls_label = _create_label(
-		"캐릭터 조작\n← → / A D  이동\n↓ 유지  명상 ×2\nZ / Space  점프\nC + ↑↓  매달려 이동\nC + Z/Space  벽 점프\nX 즉시 / 유지  연속 펀치\nS  블록 당기기\nV  회전 킥\nP / Esc  일시정지\nR  다시 시작",
-		Vector2(646.0, 495.0),
-		Vector2(226.0, 210.0),
-		12,
+	_stamina_label = _create_label(
+		"",
+		Vector2(584.0, 842.0),
+		Vector2(352.0, 30.0),
+		17,
+		TEXT_COLOR
+	)
+	_stamina_label.name = "StaminaLabel"
+
+	_punch_label = _create_label(
+		"",
+		Vector2(584.0, 910.0),
+		Vector2(352.0, 26.0),
+		14,
 		MUTED_TEXT_COLOR
 	)
-	_controls_label.add_theme_constant_override("line_spacing", 1)
+	_punch_label.name = "PunchLabel"
+
+	_rotation_label = _create_label(
+		"",
+		Vector2(584.0, 958.0),
+		Vector2(352.0, 30.0),
+		17,
+		TEXT_COLOR
+	)
+	_rotation_label.name = "RotationKickLabel"
 
 	_feedback_label = _create_label(
 		"",
-		BOARD_ORIGIN + Vector2(14.0, BOARD_SIZE.y - 46.0),
-		Vector2(BOARD_SIZE.x - 28.0, 34.0),
-		15,
+		BOARD_ORIGIN + Vector2(18.0, BOARD_SIZE.y - 58.0),
+		Vector2(BOARD_SIZE.x - 36.0, 42.0),
+		17,
 		ORANGE
 	)
+	_feedback_label.name = "FeedbackLabel"
 	_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_feedback_label.z_index = 8
+	_feedback_label.z_index = 10
+	_build_self_respawn_progress()
 
 	_status_label = _create_label(
 		"",
-		BOARD_ORIGIN + Vector2(20.0, 245.0),
-		Vector2(BOARD_SIZE.x - 40.0, 150.0),
-		28,
+		BOARD_ORIGIN + Vector2(30.0, 380.0),
+		Vector2(BOARD_SIZE.x - 60.0, 200.0),
+		32,
 		TEXT_COLOR
 	)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_status_label.z_index = 10
 	_status_label.visible = false
+
+
+## 상황: 시작 화면 안에서 게임 장면이 열린 순간 게임 전용 논리·창 크기를 적용한다.
+## 결과: 메뉴의 960×800 배치는 유지되고 게임 화면만 1000×1080으로 확장된다.
+func _apply_game_viewport_size() -> void:
+	var window: Window = get_window()
+	window.content_scale_size = GAME_VIEWPORT_SIZE
+	if not DisplayServer.get_name().contains("headless"):
+		window.size = GAME_VIEWPORT_SIZE
 
 
 ## 상황: `_build_interface()`가 공통 스타일의 Label 하나를 필요로 할 때 호출한다.
@@ -182,6 +228,39 @@ func _create_label(
 	label.add_theme_color_override("font_color", color)
 	add_child(label)
 	return label
+
+
+## 상황: `_build_interface()`에서 자력 재스폰 진행 UI를 한 번 준비한다.
+## 결과: 캐릭터·블록보다 높은 z-index의 패널과 배경/채움 막대가 숨김 상태로 생성된다.
+func _build_self_respawn_progress() -> void:
+	_self_respawn_panel = Panel.new()
+	_self_respawn_panel.position = SELF_RESPAWN_PANEL_RECT.position
+	_self_respawn_panel.size = SELF_RESPAWN_PANEL_RECT.size
+	_self_respawn_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_self_respawn_panel.z_index = 8
+	var panel_style: StyleBoxFlat = StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.04, 0.08, 0.14, 0.92)
+	panel_style.border_color = ORANGE
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(4)
+	_self_respawn_panel.add_theme_stylebox_override("panel", panel_style)
+	add_child(_self_respawn_panel)
+
+	var bar_background: ColorRect = ColorRect.new()
+	bar_background.position = (
+		SELF_RESPAWN_BAR_RECT.position - SELF_RESPAWN_PANEL_RECT.position
+	)
+	bar_background.size = SELF_RESPAWN_BAR_RECT.size
+	bar_background.color = Color("#c8d1dd")
+	bar_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_self_respawn_panel.add_child(bar_background)
+
+	_self_respawn_fill = ColorRect.new()
+	_self_respawn_fill.size = Vector2(0.0, SELF_RESPAWN_BAR_RECT.size.y)
+	_self_respawn_fill.color = ORANGE
+	_self_respawn_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_background.add_child(_self_respawn_fill)
+	_self_respawn_panel.visible = false
 
 
 ## 상황: `_draw()`가 보드 또는 HUD 뒤의 둥근 panel을 그릴 때 호출한다.
@@ -242,12 +321,12 @@ func _draw_board() -> void:
 ## 순서: preview 배경/외곽선 → 24px cell 크기/원점 계산 → 회전 0의 네 셀 draw.
 ## 결과: controller.next_type이 실제 spawn 전에 사용자에게 보인다.
 func _draw_next_piece() -> void:
-	var preview_rect: Rect2 = Rect2(Vector2(438.0, 142.0), Vector2(180.0, 126.0)) # 미리보기 영역.
+	var preview_rect: Rect2 = Rect2(Vector2(584.0, 140.0), Vector2(352.0, 160.0))
 	draw_rect(preview_rect, BOARD_COLOR)
 	draw_rect(preview_rect, GRID_COLOR, false, 1.0)
 
-	var preview_cell_size: float = 24.0 # 본 보드보다 작게 그릴 한 셀 크기.
-	var preview_origin: Vector2 = preview_rect.position + Vector2(42.0, 16.0) # 피스 로컬 (0,0).
+	var preview_cell_size: float = 32.0
+	var preview_origin: Vector2 = preview_rect.position + Vector2(104.0, 16.0)
 	for local_cell: Vector2i in Stage4TetrominoData.get_cells(controller.next_type, 0):
 		var cell_rect: Rect2 = Rect2( # 이번 local cell의 preview 픽셀 영역.
 			preview_origin + Vector2(local_cell) * preview_cell_size,
@@ -265,16 +344,16 @@ func _draw_meditation_effect() -> void:
 		return
 
 	var board_rect: Rect2 = Rect2(BOARD_ORIGIN, BOARD_SIZE) # 효과를 제한할 보드 전체 영역.
-	var phase: float = fmod(float(Time.get_ticks_msec()) * 0.22, 96.0) # 하강선 순환 위치.
+	var phase: float = fmod(float(Time.get_ticks_msec()) * 0.22, 144.0)
 	var pulse: float = (sin(float(Time.get_ticks_msec()) * 0.007) + 1.0) * 0.5 # 0~1 밝기.
 	draw_rect(board_rect, Color(0.17, 0.56, 0.84, 0.04 + pulse * 0.03))
 	for index: int in range(7):
-		var line_x: float = BOARD_ORIGIN.x + 24.0 + float(index) * 45.0 # 각 세로선 x.
+		var line_x: float = BOARD_ORIGIN.x + 36.0 + float(index) * 67.5
 		var line_end_y: float = ( # phase에 따라 아래로 순환하는 선 끝 y.
 			BOARD_ORIGIN.y
-			+ fmod(phase + float(index) * 83.0, BOARD_SIZE.y)
+			+ fmod(phase + float(index) * 124.5, BOARD_SIZE.y)
 		)
-		var line_start_y: float = maxf(BOARD_ORIGIN.y, line_end_y - 48.0) # 보드 위를 넘지 않는 시작 y.
+		var line_start_y: float = maxf(BOARD_ORIGIN.y, line_end_y - 72.0)
 		draw_line(
 			Vector2(line_x, line_start_y),
 			Vector2(line_x, line_end_y),
@@ -293,11 +372,11 @@ func _draw_meditation_effect() -> void:
 ## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
 ## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
 func _draw_character_card() -> void:
-	var portrait_rect: Rect2 = Rect2(Vector2(706.0, 106.0), Vector2(104.0, 190.0)) # 초상 목적 영역.
+	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
 	draw_texture_rect_region(CHARACTER_TEXTURE, portrait_rect, CHARACTER_SOURCE_RECT)
 	draw_string(
 		_system_font,
-		Vector2(652.0, 126.0),
+		Vector2(662.0, 538.0),
 		"KUNG FU FIGHTER",
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0,
@@ -306,22 +385,38 @@ func _draw_character_card() -> void:
 	)
 
 
+## 상황: 세 핵심 상태와 초상 영역을 좁은 패널 안에서 카드로 구분한다.
+func _draw_hud_sections() -> void:
+	var card_color: Color = Color("#f8fafc")
+	var card_rects: Array[Rect2] = [
+		Rect2(576.0, 318.0, 368.0, 190.0),
+		Rect2(576.0, 516.0, 368.0, 224.0),
+		Rect2(576.0, 754.0, 368.0, 70.0),
+		Rect2(576.0, 832.0, 368.0, 64.0),
+		Rect2(576.0, 902.0, 368.0, 42.0),
+		Rect2(576.0, 950.0, 368.0, 70.0),
+	]
+	for card_rect: Rect2 in card_rects:
+		draw_rect(card_rect, card_color)
+		draw_rect(card_rect, Color("#b7c2d1"), false, 1.0)
+
+
 ## 상황: `_draw()`가 캐릭터의 연속 수치를 bar 세 개로 표시할 때 호출한다.
 ## 순서: stamina/MAX → charge_ratio → 1-cooldown_ratio를 각각 `_draw_bar()`에 전달.
-## 결과: stamina/charge/회전 사용 가능도가 같은 frame의 캐릭터 상태와 일치한다.
+## 결과: 좁은 HUD에서도 stamina/punch/회전 준비도가 잘리지 않고 보인다.
 func _draw_character_bars() -> void:
 	_draw_bar(
-		Rect2(Vector2(646.0, 424.0), Vector2(220.0, 12.0)),
+		STAMINA_BAR_RECT,
 		character.stamina / Stage4CharacterController.MAX_STAMINA,
 		CYAN
 	)
 	_draw_bar(
-		Rect2(Vector2(646.0, 452.0), Vector2(220.0, 10.0)),
+		PUNCH_BAR_RECT,
 		character.charge_ratio(),
 		ORANGE
 	)
 	_draw_bar(
-		Rect2(Vector2(646.0, 476.0), Vector2(220.0, 8.0)),
+		ROTATION_BAR_RECT,
 		1.0 - character.rotation_cooldown_ratio(),
 		Color("#6f57c9")
 	)
@@ -374,7 +469,7 @@ func _draw_ghost(rect: Rect2, piece_type: int) -> void:
 
 ## 상황: 고정/활성/ghost의 논리 보드 셀을 그리기 직전에 호출한다.
 ## 순서: hidden rows를 y에서 제거 → x/y에 CELL_SIZE 곱함 → BOARD_ORIGIN 더함.
-## 결과: 보드 좌표에 대응하는 32×32 View 로컬 Rect2를 반환한다.
+## 결과: 보드 좌표에 대응하는 48×48 View 로컬 Rect2를 반환한다.
 func _cell_rect(board_cell: Vector2i) -> Rect2:
 	var visible_y: int = board_cell.y - Stage4BoardModel.HIDDEN_ROWS # 화면 기준 0~19 y.
 	return Rect2(
@@ -391,7 +486,7 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	_stats_label.text = (
-		"점수\n%08d\n\n레벨\n%02d\n\n삭제한 줄\n%03d"
+		"점수                         %08d\n\n레벨                              %02d\n\n삭제한 줄                       %03d"
 		% [controller.score, controller.level, controller.total_lines]
 	)
 
@@ -403,16 +498,20 @@ func _refresh() -> void:
 		if character.rotation_cooldown_remaining <= 0.0
 		else "%.1f초" % character.rotation_cooldown_remaining
 	)
-	_character_label.text = (
-		"목숨  %s\n스태미나  %03d / 100\n펀치 단계  %d / 3\n회전 킥  %s"
-		% [
-			life_icons,
-			roundi(character.stamina),
-			character.charge_level(),
-			cooldown_text,
-		]
+	_life_label.text = "목숨      %s" % life_icons
+	_stamina_label.text = "스태미나                         %03d / 100" % roundi(
+		character.stamina
 	)
-	_feedback_label.text = character.feedback_text
+	_punch_label.text = "펀치 단계        %d / 3" % character.charge_level()
+	_rotation_label.text = "회전 킥                              %s" % cooldown_text
+	var self_respawn_ratio: float = character.self_respawn_hold_ratio()
+	_self_respawn_panel.visible = self_respawn_ratio > 0.0
+	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio
+	_feedback_label.text = (
+		"자력 재스폰 준비 중  %d%%" % roundi(self_respawn_ratio * 100.0)
+		if self_respawn_ratio > 0.0
+		else character.feedback_text
+	)
 
 	match controller.state:
 		Stage4GameController.GameState.PAUSED:

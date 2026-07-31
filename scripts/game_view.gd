@@ -287,7 +287,6 @@ func _draw_board() -> void:
 	for y: int in range(Stage4BoardModel.VISIBLE_HEIGHT):
 		for x: int in range(Stage4BoardModel.WIDTH):
 			var cell_rect: Rect2 = _cell_rect(Vector2i(x, y + Stage4BoardModel.HIDDEN_ROWS)) # 현재 화면 셀 사각형.
-			draw_rect(cell_rect, GRID_COLOR, false, 1.0)
 			var piece_type: int = controller.board.cells[y + Stage4BoardModel.HIDDEN_ROWS][x] # 고정 타입/EMPTY.
 			if piece_type != Stage4BoardModel.EMPTY:
 				_draw_block(cell_rect, piece_type, 1.0)
@@ -315,6 +314,13 @@ func _draw_board() -> void:
 				controller.active_type,
 				1.0
 			)
+
+	for x: int in range(Stage4BoardModel.WIDTH + 1):
+		var line_x: float = BOARD_ORIGIN.x + float(x) * CELL_SIZE
+		draw_line(Vector2(line_x, BOARD_ORIGIN.y), Vector2(line_x, BOARD_ORIGIN.y + BOARD_SIZE.y), GRID_COLOR)
+	for y: int in range(Stage4BoardModel.VISIBLE_HEIGHT + 1):
+		var line_y: float = BOARD_ORIGIN.y + float(y) * CELL_SIZE
+		draw_line(Vector2(BOARD_ORIGIN.x, line_y), Vector2(BOARD_ORIGIN.x + BOARD_SIZE.x, line_y), GRID_COLOR)
 
 
 ## 상황: `_draw()`가 우측 HUD에 다음 피스 미리보기를 표시할 때 호출한다.

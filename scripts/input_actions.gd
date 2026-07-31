@@ -33,12 +33,6 @@ const DEFINITIONS: Array[Dictionary] = [
 		"slots": 1,
 	},
 	{
-		"action": &"character_pull",
-		"label": "블록 당기기",
-		"defaults": [KEY_S],
-		"slots": 1,
-	},
-	{
 		"action": &"character_jump",
 		"label": "점프",
 		"defaults": [KEY_Z, KEY_SPACE],
@@ -58,8 +52,8 @@ const DEFINITIONS: Array[Dictionary] = [
 	},
 	{
 		"action": &"character_rotation_kick",
-		"label": "회전 킥",
-		"defaults": [KEY_V],
+		"label": "블록 플립",
+		"defaults": [KEY_S],
 		"slots": 1,
 	},
 	{

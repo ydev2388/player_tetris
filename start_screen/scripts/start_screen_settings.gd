@@ -175,6 +175,7 @@ func load_settings() -> void:
 		return
 
 	_load_bindings_from_config(config)
+	_migrate_rotation_kick_binding()
 	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
 		_migrate_self_respawn_binding()
 	_load_audio_from_config(config)
@@ -214,6 +215,15 @@ func _migrate_self_respawn_binding() -> void:
 			_bindings[SELF_RESPAWN_ACTION] = [key_code]
 			return
 	_bindings[SELF_RESPAWN_ACTION] = [KEY_NONE]
+
+
+## 상황: 블록 플립의 기존 기본키 V를 새 기본키 S로 옮길 때 호출한다.
+## 결과: 기존 기본값만 S로 옮기고, 사용자가 지정한 다른 키는 유지한다.
+func _migrate_rotation_kick_binding() -> void:
+	var rotation_action: StringName = &"character_rotation_kick"
+	var rotation_keys: Array[int] = get_action_keys(rotation_action)
+	if rotation_keys.size() == 1 and rotation_keys[0] == KEY_V:
+		_bindings[rotation_action] = [KEY_S]
 
 
 func _load_audio_from_config(config: ConfigFile) -> void:

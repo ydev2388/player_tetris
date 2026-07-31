@@ -13,7 +13,3 @@ const HUD_RECT: Rect2 = Rect2(Vector2(560.0, 80.0), Vector2(400.0, 960.0))
 
 static func scaled(value: float) -> float:
 	return value * DISPLAY_SCALE
-
-
-static func scaled_vector(value: Vector2) -> Vector2:
-	return value * DISPLAY_SCALE

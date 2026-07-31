@@ -45,6 +45,7 @@ collision_mask = 1
 floor_snap_length = 9.0
 floor_stop_on_slope = true
 safe_margin = 0.03
+platform_on_leave = 2
 script = ExtResource("4_character")
 
 [node name="Collider" type="CollisionShape2D" parent="BoardPhysics/Character"]

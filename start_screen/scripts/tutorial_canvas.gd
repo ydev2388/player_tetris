@@ -101,10 +101,9 @@ func _draw_movement_page() -> void:
 
 
 func _draw_block_action_page() -> void:
-	_draw_page_heading("2. 블록 조작", "밀고, 당기고, 회전시켜 길을 만드세요")
+	_draw_page_heading("2. 블록 조작", "밀고 회전시켜 길을 만드세요")
 	var cards: Array[Rect2] = [
 		Rect2(20.0, 70.0, 246.0, 382.0),
-		Rect2(287.0, 70.0, 246.0, 382.0),
 		Rect2(554.0, 70.0, 246.0, 382.0),
 	]
 	for card: Rect2 in cards:
@@ -117,21 +116,11 @@ func _draw_block_action_page() -> void:
 	_draw_character(Rect2(47.0, 241.0, 55.0, 106.0), 1.0)
 	_draw_tetromino(Vector2(125.0, 284.0), CYAN)
 	_draw_arrow(Vector2(155.0, 275.0), Vector2(213.0, 275.0), ORANGE, 4.0)
-	_text(Vector2(44.0, 392.0), "즉시 1칸 · 0.4초 2칸", 13, MUTED)
-	_text(Vector2(44.0, 415.0), "0.9초 3칸 밀기", 13, MUTED)
+	_text(Vector2(44.0, 392.0), "탭 1칸 · 0.4초 2칸", 13, MUTED)
+	_text(Vector2(44.0, 415.0), "0.9초 3칸 · 해제", 13, MUTED)
 
-	_draw_step_badge(Vector2(311.0, 104.0), 2, CYAN)
-	_text(Vector2(347.0, 113.0), "블록 당기기", 19, TEXT)
-	_key_chip(Vector2(455.0, 96.0), _binding(&"character_pull"), CYAN)
-	_draw_floor(Vector2(309.0, 360.0), 202.0)
-	_draw_character(Rect2(445.0, 241.0, 55.0, 106.0), 1.0)
-	_draw_tetromino(Vector2(324.0, 284.0), PURPLE)
-	_draw_arrow(Vector2(400.0, 275.0), Vector2(438.0, 275.0), CYAN, 4.0)
-	_text(Vector2(311.0, 392.0), "지상 · 4블록 이내", 13, MUTED)
-	_text(Vector2(311.0, 415.0), "성공 시 스태미나 10", 13, MUTED)
-
-	_draw_step_badge(Vector2(578.0, 104.0), 3, PURPLE)
-	_text(Vector2(614.0, 113.0), "회전 킥", 19, TEXT)
+	_draw_step_badge(Vector2(578.0, 104.0), 2, PURPLE)
+	_text(Vector2(614.0, 113.0), "블록 플립", 19, TEXT)
 	_key_chip(Vector2(722.0, 96.0), _binding(&"character_rotation_kick"), PURPLE)
 	_draw_floor(Vector2(576.0, 360.0), 202.0)
 	_draw_character(Rect2(579.0, 241.0, 55.0, 106.0), 1.0)
@@ -143,7 +132,7 @@ func _draw_block_action_page() -> void:
 		PURPLE
 	)
 	_text(Vector2(578.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
-	_text(Vector2(578.0, 415.0), "스태미나 25 · 쿨타임 2초", 13, MUTED)
+	_text(Vector2(578.0, 415.0), "쿨타임 2초", 13, MUTED)
 
 
 func _draw_wall_page() -> void:

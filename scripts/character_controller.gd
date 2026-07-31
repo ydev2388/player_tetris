@@ -46,7 +46,6 @@ const AIR_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 공중 무입력 감�
 const JUMP_VELOCITY: float = -350.0 * GIT_GRID_SCALE # 점프 시작 y속도. 위쪽이 음수다.
 const GRAVITY: float = 1000.0 * GIT_GRID_SCALE # 매초 y속도에 더할 중력(px/s²).
 const FALL_GRAVITY_MULTIPLIER: float = 1.0 # 하강 중 추가 중력 배율.
-const ACCELERATED_FALL_GRAVITY_MULTIPLIER: float = 1.2 # 비압착 피격 뒤 첫 착지까지 중력 배율.
 const MAX_FALL_SPEED: float = 3200.0 * Stage4Layout.DISPLAY_SCALE
 const COYOTE_TIME: float = 0.12 # 발판을 떠난 뒤에도 지상점프를 허용하는 초.
 const JUMP_BUFFER_TIME: float = 0.12 # 착지 전에 누른 점프를 기억하는 초.
@@ -62,9 +61,6 @@ const WALL_JUMP_STEER_ACCELERATION: float = 1500.0 * Stage4Layout.DISPLAY_SCALE
 # 자원과 행동 비용/지속시간. 이름의 단위가 없으면 픽셀 또는 초당 값이다.
 const MAX_STAMINA: float = 100.0 # stamina 상한과 reset 값.
 const HANG_STAMINA_DRAIN: float = MAX_STAMINA / 3.0 # 매달림 초당 소모량: 가득 차면 3초.
-const PULL_STAMINA_COST: float = 10.0 # 성공한 블록 당기기 1회의 비용.
-const PULL_RANGE: float = CELL_SIZE * 4.0 # 당기기 radial 최대 거리(px).
-const ROTATION_STAMINA_COST: float = 0.0 # 호환용 공개 상수; 회전 킥은 스태미나를 소모하지 않는다.
 const ROTATION_COOLDOWN: float = 2.0 # 성공 회전 킥 재사용 대기시간(초).
 const ROTATION_FAILED_COOLDOWN: float = 1.0 # 대상 없음/공간 부족 회전 킥 대기시간(초).
 const ROTATION_SPIN_DURATION: float = 0.42 # 전용 8 frame과 한 바퀴 회전의 전체 시간.
@@ -73,7 +69,7 @@ const POST_SPIN_APEX_SPEED: float = 40.0 * Stage4Layout.DISPLAY_SCALE # 종료 �
 const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무시하는 초.
 const ATTACK_COOLDOWN: float = 0.48 # 새 펀치 sequence 시작 간격(초).
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
-const PULL_ANIMATION_DURATION: float = 0.64 # 당기기 animation 우선 표시 초.
+const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # X release 뒤 주먹 판정을 유지하는 시간.
 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # InputMap 기본값 유틸.
@@ -91,24 +87,13 @@ const SFX_CHARGE_TIER1: AudioStream = preload("res://assets/sfx/06c_charge_tier1
 const SFX_CHARGE_READY: AudioStream = preload("res://assets/sfx/06d_charge_ready.wav")
 const SFX_CHARGE_RELEASE: AudioStream = preload("res://assets/sfx/06e_charge_release.wav")
 const SFX_BLOCK_ELIMINATION: AudioStream = preload("res://assets/sfx/07_block_elimination.wav")
+const SFX_WALL_CLIMB: AudioStream = preload("res://assets/sfx/09_wall_climb.wav")
 
-# 기존 공개 상수는 유지하고 실제 데이터만 전용 모듈에서 관리한다.
-const PLAYER_ANIMATIONS: Texture2D = ANIMATION_DATA.IDLE_TEXTURE # 외부/테스트 호환용 idle 별칭.
-const PLAYER_HANG_ANIMATIONS: Texture2D = ANIMATION_DATA.HANG_TEXTURE # hang texture 별칭.
-const PLAYER_ATTACK_ANIMATIONS: Texture2D = ANIMATION_DATA.ATTACK_TEXTURE # attack texture 별칭.
-const PLAYER_JUMP_ANIMATIONS: Texture2D = ANIMATION_DATA.JUMP_TEXTURE # jump texture 별칭.
-const PLAYER_ROTATION_KICK_ANIMATIONS: Texture2D = (
-	ANIMATION_DATA.ROTATION_KICK_TEXTURE
-) # 회전 킥 texture 별칭.
-const PLAYER_ANIMATION_REGIONS: Dictionary = ANIMATION_DATA.REGIONS # frame rect 표 별칭.
-const PLAYER_ANIMATION_FRAME_DURATIONS: Dictionary = ANIMATION_DATA.FRAME_DURATIONS # 시간 표 별칭.
-
-# 단계 1은 즉시 1칸, 0.4초/0.9초를 넘으면 추가 비용을 내고 한 칸씩 더 민다.
-const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # 각 1칸 밀기를 시도하는 hold 임계 초.
-const PUNCH_STAGE_COSTS: Array[float] = [0.0, 8.0, 10.0] # 각 단계 진입 시 추가 비용.
+# 0.4초/0.9초 hold 뒤 release하면 각각 2칸/3칸 차지 펀치를 실행한다.
+const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # charge 단계별 hold 임계 초.
 const PUNCH_TOTAL_COSTS: Array[float] = [0.0, 8.0, 18.0] # 단계별 누적 비용 조회표.
-const PUNCH_BASE_REACH: float = 72.0 * Stage4Layout.DISPLAY_SCALE
 const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상한(초).
+const PUNCH_HITBOX_WIDTH: float = 27.2 # 주먹 스프라이트 끝에서 5px 더 넓힌 전방 판정 길이(px).
 const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
 	28.0 * Stage4Layout.DISPLAY_SCALE,
@@ -129,7 +114,7 @@ var _charge_loop_player: AudioStreamPlayer
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
-var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림/당기기/회전에 사용.
+var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림에 사용.
 var facing: int = 1 # 바라보는 방향: 왼쪽 -1, 오른쪽 +1.
 var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 이동 branch를 실행.
 var is_meditating: bool = false # true면 정지·회복하고 Controller 테트리스 시간을 2배로 함.
@@ -159,12 +144,11 @@ var _wall_jump_wall_facing: int = 1 # 직전 벽점프가 출발한 벽 방향.
 var _variable_jump_active: bool = false # true면 jump release로 상승속도를 줄일 수 있음.
 var _attack_cooldown_remaining: float = 0.0 # 0보다 크면 새 펀치 sequence 시작 금지.
 var _attack_animation_remaining: float = 0.0 # 0보다 크면 ATTACK animation이 최우선.
-var _pull_animation_remaining: float = 0.0 # 0보다 크면 PULL animation 표시.
-var _punch_stage: int = 0 # 이번 charge에서 성공한 밀기 횟수 0~3.
-var _punch_blocked: bool = false # 한 단계 실패 후 같은 hold에서 이후 단계를 차단.
+var _pending_punch_stage: int = 0 # 0이면 없음, 1~3이면 판정 대기 중인 펀치 거리.
+var _pending_punch_hit_remaining: float = 0.0 # release 뒤 남은 주먹 판정 시간.
+var _charge_audio_started: bool = false # 차지 임계 도달 뒤 차지 사운드가 시작됐는지.
 var _animation_state: String = ANIMATION_DATA.IDLE # 현재 sprite frame table key.
 var _animation_time: float = 0.0 # 현재 animation_state에 머문 경과시간(초).
-var _accelerated_fall_active: bool = false # true면 첫 착지 전까지 공중 중력을 1.2배 적용.
 var _respawn_airborne_pending: bool = false # 순간이동 직후 이전 바닥 접지 cache를 한 번 무시.
 var _was_grounded_for_stamina: bool = true # 비접지→접지 전환에서만 stamina를 완충하기 위한 이전 상태.
 var _self_respawn_hold_time: float = 0.0 # Q 또는 사용자 지정 키를 연속으로 누른 시간.
@@ -231,6 +215,8 @@ func _physics_process(delta: float) -> void:
 func _stop_for_inactive_game() -> void:
 	_set_meditating(false)
 	velocity = Vector2.ZERO
+	_pending_punch_stage = 0
+	_pending_punch_hit_remaining = 0.0
 	if not Input.is_action_pressed(&"character_self_respawn"):
 		_reset_self_respawn_input()
 
@@ -287,9 +273,8 @@ func _can_start_meditating() -> bool:
 ## 순서: `_update_visual_state(delta)` → `validate_position()`.
 ## 결과: gameplay 상태에 맞는 sprite가 적용되고 새 블록 겹침/추락 피해가 처리된다.
 func _finish_physics_frame(delta: float) -> void:
+	_resolve_pending_punch(delta)
 	_update_visual_state(delta)
-	if _accelerated_fall_active and is_on_floor():
-		_accelerated_fall_active = false
 	validate_position()
 
 
@@ -308,7 +293,7 @@ func _handle_meditation(delta: float) -> void:
 
 	velocity.x = 0.0
 	velocity.y = minf(
-		velocity.y + GRAVITY * _current_fall_gravity_multiplier() * delta,
+		velocity.y + GRAVITY * delta,
 		MAX_FALL_SPEED
 	)
 	move_and_slide()
@@ -398,46 +383,32 @@ func _apply_gravity(grounded: bool, delta: float) -> void:
 	if grounded:
 		return
 	var gravity_multiplier: float = FALL_GRAVITY_MULTIPLIER if velocity.y > 0.0 else 1.0 # 하강/상승 배율.
-	gravity_multiplier *= _current_fall_gravity_multiplier()
 	velocity.y = minf(
 		velocity.y + GRAVITY * gravity_multiplier * delta,
 		MAX_FALL_SPEED
 	)
 
 
-## 상황: 공중에서 낙하 블록에 맞은 뒤 일반 중력과 가속 중력 중 하나가 필요할 때 호출한다.
-## 결과: 첫 착지 전에는 1.2, 그 외에는 1.0을 반환하며 입력이나 속도는 바꾸지 않는다.
-func _current_fall_gravity_multiplier() -> float:
-	return ACCELERATED_FALL_GRAVITY_MULTIPLIER if _accelerated_fall_active else 1.0
-
-
 ## 상황: 일반 이동 frame에서 단발 행동 입력을 읽을 때 호출한다.
-## 순서: 회전/당기기/점프의 just_pressed 값을 같은 순서로 `_dispatch_action_input()`에 전달.
+## 순서: 회전/점프의 just_pressed 값을 `_dispatch_action_input()`에 전달.
 ## 결과: 실제 우선순위 판단은 dispatcher 한곳에서 실행되어 테스트도 같은 경로를 사용할 수 있다.
 func _handle_action_input() -> void:
 	_dispatch_action_input(
 		Input.is_action_just_pressed(&"character_rotation_kick"),
-		Input.is_action_just_pressed(&"character_pull"),
 		Input.is_action_just_pressed(&"character_jump")
 	)
 
 
 ## 상황: 실입력 또는 테스트가 동시에 들어온 행동들의 우선순위를 결정할 때 호출한다.
-## 순서: 회전 있으면 jump 취소/회전 후 return → 당기기 성공 시 buffer 제거/return
-##       → 그 외에만 `_handle_jump_input()`.
-## 결과: 한 frame에 회전 킥 > 성공한 당기기 > 점프 중 하나만 시작된다.
+## 순서: 회전 있으면 jump 취소/회전 후 return → 그 외에만 `_handle_jump_input()`.
+## 결과: 한 frame에 회전 킥 또는 점프 중 하나만 시작된다.
 func _dispatch_action_input(
 	rotation_kick_pressed: bool,
-	pull_pressed: bool,
 	jump_pressed: bool
 ) -> void:
 	if rotation_kick_pressed:
 		_cancel_jump_intent()
 		_attempt_rotation_kick()
-		return
-
-	if pull_pressed and _attempt_pull_active_piece():
-		_jump_buffer_remaining = 0.0
 		return
 
 	_handle_jump_input(jump_pressed)
@@ -453,7 +424,7 @@ func _cancel_jump_intent() -> void:
 	_cancel_wall_jump_control()
 
 
-## 상황: 회전/당기기가 이번 frame을 소비하지 않았을 때 jump press를 처리한다.
+## 상황: 회전이 이번 frame을 소비하지 않았을 때 jump press를 처리한다.
 ## 순서: press+hang grace면 벽점프/return → press면 jump buffer 충전
 ##       → buffer와 coyote가 모두 남았으면 지상점프.
 ## 결과: grab 해제 직후 벽점프가 지상점프보다 우선하고 착지 전 입력도 보존된다.
@@ -520,6 +491,11 @@ func _handle_hanging(delta: float) -> void:
 	if _handle_hang_exit_conditions():
 		return
 	_follow_hang_body()
+	if not is_hanging:
+		return
+	if _has_fixed_support_underfoot():
+		_exit_hang()
+		return
 	if not _move_while_hanging():
 		return
 	_finish_hanging_frame(delta)
@@ -550,6 +526,10 @@ func _handle_hang_exit_conditions() -> bool:
 func _follow_hang_body() -> void:
 	if is_instance_valid(_hang_body):
 		var body_delta: Vector2 = _hang_body.global_position - _hang_last_global_position # body의 frame 이동량.
+		# ponytail: 2칸 초과 상향 이동은 다음 피스 스폰으로 간주한다; 큰 SRS kick이 필요하면 교체 signal로 바꾼다.
+		if body_delta.y < -CELL_SIZE * 2.0:
+			_exit_hang()
+			return
 		global_position += body_delta
 		_hang_last_global_position = _hang_body.global_position
 
@@ -626,113 +606,125 @@ func _perform_wall_jump() -> void:
 
 
 ## 상황: 명상이 아닌 모든 physics frame에서 X 펀치 hold 상태를 갱신할 때 호출한다.
-## 순서: just_pressed면 sequence 시작 → charging+pressed면 charge_time 누적/단계 전진
-##       → charging인데 release면 sequence 종료.
-## 결과: 한 번 누르면 즉시 1단계, 오래 누르면 0.4/0.9초에 추가 단계가 시도된다.
+## 순서: just_pressed면 sequence 시작 → hold 중에는 charge_time만 누적
+##       → release 때 일반 또는 차지 펀치를 한 번 실행한다.
+## 결과: 짧은 탭은 일반 펀치, 0.4/0.9초 hold는 각각 2칸/3칸 차지 펀치가 된다.
 func _handle_charge(delta: float) -> void:
 	if Input.is_action_just_pressed(&"character_punch"):
 		_start_punch_sequence()
 
 	if _charging and Input.is_action_pressed(&"character_punch"):
 		charge_time = minf(PUNCH_MAX_HOLD_TIME, charge_time + delta)
-		_advance_punch_stages()
+		if charge_time >= PUNCH_STAGE_TIMES[1]:
+			_start_charge_audio()
 		stats_changed.emit()
 	elif _charging:
+		if charge_time < PUNCH_STAGE_TIMES[1]:
+			_perform_tap_punch()
+		else:
+			_perform_charge_punch(push_distance_for_charge(charge_time))
 		_release_charge_punch()
 
 
 ## 상황: X가 새로 눌렸을 때 새 연속 펀치를 시작할 수 있는지 처리한다.
-## 순서: attack cooldown>0이면 종료 → charging=true → 시간/stage/block 초기화
-##       → cooldown 설정 → `_advance_punch_stages()`로 시간 0의 1단계 즉시 시도.
-## 결과: 쿨다운 중 입력은 무시되고, 가능하면 첫 1칸 펀치가 누른 frame에 실행된다.
+## 순서: attack cooldown>0이면 종료 → charging=true → 시간/stage 초기화
+##       → 차지 사운드 상태 초기화.
+## 결과: 쿨다운 중 입력은 무시되고, release 전까지 일반/차지 동작을 유보한다.
 func _start_punch_sequence() -> void:
 	if _attack_cooldown_remaining > 0.0:
 		return
 	_charging = true
 	charge_time = 0.0
-	_punch_stage = 0
-	_punch_blocked = false
+	_charge_audio_started = false
+
+
+## 상황: X를 짧게 눌렀다 놓았을 때 일반 펀치를 실행한다.
+## 결과: 공격 animation을 표시하고 0.1초 주먹 판정 중 맞은 활성 블록을 1칸 민다.
+func _perform_tap_punch() -> void:
+	_start_attack_animation()
 	_attack_cooldown_remaining = ATTACK_COOLDOWN
-	_play_sfx(SFX_CHARGE_START)
-	_start_charge_loop()
-	_advance_punch_stages()
-
-
-## 상황: sequence 시작 또는 X hold 중 현재 시간까지 도달한 punch 단계를 반영할 때 호출한다.
-## 순서: blocked=false, stage<3, charge_time>=다음 임계인 동안
-##       → 목표 단계/추가 비용 계산 → `_attempt_incremental_punch()` → 실패 시 중단.
-## 결과: 큰 delta가 여러 임계값을 넘어도 1→2→3 단계를 빠짐없이 순서대로 실행한다.
-func _advance_punch_stages() -> void:
-	# 큰 delta가 0.4초와 0.9초를 한 번에 지나도 각 단계를 순서대로 한 번씩 검증한다.
-	while (
-		not _punch_blocked
-		and _punch_stage < PUNCH_STAGE_TIMES.size()
-		and charge_time >= PUNCH_STAGE_TIMES[_punch_stage]
-	):
-		var next_stage: int = _punch_stage + 1 # 이번 while 반복에서 달성하려는 1~3 단계.
-		var stamina_cost: float = PUNCH_STAGE_COSTS[_punch_stage] # 이번 추가 1칸의 비용.
-		if not _attempt_incremental_punch(next_stage, stamina_cost):
-			break
-
-
-## 상황: charging 중 X가 더 이상 눌리지 않은 첫 frame에 호출한다.
-## 순서: charging=false → charge_time=0 → blocked=false → stats signal.
-## 결과: 현재 stage 표시가 0으로 돌아가고 다음 cooldown 이후 새 sequence가 가능하다.
-func _release_charge_punch() -> void:
-	_stop_charge_loop(true)
-	_charging = false
-	charge_time = 0.0
-	_punch_blocked = false
+	_play_sfx(SFX_PUNCH)
+	_begin_punch_hit_confirmation(1)
 	stats_changed.emit()
 
 
-## 상황: hold 시간이 새 임계에 도달해 활성 피스를 추가 1칸 밀려 할 때 호출한다.
-## 순서: stamina 검사 → 단계별 reach에서 근접 검사 → Controller 경로/이동 검사
-##       → 성공 시 비용 차감/stage/attack animation/feedback/signal.
-## 결과: 성공 true와 정확히 1칸 이동, 실패 false와 blocked=true로 같은 hold의 후속 시도를 막는다.
-func _attempt_incremental_punch(target_stage: int, stamina_cost: float) -> bool:
-	if stamina < stamina_cost:
-		_punch_blocked = true
-		_set_feedback("스태미나 부족")
-		return false
-	var stage_reach: float = PUNCH_BASE_REACH + float(target_stage - 1) * CELL_SIZE # 단계별 전방 x 도달거리.
-	if not _is_near_active_piece(
-		float(facing) * stage_reach,
-		Stage4Layout.scaled(74.0)
-	):
-		_punch_blocked = true
-		_set_feedback("활성 블록에 더 가까이")
-		return false
-	if not controller.push_active_piece(facing, 1):
-		_punch_blocked = true
-		_set_feedback("이동 경로가 막힘")
-		return false
-
-	stamina -= stamina_cost
-	_play_sfx(SFX_PUNCH)
-	if target_stage == 2:
-		_play_sfx_cue(SFX_CHARGE_TIER1)
-	elif target_stage == 3:
-		_play_sfx_cue(SFX_CHARGE_READY)
-	_punch_stage = target_stage
+func _start_attack_animation() -> void:
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_animation_state = ANIMATION_DATA.ATTACK
 	_animation_time = 0.0
-	_set_feedback("연속 펀치: %d칸" % target_stage)
+	queue_redraw()
+
+
+## 상황: charging 중 X가 더 이상 눌리지 않은 첫 frame에 호출한다.
+## 순서: charging=false → charge_time=0 → stats signal.
+## 결과: 현재 stage 표시가 0으로 돌아가고 다음 cooldown 이후 새 sequence가 가능하다.
+func _release_charge_punch() -> void:
+	_stop_charge_loop(_charge_audio_started)
+	_charging = false
+	charge_time = 0.0
+	_charge_audio_started = false
 	stats_changed.emit()
-	return true
+
+
+## 상황: X release 때 hold 시간에 맞는 차지 펀치를 실행할 때 호출한다.
+## 순서: 비용 검사 → attack 시작 → 0.1초 주먹 판정을 예약한다.
+## 결과: 판정 중 블록을 맞춘 경우에만 2칸 또는 3칸을 한 번에 민다.
+func _perform_charge_punch(target_stage: int) -> void:
+	var stamina_cost: float = PUNCH_TOTAL_COSTS[target_stage - 1]
+	if stamina < stamina_cost:
+		_set_feedback("스태미나 부족")
+		return
+	_start_attack_animation()
+	_attack_cooldown_remaining = ATTACK_COOLDOWN
+	_play_sfx(SFX_PUNCH)
+	_begin_punch_hit_confirmation(target_stage)
+	stats_changed.emit()
+
+
+func _begin_punch_hit_confirmation(target_stage: int) -> void:
+	_pending_punch_stage = target_stage
+	_pending_punch_hit_remaining = PUNCH_HIT_CONFIRM_SECONDS
+
+
+func _resolve_pending_punch(delta: float) -> void:
+	if _pending_punch_stage == 0:
+		return
+
+	var target_stage: int = _pending_punch_stage
+	if _punch_hits_active_piece():
+		_pending_punch_stage = 0
+		_pending_punch_hit_remaining = 0.0
+		if controller.push_active_piece(facing, target_stage):
+			if target_stage == 1:
+				_set_feedback("펀치: 1칸")
+			else:
+				stamina -= PUNCH_TOTAL_COSTS[target_stage - 1]
+				if target_stage == 2:
+					_play_sfx_cue(SFX_CHARGE_TIER1)
+				else:
+					_play_sfx_cue(SFX_CHARGE_READY)
+				_set_feedback("차지 펀치: %d칸" % target_stage)
+		else:
+			_set_feedback("이동 경로가 막힘")
+		stats_changed.emit()
+		return
+
+	_pending_punch_hit_remaining = maxf(0.0, _pending_punch_hit_remaining - delta)
+	if _pending_punch_hit_remaining <= 0.0:
+		_pending_punch_stage = 0
+		_set_feedback("일반 펀치" if target_stage == 1 else "공격이 빗나감")
 
 
 ## 상황: 명상처럼 펀치와 배타적인 상태에 진입할 때 호출한다.
-## 순서: charging이 아니면 종료 → charging/time/blocked 초기화 → stats signal.
+## 순서: charging이 아니면 종료 → charging/time 초기화 → stats signal.
 ## 결과: 이미 성공한 피스 이동은 유지하고 아직 진행 중인 hold 상태만 취소한다.
 func _cancel_punch_sequence() -> void:
 	if not _charging:
 		return
-	_stop_charge_loop(true)
+	_stop_charge_loop(_charge_audio_started)
 	_charging = false
 	charge_time = 0.0
-	_punch_blocked = false
+	_charge_audio_started = false
 	stats_changed.emit()
 
 
@@ -772,63 +764,7 @@ func _set_meditating(active: bool) -> void:
 	stats_changed.emit()
 
 
-## 상황: S 당기기가 action 우선순위에서 선택됐을 때 호출한다.
-## 순서: 지상/상태 검사 → stamina → radial 거리 → 피스 중심과 캐릭터 x 차이
-##       → 캐릭터 쪽 방향 계산 → Controller 1칸 이동 → 비용/animation/feedback/signal.
-## 결과: 모든 조건과 경로가 유효할 때만 true와 1칸 이동, 실패는 비용 없이 false다.
-func _attempt_pull_active_piece() -> bool:
-	if (
-		controller.state != Stage4GameController.GameState.PLAYING
-		or not is_on_floor()
-		or is_hanging
-		or is_meditating
-		or _charging
-	):
-		_set_feedback("지상에서만 블록 당기기 가능")
-		return false
-	if stamina < PULL_STAMINA_COST:
-		_set_feedback("스태미나 부족")
-		return false
-	if not _is_near_active_piece(0.0, PULL_RANGE):
-		_set_feedback("활성 블록이 너무 멀리 있음")
-		return false
-
-	var piece_center_x: float = _active_piece_center_x() # 활성 네 칸의 평균 픽셀 x.
-	var horizontal_difference: float = position.x - piece_center_x # 양수면 캐릭터가 피스 오른쪽.
-	if absf(horizontal_difference) < CELL_SIZE * 0.25:
-		_set_feedback("같은 열의 블록은 당길 수 없음")
-		return false
-	var pull_direction: int = 1 if horizontal_difference > 0.0 else -1 # 피스가 캐릭터 쪽으로 갈 방향.
-	if not controller.push_active_piece(pull_direction, 1):
-		_set_feedback("당기는 경로가 막힘")
-		return false
-
-	stamina -= PULL_STAMINA_COST
-	_pull_animation_remaining = PULL_ANIMATION_DURATION
-	_animation_state = ANIMATION_DATA.PULL
-	_animation_time = 0.0
-	_set_feedback("블록 당기기: 1칸")
-	stats_changed.emit()
-	return true
-
-
-## 상황: 당기기 방향을 정하기 위해 활성 피스의 수평 중심이 필요할 때 호출한다.
-## 순서: 네 로컬 셀 조회 → 각 절대 셀 중심 x를 누적 → 셀 수로 나눔.
-## 결과: BoardPhysics 로컬 좌표계의 평균 픽셀 x를 반환한다.
-func _active_piece_center_x() -> float:
-	var piece_cells: Array[Vector2i] = Stage4TetrominoData.get_cells( # 현재 회전의 네 로컬 셀.
-		controller.active_type,
-		controller.active_rotation
-	)
-	var center_x: float = 0.0 # 각 셀 중심 x의 합; 마지막에 평균으로 바뀐다.
-	for local_cell: Vector2i in piece_cells:
-		center_x += (
-			float(controller.active_origin.x + local_cell.x) + 0.5
-		) * CELL_SIZE
-	return center_x / float(piece_cells.size())
-
-
-## 상황: V 회전 킥이 action 우선순위에서 선택됐을 때 호출한다.
+## 상황: S 블록 플립이 action 우선순위에서 선택됐을 때 호출한다.
 ## 순서: cooldown → spin 시작 → 활성 피스 88px 근접 검사
 ##       → 가까우면 실제 물리 몸체 점유 셀을 계산해 Controller.try_rotate(facing, 금지 셀)
 ##       → 성공/공간 부족/대상 없음별 y속도/cooldown/feedback → signal.
@@ -970,6 +906,7 @@ func _try_start_hang() -> void:
 		_pending_rotation_launch_velocity = 0.0
 		_cancel_wall_jump_control()
 		velocity = Vector2.ZERO
+		_play_sfx(SFX_WALL_CLIMB)
 		_set_feedback("벽 점프 재매달리기" if returned_from_wall_jump else "매달리기")
 
 
@@ -1005,15 +942,6 @@ func handle_active_piece_descended(
 
 	if _has_fixed_support_underfoot():
 		take_damage()
-	else:
-		_accelerated_fall_active = true
-		_set_feedback("낙하 충격: 중력 ×1.2")
-
-
-## 상황: 테스트/UI가 비압착 피격 뒤 가속 낙하 상태를 확인할 때 호출한다.
-## 결과: 첫 물리 발판 착지 전이면 true, 평상시에는 false다.
-func is_accelerated_falling() -> bool:
-	return _accelerated_fall_active
 
 
 ## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸통 픽셀에 닿는지 판정한다.
@@ -1134,7 +1062,6 @@ func validate_position() -> void:
 		return
 	position = safe_position as Vector2
 	velocity = Vector2.ZERO
-	_accelerated_fall_active = false
 	_set_feedback("보드 이탈: 안전 위치 복귀")
 
 
@@ -1165,7 +1092,6 @@ func take_damage() -> void:
 func _lose_life_and_respawn(feedback_message: String) -> void:
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
-	_accelerated_fall_active = false
 	_set_meditating(false)
 	_play_sfx(SFX_HURT)
 	_exit_hang()
@@ -1176,10 +1102,9 @@ func _lose_life_and_respawn(feedback_message: String) -> void:
 	_charging = false
 	_stop_charge_loop()
 	charge_time = 0.0
-	_punch_stage = 0
-	_punch_blocked = false
 	_attack_animation_remaining = 0.0
-	_pull_animation_remaining = 0.0
+	_pending_punch_stage = 0
+	_pending_punch_hit_remaining = 0.0
 	_spin_remaining = 0.0
 	_spin_elapsed = 0.0
 	_pending_rotation_launch_velocity = 0.0
@@ -1216,12 +1141,12 @@ func self_respawn_hold_ratio() -> float:
 
 
 ## 상황: GameView/테스트가 현재 연속 펀치 단계를 표시·검증할 때 호출한다.
-## 순서: charging이 아니면 0 조기 반환, 맞으면 `_punch_stage` 반환.
+## 순서: charging이 아니면 0 조기 반환, 맞으면 현재 hold 시간의 단계를 계산한다.
 ## 결과: 외부에서 내부 flag를 직접 읽지 않고 0~3 단계를 얻는다.
 func charge_level() -> int:
 	if not _charging:
 		return 0
-	return _punch_stage
+	return push_distance_for_charge(charge_time)
 
 
 ## 상황: charge bar와 sprite glow가 펀치 hold 진행률을 요구할 때 호출한다.
@@ -1256,7 +1181,33 @@ static func stamina_cost_for_charge(seconds: float) -> float:
 	return PUNCH_TOTAL_COSTS[push_distance_for_charge(seconds) - 1]
 
 
-## 상황: punch/pull/rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
+## 상황: 펀치가 활성 블록을 실제로 때렸는지 확인할 때 호출한다.
+## 순서: 몸 바로 앞의 좁은 주먹 Rect를 만들고 활성 피스 셀과 양의 면적 교차를 검사한다.
+## 결과: 블록이 멀리 있으면 false이며, 몸에 닿은 전방 블록만 true다.
+func _punch_hits_active_piece() -> bool:
+	return _active_piece_overlaps_rect(_punch_hitbox_rect())
+
+
+func _punch_hitbox_rect() -> Rect2:
+	var body_rect: Rect2 = _character_collider_rect()
+	var fist_x: float = (
+		body_rect.end.x if facing > 0 else body_rect.position.x - PUNCH_HITBOX_WIDTH
+	)
+	return Rect2(
+		Vector2(fist_x, body_rect.position.y),
+		Vector2(PUNCH_HITBOX_WIDTH, body_rect.size.y)
+	)
+
+
+func _draw() -> void:
+	if _attack_animation_remaining <= 0.0:
+		return
+	var hitbox: Rect2 = _punch_hitbox_rect()
+	hitbox.position = hitbox.position - position
+	draw_rect(hitbox, Color(1.0, 0.15, 0.1, 0.9), false, 2.0)
+
+
+## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
 ## 순서: 활성 네 셀 중심 계산 → difference=cell-character
 ##       → horizontal_reach=0이면 원형 거리, 아니면 같은 방향/x reach/y reach 검사.
 ## 결과: 셀 하나라도 범위 안이면 true이며 피스/캐릭터 상태는 바꾸지 않는다.
@@ -1402,10 +1353,10 @@ func _board_cell_rect(cell: Vector2i) -> Rect2:
 ##       → feedback 만료 시 text clear/signal.
 ## 결과: timer가 음수가 되지 않고 0을 경계로 각 기능이 자동 종료된다.
 func _update_timers(delta: float) -> void:
+	var attack_was_active: bool = _attack_animation_remaining > 0.0
 	rotation_cooldown_remaining = maxf(0.0, rotation_cooldown_remaining - delta)
 	_attack_cooldown_remaining = maxf(0.0, _attack_cooldown_remaining - delta)
 	_attack_animation_remaining = maxf(0.0, _attack_animation_remaining - delta)
-	_pull_animation_remaining = maxf(0.0, _pull_animation_remaining - delta)
 	_invulnerability_remaining = maxf(0.0, _invulnerability_remaining - delta)
 	_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
 	_coyote_remaining = maxf(0.0, _coyote_remaining - delta)
@@ -1413,6 +1364,8 @@ func _update_timers(delta: float) -> void:
 	_hang_regrab_remaining = maxf(0.0, _hang_regrab_remaining - delta)
 	_hang_jump_grace_remaining = maxf(0.0, _hang_jump_grace_remaining - delta)
 	_wall_jump_control_remaining = maxf(0.0, _wall_jump_control_remaining - delta)
+	if attack_was_active or _attack_animation_remaining > 0.0:
+		queue_redraw()
 	if _feedback_remaining <= 0.0 and not feedback_text.is_empty():
 		feedback_text = ""
 		feedback_changed.emit()
@@ -1447,7 +1400,7 @@ func _update_spin_visual(delta: float) -> void:
 		sprite.rotation = 0.0
 		_seed_post_spin_animation()
 	else:
-		sprite.rotation = TAU * eased_progress * float(_spin_direction)
+		sprite.rotation = -TAU * eased_progress * float(_spin_direction)
 
 
 ## 상황: 한 바퀴 완료 후 회전 킥 전용 상태에서 실제 이동 상태 animation으로 돌아갈 때 호출한다.
@@ -1536,15 +1489,13 @@ func _advance_character_animation(delta: float) -> void:
 
 
 ## 상황: 겹칠 수 있는 gameplay flag 중 표시할 animation 하나를 고를 때 호출한다.
-## 순서: 회전 킥 → attack timer → pull timer → hanging → 비접지 jump → idle 순 조기 반환.
-## 결과: `rotation kick > attack > pull > hang > jump > idle` 우선순위 key를 반환한다.
+## 순서: 회전 킥 → attack timer → hanging → 비접지 jump → idle 순 조기 반환.
+## 결과: `rotation kick > attack > hang > jump > idle` 우선순위 key를 반환한다.
 func _get_animation_state() -> String:
 	if _spin_remaining > 0.0:
 		return ANIMATION_DATA.ROTATION_KICK
 	if _attack_animation_remaining > 0.0:
 		return ANIMATION_DATA.ATTACK
-	if _pull_animation_remaining > 0.0:
-		return ANIMATION_DATA.PULL
 	if is_hanging:
 		return ANIMATION_DATA.HANG
 	if not is_on_floor():
@@ -1627,6 +1578,14 @@ func _start_charge_loop() -> void:
 	_charge_loop_player.play()
 
 
+func _start_charge_audio() -> void:
+	if _charge_audio_started:
+		return
+	_charge_audio_started = true
+	_play_sfx(SFX_CHARGE_START)
+	_start_charge_loop()
+
+
 func _stop_charge_loop(play_release: bool = false) -> void:
 	_charge_loop_player.stop()
 	if play_release:
@@ -1656,8 +1615,7 @@ func _reset_character() -> void:
 	rotation_cooldown_remaining = 0.0
 	feedback_text = ""
 	_charging = false
-	_punch_stage = 0
-	_punch_blocked = false
+	_charge_audio_started = false
 	_invulnerability_remaining = 0.0
 	_feedback_remaining = 0.0
 	_spin_remaining = 0.0
@@ -1675,10 +1633,10 @@ func _reset_character() -> void:
 	_variable_jump_active = false
 	_attack_cooldown_remaining = 0.0
 	_attack_animation_remaining = 0.0
-	_pull_animation_remaining = 0.0
+	_pending_punch_stage = 0
+	_pending_punch_hit_remaining = 0.0
 	_animation_state = ANIMATION_DATA.IDLE
 	_animation_time = 0.0
-	_accelerated_fall_active = false
 	_respawn_airborne_pending = false
 	_was_grounded_for_stamina = true
 	_reset_self_respawn_input()

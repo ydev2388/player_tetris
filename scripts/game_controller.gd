@@ -88,11 +88,11 @@ func _ready() -> void:
 	reset_game()
 
 
-## 상황: Godot idle frame마다 호출되는 C++ update loop 대응 함수다.
+## 상황: Godot physics frame마다 호출되는 C++ update loop 대응 함수다.
 ## 순서: restart 조기 처리 → pause 처리 → PLAYING 검사 → 명상 delta 계산
 ##       → `_advance_gravity()` → `_advance_lock_delay()`.
 ## 결과: 입력과 경과시간에 따라 피스가 낙하·고정되며 pause에서는 진행되지 않는다.
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed(&"restart_game"):
 		reset_game()
 		return
@@ -226,7 +226,7 @@ func _choose_random_spawn_origin(piece_type: int) -> Variant:
 	return candidates[index]
 
 
-## 상황: 캐릭터 펀치/당기기가 활성 피스를 수평으로 여러 칸 밀 때 호출한다.
+## 상황: 캐릭터 펀치가 활성 피스를 수평으로 여러 칸 밀 때 호출한다.
 ## 순서: 입력/state 검사 → 방향 ±1 정규화 → 모든 중간 위치 검증
 ##       → 이동 전 접지 저장 → origin 이동 → lock delay 조정 → emit.
 ## 결과: 전 경로가 비었을 때만 원자적으로 이동해 true, 막히면 변화 없이 false다.

@@ -63,6 +63,12 @@ const DEFINITIONS: Array[Dictionary] = [
 		"slots": 1,
 	},
 	{
+		"action": &"character_self_respawn",
+		"label": "자력 재스폰",
+		"defaults": [KEY_Q],
+		"slots": 1,
+	},
+	{
 		"action": &"pause_game",
 		"label": "일시정지",
 		"defaults": [KEY_P, KEY_ESCAPE],

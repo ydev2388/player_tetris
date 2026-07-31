@@ -228,7 +228,7 @@ func _draw_system_page() -> void:
 	_text(Vector2(178.0, 143.0), "바닥에서 키 유지", 15, TEXT)
 	_text(Vector2(178.0, 179.0), "캐릭터 행동 정지", 14, MUTED)
 	_text(Vector2(178.0, 211.0), "블록 낙하·잠금 시간 ×2", 14, CYAN)
-	_text(Vector2(178.0, 243.0), "스태미나 빠른 회복", 14, MUTED)
+	_text(Vector2(178.0, 243.0), "스태미나 회복 없음", 14, MUTED)
 	_text(Vector2(178.0, 411.0), "키를 놓거나 발판을 잃으면 즉시 종료", 13, ORANGE)
 
 	_text(Vector2(536.0, 112.0), "SYSTEM", 18, TEXT)
@@ -244,8 +244,14 @@ func _draw_system_page() -> void:
 		"다시 시작",
 		ORANGE
 	)
-	_text(Vector2(536.0, 305.0), "목숨이 0이 되거나\n안전한 칸이 없으면\n게임 오버입니다.", 15, MUTED)
-	_text(Vector2(536.0, 410.0), "설정한 키가 이 화면에도 반영됩니다.", 12, CYAN)
+	_draw_shortcut_row(
+		Vector2(536.0, 297.0),
+		_binding(&"character_self_respawn"),
+		"1초 유지: 목숨 -1 후 상단 재스폰",
+		CYAN
+	)
+	_text(Vector2(536.0, 376.0), "마지막 목숨이거나 안전한 칸이 없으면\n게임 오버입니다.", 13, MUTED)
+	_text(Vector2(536.0, 438.0), "착지 시 100 · 공중/벽 충전 없음", 11, CYAN)
 
 
 func _draw_page_heading(title: String, subtitle: String) -> void:

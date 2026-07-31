@@ -14,6 +14,7 @@ const TUTORIAL_CANVAS_SCRIPT: Script = preload(
 	"res://start_screen/scripts/tutorial_canvas.gd"
 )
 const UI_SCRIPT: Script = preload("res://start_screen/scripts/start_screen_ui.gd")
+const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
 
 const BACKGROUND: Color = Color("#f7f8fb")
 const PANEL: Color = Color("#ffffff")
@@ -58,6 +59,9 @@ var _music_value_label: Label
 var _sfx_value_label: Label
 var _game_host: Control
 var _game_instance: Node
+var _select_sfx_player: AudioStreamPlayer
+var _select_sfx_timer: Timer
+var _skip_initial_select_sfx: bool = true
 
 var _capture_overlay: Control
 var _capture_label: Label
@@ -79,6 +83,15 @@ func _ready() -> void:
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
 	add_child(settings)
+	_select_sfx_player = AudioStreamPlayer.new()
+	_select_sfx_player.bus = &"SFX"
+	_select_sfx_player.volume_db = -20.0
+	add_child(_select_sfx_player)
+	_select_sfx_timer = Timer.new()
+	_select_sfx_timer.one_shot = true
+	_select_sfx_timer.wait_time = 0.06
+	_select_sfx_timer.timeout.connect(_select_sfx_player.stop)
+	add_child(_select_sfx_timer)
 
 	_build_interface()
 	_refresh_key_buttons()
@@ -308,6 +321,7 @@ func _build_main_screen() -> void:
 			18
 		)
 		button.pressed.connect(data[2])
+		button.focus_entered.connect(_play_select_sfx)
 		_main_buttons.append(button)
 
 	_create_label(
@@ -833,6 +847,15 @@ func _show_message(message: String) -> void:
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+
+
+func _play_select_sfx() -> void:
+	if _skip_initial_select_sfx:
+		_skip_initial_select_sfx = false
+		return
+	_select_sfx_player.stream = SFX_SELECT
+	_select_sfx_player.play()
+	_select_sfx_timer.start()
 
 
 func _create_screen(screen_name: String, screen_type: Screen) -> Control:

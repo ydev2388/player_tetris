@@ -1,7 +1,7 @@
-class_name Stage4Layout
+class_name MainLayout
 extends RefCounted
 
-## Stage 4의 화면·물리 픽셀 배율을 한 곳에서 공유한다.
+## Main의 화면·물리 픽셀 배율을 한 곳에서 공유한다.
 const BASE_CELL_SIZE: float = 32.0
 const DISPLAY_SCALE: float = 1.5
 const CELL_SIZE: float = BASE_CELL_SIZE * DISPLAY_SCALE

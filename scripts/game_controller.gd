@@ -1,4 +1,4 @@
-class_name Stage4GameController
+class_name MainGameController
 extends Node
 
 ## [역할 / C++ 대응]
@@ -58,15 +58,15 @@ const I_KICKS: Dictionary = {
 }
 
 # authoritative game state. View/Physics/Character는 읽거나 public method로만 변경한다.
-var board: Stage4BoardModel = Stage4BoardModel.new() # 고정 셀을 소유하는 유일한 논리 보드.
-var bag: Stage4PieceBag # 아직 나오지 않은 7-bag 피스 순서를 소유한다.
+var board: MainBoardModel = MainBoardModel.new() # 고정 셀을 소유하는 유일한 논리 보드.
+var bag: MainPieceBag # 아직 나오지 않은 7-bag 피스 순서를 소유한다.
 var state: GameState = GameState.PLAYING # 입력/시간 진행 허용 여부를 결정한다.
 var meditation_active: bool = false # true면 테트리스 시간만 2배로 진행된다.
 
-var active_type: int = Stage4TetrominoData.Type.T # 현재 낙하 중인 Type enum 정수.
+var active_type: int = MainTetrominoData.Type.T # 현재 낙하 중인 Type enum 정수.
 var active_rotation: int = 0 # 활성 피스 회전 상태 0/1/2/3 = 0/90/180/270도.
 var active_origin: Vector2i = Vector2i(3, SPAWN_Y) # 로컬 셀을 더할 보드 원점.
-var next_type: int = Stage4TetrominoData.Type.I # 다음 spawn의 타입.
+var next_type: int = MainTetrominoData.Type.I # 다음 spawn의 타입.
 
 var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
 var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
@@ -148,7 +148,7 @@ func _advance_lock_delay(effective_delta: float) -> void:
 ## 결과: 이전 상태가 모두 폐기되고 같은 seed면 같은 게임 순서를 재현한다.
 func reset_game(seed_value: int = -1) -> void:
 	board.reset()
-	bag = Stage4PieceBag.new(seed_value)
+	bag = MainPieceBag.new(seed_value)
 	if seed_value >= 0:
 		_spawn_random.seed = seed_value + SPAWN_RANDOM_SEED_OFFSET
 	else:
@@ -197,7 +197,7 @@ func set_meditation_active(active: bool) -> void:
 ##       → 보드 안 원점 x 순회 → `can_place()` 가능한 원점만 append.
 ## 결과: 현재 보드에서 실제 배치 가능한 Vector2i 후보 배열을 반환한다.
 func _valid_spawn_origins(piece_type: int) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = Stage4TetrominoData.get_cells(piece_type, 0) # 회전 0의 로컬 셀.
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(piece_type, 0) # 회전 0의 로컬 셀.
 	var candidates: Array[Vector2i] = [] # 실제 배치 가능한 spawn 원점 목록.
 	if cells.is_empty():
 		return candidates
@@ -208,7 +208,7 @@ func _valid_spawn_origins(piece_type: int) -> Array[Vector2i]:
 		minimum_x = mini(minimum_x, cell.x)
 		maximum_x = maxi(maximum_x, cell.x)
 
-	for origin_x: int in range(-minimum_x, Stage4BoardModel.WIDTH - maximum_x):
+	for origin_x: int in range(-minimum_x, MainBoardModel.WIDTH - maximum_x):
 		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 현재 검사 중인 spawn 원점.
 		if board.can_place(piece_type, 0, origin):
 			candidates.append(origin)
@@ -257,7 +257,7 @@ func try_rotate(
 ) -> bool:
 	if state != GameState.PLAYING:
 		return false
-	if active_type == Stage4TetrominoData.Type.O:
+	if active_type == MainTetrominoData.Type.O:
 		if _piece_overlaps_forbidden_cells(
 			active_type,
 			active_rotation,
@@ -271,7 +271,7 @@ func try_rotate(
 	var old_rotation: int = active_rotation # SRS 시작 회전.
 	var new_rotation: int = posmod(active_rotation + direction, 4) # 0~3 목표 회전.
 	var transition: String = "%d>%d" % [old_rotation, new_rotation] # 예: "0>1".
-	var kick_table: Dictionary = I_KICKS if active_type == Stage4TetrominoData.Type.I else JLSTZ_KICKS # 모양별 표.
+	var kick_table: Dictionary = I_KICKS if active_type == MainTetrominoData.Type.I else JLSTZ_KICKS # 모양별 표.
 	var kick_tests: Array = kick_table.get(transition, [Vector2i.ZERO]) # 시험할 offset 목록.
 	var was_grounded: bool = is_grounded() # 회전 전 접지 snapshot.
 
@@ -306,7 +306,7 @@ func _piece_overlaps_forbidden_cells(
 ) -> bool:
 	if forbidden_cells.is_empty():
 		return false
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(piece_type, rotation):
+	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
 		if origin + local_cell in forbidden_cells:
 			return true
 	return false

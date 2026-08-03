@@ -1,11 +1,11 @@
-class_name Stage4TetrominoData
+class_name MainTetrominoData
 extends RefCounted
 
 ## [역할 / C++ 대응]
 ## 테트로미노 7종의 모양, 색, 표시 이름을 제공하는 불변 데이터 유틸리티다.
 ## `class_name`은 전역에서 쓸 수 있는 타입 이름을 등록하며, `extends RefCounted`는
 ## C++의 참조 카운트 기반 경량 객체와 비슷하다. 모든 API가 `static func`이므로
-## 인스턴스를 만들지 않고 `Stage4TetrominoData.get_cells(...)`처럼 호출한다.
+## 인스턴스를 만들지 않고 `MainTetrominoData.get_cells(...)`처럼 호출한다.
 ##
 ## [호출 관계]
 ## 호출자: PieceBag(종류 개수), BoardModel(배치/고정), GameController(스폰/회전),
@@ -25,18 +25,6 @@ enum Type {
 
 const TYPE_COUNT: int = 7 # Type enum에 들어 있는 서로 다른 테트로미노 종류 수.
 
-# Type enum 정수를 같은 index의 표시 색에 대응시킨다.
-const COLORS: Array[Color] = [
-	Color("#38d9ff"), # I
-	Color("#4d7cff"), # J
-	Color("#ff9f43"), # L
-	Color("#ffd93d"), # O
-	Color("#56e39f"), # S
-	Color("#b86bff"), # T
-	Color("#ff5c74"), # Z
-]
-
-
 ## 상황: 보드 판정, 렌더링, 충돌체, 캐릭터 상호작용이 피스 모양을 요구할 때 호출된다.
 ## 순서: ① `_base_cells()`로 0도 모양 복사 ② O면 즉시 반환
 ##       ③ rotation을 0~3으로 정규화 ④ 그 횟수만큼 `_rotate_clockwise()` 적용.
@@ -50,15 +38,6 @@ static func get_cells(piece_type: int, rotation: int) -> Array[Vector2i]:
 	for _turn: int in range(turns):
 		cells = _rotate_clockwise(cells, piece_type == Type.I)
 	return cells
-
-
-## 상황: 테스트나 보조 UI가 타입에 대응하는 대표색을 요구할 때 호출된다.
-## 순서: ① 배열 index 범위 검사 ② 범위 밖이면 흰색, 안이면 COLORS의 같은 index 조회.
-## 결과: Color 값을 반환하며 데이터 테이블은 변경하지 않는다.
-static func get_color(piece_type: int) -> Color:
-	if piece_type < 0 or piece_type >= COLORS.size():
-		return Color.WHITE
-	return COLORS[piece_type]
 
 
 ## 상황: GameView._draw_block()이 스프라이트 atlas의 문자열 key를 만들 때 호출한다.

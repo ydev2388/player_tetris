@@ -26,7 +26,6 @@ func _init(custom_settings_path: String = DEFAULT_SETTINGS_PATH) -> void:
 
 func _ready() -> void:
 	load_settings()
-	ensure_audio_buses()
 	apply_bindings()
 	apply_audio()
 
@@ -73,6 +72,8 @@ func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dic
 		return _failure("변경할 수 없는 키 슬롯입니다.")
 	if key_code == KEY_NONE:
 		return _failure("주 키는 비워둘 수 없습니다.")
+	if key_code == KEY_ESCAPE:
+		return _failure("Esc는 메뉴 복귀 전용 키입니다.")
 
 	var conflict: Dictionary = find_conflict(key_code, action_name, slot_index)
 	if not conflict.is_empty():
@@ -175,6 +176,7 @@ func load_settings() -> void:
 		return
 
 	_load_bindings_from_config(config)
+	_restore_escape_bindings()
 	_migrate_rotation_kick_binding()
 	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
 		_migrate_self_respawn_binding()
@@ -204,6 +206,30 @@ func _load_bindings_from_config(config: ConfigFile) -> void:
 		)
 		if not parsed.is_empty():
 			_bindings[action_name] = parsed
+
+
+## 상황: Esc가 저장된 이전 키 설정을 불러올 때 호출한다.
+## 결과: Esc만 제거하고 다른 유효 키는 유지하며, 남은 키가 없을 때만 기본값을 쓴다.
+func _restore_escape_bindings() -> void:
+	for definition: Dictionary in ACTION_DEFINITIONS:
+		var action_name: StringName = definition["action"]
+		var keys: Array[int] = get_action_keys(action_name)
+		if KEY_ESCAPE not in keys:
+			continue
+		var filtered_keys: Array[int] = []
+		for key_code: int in keys:
+			if key_code != KEY_ESCAPE:
+				filtered_keys.append(key_code)
+		var has_valid_key: bool = false
+		for key_code: int in filtered_keys:
+			if key_code != KEY_NONE:
+				has_valid_key = true
+				break
+		_bindings[action_name] = (
+			filtered_keys
+			if has_valid_key
+			else INPUT_ACTIONS.get_default_keys(action_name)
+		)
 
 
 ## 상황: 기존 설정 파일에 새 자력 재스폰 동작이 아직 없을 때 한 번 계산한다.

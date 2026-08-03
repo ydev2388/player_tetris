@@ -1,4 +1,4 @@
-class_name Stage4CharacterController
+class_name MainCharacterController
 extends CharacterBody2D
 
 ## [역할 / C++ 대응]
@@ -22,20 +22,19 @@ signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
 
 # 좌표/이동 상수. Godot 2D는 +x가 오른쪽, +y가 아래이므로 점프 속도는 음수다.
 # GIT_GRID_SCALE은 원본 28px 기준 수치를 현재 48px 셀에 맞추는 배율이다.
-const CELL_SIZE: float = Stage4Layout.CELL_SIZE # 보드 한 셀의 표시·물리 크기.
+const CELL_SIZE: float = MainLayout.CELL_SIZE # 보드 한 셀의 표시·물리 크기.
 const GIT_GRID_SCALE: float = CELL_SIZE / 28.0 # 원본 28px 물리값을 48px 보드로 환산하는 배율.
-const CHARACTER_WIDTH: float = CELL_SIZE # 논리 피해 판정 너비: 1셀.
 const CHARACTER_HEIGHT: float = CELL_SIZE * 2.0 # 논리 피해 판정 높이: 2셀.
-const CHARACTER_COLLIDER_WIDTH: float = 28.0 * Stage4Layout.DISPLAY_SCALE
-const CHARACTER_COLLIDER_HEIGHT: float = 60.0 * Stage4Layout.DISPLAY_SCALE
-const CHARACTER_COLLIDER_OFFSET_Y: float = 2.0 * Stage4Layout.DISPLAY_SCALE
+const CHARACTER_COLLIDER_WIDTH: float = 28.0 * MainLayout.DISPLAY_SCALE
+const CHARACTER_COLLIDER_HEIGHT: float = 60.0 * MainLayout.DISPLAY_SCALE
+const CHARACTER_COLLIDER_OFFSET_Y: float = 2.0 * MainLayout.DISPLAY_SCALE
 const RESPAWN_TOP_MARGIN_CELLS: int = 1 # 피격 재스폰 시 캐릭터 윗면과 화면 위의 간격.
 const RESPAWN_CENTER_Y: float = ( # 윗면 48px + 논리 몸체 반높이 48px.
 	RESPAWN_TOP_MARGIN_CELLS * CELL_SIZE + CHARACTER_HEIGHT * 0.5
 )
 const RESPAWN_BODY_SIZE: Vector2 = Vector2( # 프레임과 무관한 재스폰 점유 영역.
-	28.0 * Stage4Layout.DISPLAY_SCALE,
-	64.0 * Stage4Layout.DISPLAY_SCALE
+	28.0 * MainLayout.DISPLAY_SCALE,
+	64.0 * MainLayout.DISPLAY_SCALE
 )
 const MAX_LIVES: int = 3 # 게임 시작 시 생명 상한.
 const MOVE_SPEED: float = 150.0 * GIT_GRID_SCALE # 수평 목표 최고속도(px/s).
@@ -46,7 +45,7 @@ const AIR_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 공중 무입력 감�
 const JUMP_VELOCITY: float = -350.0 * GIT_GRID_SCALE # 점프 시작 y속도. 위쪽이 음수다.
 const GRAVITY: float = 1000.0 * GIT_GRID_SCALE # 매초 y속도에 더할 중력(px/s²).
 const FALL_GRAVITY_MULTIPLIER: float = 1.0 # 하강 중 추가 중력 배율.
-const MAX_FALL_SPEED: float = 3200.0 * Stage4Layout.DISPLAY_SCALE
+const MAX_FALL_SPEED: float = 3200.0 * MainLayout.DISPLAY_SCALE
 const COYOTE_TIME: float = 0.12 # 발판을 떠난 뒤에도 지상점프를 허용하는 초.
 const JUMP_BUFFER_TIME: float = 0.12 # 착지 전에 누른 점프를 기억하는 초.
 const JUMP_RELEASE_MULTIPLIER: float = 0.45 # 상승 중 키를 놓을 때 y속도에 곱하는 값.
@@ -56,7 +55,7 @@ const HANG_CLIMB_SPEED: float = 78.0 * GIT_GRID_SCALE # 매달린 상하 이동�
 const HANG_REGRAB_COOLDOWN: float = 0.18 # 벽점프 직후 같은 벽 재매달림 금지 초.
 const HANG_JUMP_GRACE_TIME: float = 0.15 # grab을 놓은 뒤에도 벽점프 가능한 초.
 const WALL_JUMP_STEER_TIME: float = 0.65 # 벽점프 뒤 원래 벽 방향 공중 조향 보정 초.
-const WALL_JUMP_STEER_ACCELERATION: float = 1500.0 * Stage4Layout.DISPLAY_SCALE
+const WALL_JUMP_STEER_ACCELERATION: float = 1500.0 * MainLayout.DISPLAY_SCALE
 
 # 자원과 행동 비용/지속시간. 이름의 단위가 없으면 픽셀 또는 초당 값이다.
 const MAX_STAMINA: float = 100.0 # stamina 상한과 reset 값.
@@ -65,14 +64,13 @@ const ROTATION_COOLDOWN: float = 2.0 # 성공 회전 킥 재사용 대기시간(
 const ROTATION_FAILED_COOLDOWN: float = 1.0 # 대상 없음/공간 부족 회전 킥 대기시간(초).
 const ROTATION_SPIN_DURATION: float = 0.42 # 전용 8 frame과 한 바퀴 회전의 전체 시간.
 const SELF_RESPAWN_HOLD_SECONDS: float = 1.0 # 자력 재스폰을 확정하기 위한 연속 입력 시간.
-const POST_SPIN_APEX_SPEED: float = 40.0 * Stage4Layout.DISPLAY_SCALE # 종료 후 jump frame 경계.
+const POST_SPIN_APEX_SPEED: float = 40.0 * MainLayout.DISPLAY_SCALE # 종료 후 jump frame 경계.
 const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무시하는 초.
 const ATTACK_COOLDOWN: float = 0.48 # 새 펀치 sequence 시작 간격(초).
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
 const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # X release 뒤 주먹 판정을 유지하는 시간.
 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
-const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # InputMap 기본값 유틸.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
 const SFX_HURT: AudioStream = preload("res://assets/sfx/01_player_hurt.wav")
 const SFX_PUNCH: AudioStream = preload("res://assets/sfx/02_block_punch.wav")
@@ -96,13 +94,13 @@ const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상
 const PUNCH_HITBOX_WIDTH: float = 27.2 # 주먹 스프라이트 끝에서 5px 더 넓힌 전방 판정 길이(px).
 const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
-	28.0 * Stage4Layout.DISPLAY_SCALE,
-	64.0 * Stage4Layout.DISPLAY_SCALE
+	28.0 * MainLayout.DISPLAY_SCALE,
+	64.0 * MainLayout.DISPLAY_SCALE
 )
-const FIXED_SUPPORT_TOLERANCE: float = Stage4Layout.DISPLAY_SCALE
+const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 
 # main.tscn의 상대 경로로 찾은 협력 객체. `@onready`라 `_ready()` 전에 유효해진다.
-@onready var controller: Stage4GameController = $"../../GameController" # 피스/게임 상태 명령 대상.
+@onready var controller: MainGameController = $"../../GameController" # 피스/게임 상태 명령 대상.
 @onready var sprite: Sprite2D = $Sprite # animation/flip/회전/색/깜빡임 대상.
 @onready var left_ray: RayCast2D = $LeftRay # 왼쪽 매달릴 collision 탐지기.
 @onready var right_ray: RayCast2D = $RightRay # 오른쪽 매달릴 collision 탐지기.
@@ -146,6 +144,7 @@ var _attack_cooldown_remaining: float = 0.0 # 0보다 크면 새 펀치 sequence
 var _attack_animation_remaining: float = 0.0 # 0보다 크면 ATTACK animation이 최우선.
 var _pending_punch_stage: int = 0 # 0이면 없음, 1~3이면 판정 대기 중인 펀치 거리.
 var _pending_punch_hit_remaining: float = 0.0 # release 뒤 남은 주먹 판정 시간.
+var _ignore_initial_jump_until_released: bool = false # 메뉴 Z로 게임을 열었을 때 첫 점프를 막는다.
 var _charge_audio_started: bool = false # 차지 임계 도달 뒤 차지 사운드가 시작됐는지.
 var _animation_state: String = ANIMATION_DATA.IDLE # 현재 sprite frame table key.
 var _animation_time: float = 0.0 # 현재 animation_state에 머문 경과시간(초).
@@ -159,18 +158,18 @@ var _respawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # 캐�
 
 
 ## 상황: CharacterBody2D가 씬에 준비될 때 Godot가 한 번 호출한다.
-## 순서: pause 중에도 처리되도록 mode 설정 → 입력 기본값 보장
+## 순서: pause 중에도 처리되도록 mode 설정 → SFX player 준비
 ##       → controller.game_restarted에 `_reset_character()` 연결 → 즉시 reset.
 ## 결과: 첫 physics frame 전에 노드 참조와 모든 캐릭터 상태가 준비된다.
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_ignore_initial_jump_until_released = Input.is_action_pressed(&"character_jump")
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
 	_meditation_loop_player = _create_sfx_player()
 	_charge_loop_player = _create_sfx_player()
 	_meditation_loop_player.finished.connect(_restart_meditation_loop)
 	_charge_loop_player.finished.connect(_restart_charge_loop)
-	INPUT_ACTIONS.ensure_defaults()
 	_respawn_random.randomize()
 	controller.game_restarted.connect(_reset_character)
 	controller.active_piece_descended.connect(handle_active_piece_descended)
@@ -183,7 +182,7 @@ func _ready() -> void:
 ##       → charge 처리 → hanging 또는 normal movement → 공통 시각/위치 검증.
 ## 결과: 한 frame에 서로 배타적인 이동 상태 하나만 실행되고 모든 후처리는 공통 적용된다.
 func _physics_process(delta: float) -> void:
-	if controller.state != Stage4GameController.GameState.PLAYING:
+	if controller.state != MainGameController.GameState.PLAYING:
 		_stop_for_inactive_game()
 		return
 	_update_timers(delta)
@@ -393,9 +392,15 @@ func _apply_gravity(grounded: bool, delta: float) -> void:
 ## 순서: 회전/점프의 just_pressed 값을 `_dispatch_action_input()`에 전달.
 ## 결과: 실제 우선순위 판단은 dispatcher 한곳에서 실행되어 테스트도 같은 경로를 사용할 수 있다.
 func _handle_action_input() -> void:
+	var jump_pressed: bool = Input.is_action_just_pressed(&"character_jump")
+	if _ignore_initial_jump_until_released:
+		if Input.is_action_pressed(&"character_jump"):
+			jump_pressed = false
+		else:
+			_ignore_initial_jump_until_released = false
 	_dispatch_action_input(
 		Input.is_action_just_pressed(&"character_rotation_kick"),
-		Input.is_action_just_pressed(&"character_jump")
+		jump_pressed
 	)
 
 
@@ -652,7 +657,6 @@ func _start_attack_animation() -> void:
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_animation_state = ANIMATION_DATA.ATTACK
 	_animation_time = 0.0
-	queue_redraw()
 
 
 ## 상황: charging 중 X가 더 이상 눌리지 않은 첫 frame에 호출한다.
@@ -735,7 +739,7 @@ func _cancel_punch_sequence() -> void:
 func _set_meditating(active: bool) -> void:
 	var next_state: bool = ( # 요청값에 실제 진입 전제조건을 적용한 최종 명상 상태.
 		active
-		and controller.state == Stage4GameController.GameState.PLAYING
+		and controller.state == MainGameController.GameState.PLAYING
 		and is_on_floor()
 		and not is_hanging
 	)
@@ -758,7 +762,7 @@ func _set_meditating(active: bool) -> void:
 		_set_feedback("명상 ×2")
 	else:
 		_stop_meditation_loop()
-		if controller.state == Stage4GameController.GameState.PLAYING:
+		if controller.state == MainGameController.GameState.PLAYING:
 			_play_sfx(SFX_MEDITATION_END)
 			_set_feedback("명상 종료")
 	stats_changed.emit()
@@ -775,10 +779,10 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	_start_rotation_spin()
-	if not _is_near_active_piece(0.0, Stage4Layout.scaled(88.0)):
+	if not _is_near_active_piece(0.0, MainLayout.scaled(88.0)):
 		_pending_rotation_launch_velocity = 0.0
 		_set_feedback("활성 블록에 닿지 않음")
-		velocity.y = Stage4Layout.scaled(-120.0)
+		velocity.y = MainLayout.scaled(-120.0)
 		rotation_cooldown_remaining = ROTATION_FAILED_COOLDOWN
 		stats_changed.emit()
 		return
@@ -788,12 +792,12 @@ func _attempt_rotation_kick() -> void:
 		# game_changed로 새 active shape를 만든 같은 physics frame에는 아직 PhysicsServer에
 		# 반영되지 않을 수 있다. 이번 frame 수직 이동을 멈추고 다음 frame에 발사한다.
 		velocity.y = 0.0
-		_pending_rotation_launch_velocity = Stage4Layout.scaled(-260.0)
+		_pending_rotation_launch_velocity = MainLayout.scaled(-260.0)
 		rotation_cooldown_remaining = ROTATION_COOLDOWN
 		_set_feedback("공중 회전 킥 성공")
 	else:
 		_pending_rotation_launch_velocity = 0.0
-		velocity.y = Stage4Layout.scaled(-140.0)
+		velocity.y = MainLayout.scaled(-140.0)
 		rotation_cooldown_remaining = ROTATION_FAILED_COOLDOWN
 		_set_feedback("회전 공간 부족")
 	stats_changed.emit()
@@ -825,8 +829,8 @@ func _apply_pending_rotation_launch(delta: float) -> void:
 func _rotation_forbidden_cells() -> Array[Vector2i]:
 	var forbidden_cells: Array[Vector2i] = []
 	var collider_rect: Rect2 = _character_collider_rect()
-	for y: int in range(Stage4BoardModel.HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
 			var cell: Vector2i = Vector2i(x, y)
 			if _rects_overlap_with_area(collider_rect, _board_cell_rect(cell)):
 				forbidden_cells.append(cell)
@@ -850,7 +854,7 @@ func _character_collider_rect() -> Rect2:
 ## 상황: 지연된 회전 킥 발사 경로가 새 활성 피스와 겹치는지 확인할 때 호출한다.
 ## 결과: 활성 네 셀 중 하나라도 대상 Rect와 양의 면적으로 교차하면 true다.
 func _active_piece_overlaps_rect(target_rect: Rect2) -> bool:
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
@@ -933,7 +937,7 @@ func handle_active_piece_descended(
 	previous_origin: Vector2i,
 	current_origin: Vector2i
 ) -> void:
-	if controller.state != Stage4GameController.GameState.PLAYING:
+	if controller.state != MainGameController.GameState.PLAYING:
 		return
 	if current_origin != previous_origin + Vector2i.DOWN:
 		return
@@ -949,7 +953,7 @@ func handle_active_piece_descended(
 ## 결과: 알파 128 이상이면서 중앙 28×64px 안인 실제 표시 픽셀이 닿을 때만 true다.
 func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
 	var active_rects: Array[Rect2] = []
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
@@ -1029,15 +1033,15 @@ func _has_fixed_support_underfoot() -> bool:
 		+ CHARACTER_COLLIDER_OFFSET_Y
 		+ CHARACTER_COLLIDER_HEIGHT * 0.5
 	)
-	var board_floor_y: float = Stage4BoardModel.VISIBLE_HEIGHT * CELL_SIZE
+	var board_floor_y: float = MainBoardModel.VISIBLE_HEIGHT * CELL_SIZE
 	if absf(foot_y - board_floor_y) <= FIXED_SUPPORT_TOLERANCE:
 		return true
 
 	var foot_left: float = position.x - CRUSH_CORE_SIZE.x * 0.5
 	var foot_right: float = position.x + CRUSH_CORE_SIZE.x * 0.5
-	for y: int in range(Stage4BoardModel.HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
-			if controller.board.cells[y][x] == Stage4BoardModel.EMPTY:
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
 				continue
 			var solid_rect: Rect2 = _board_cell_rect(Vector2i(x, y))
 			if absf(foot_y - solid_rect.position.y) > FIXED_SUPPORT_TOLERANCE:
@@ -1051,7 +1055,7 @@ func _has_fixed_support_underfoot() -> bool:
 ## 순서: 정상 플레이/보드 내부면 종료 → 보드 아래면 안전 위치 검색 및 무피해 복귀.
 ## 결과: 일반 블록 겹침이나 낙사는 목숨을 깎지 않고 압착 전용 경로만 피해를 준다.
 func validate_position() -> void:
-	if controller.state != Stage4GameController.GameState.PLAYING:
+	if controller.state != MainGameController.GameState.PLAYING:
 		return
 	if not _is_below_board():
 		return
@@ -1071,7 +1075,7 @@ func validate_position() -> void:
 func _is_below_board() -> bool:
 	return (
 		position.y
-		> Stage4BoardModel.VISIBLE_HEIGHT * CELL_SIZE + Stage4Layout.scaled(80.0)
+		> MainBoardModel.VISIBLE_HEIGHT * CELL_SIZE + MainLayout.scaled(80.0)
 	)
 
 
@@ -1174,13 +1178,6 @@ static func push_distance_for_charge(seconds: float) -> int:
 	return PUNCH_STAGE_TIMES.size()
 
 
-## 상황: 테스트나 설명 코드가 임의 hold 시간의 누적 비용을 요구할 때 호출한다.
-## 순서: `push_distance_for_charge()` → 1-based 단계를 0-based index로 변환 → 표 조회.
-## 결과: 0.0/8.0/18.0 중 하나를 반환한다.
-static func stamina_cost_for_charge(seconds: float) -> float:
-	return PUNCH_TOTAL_COSTS[push_distance_for_charge(seconds) - 1]
-
-
 ## 상황: 펀치가 활성 블록을 실제로 때렸는지 확인할 때 호출한다.
 ## 순서: 몸 바로 앞의 좁은 주먹 Rect를 만들고 활성 피스 셀과 양의 면적 교차를 검사한다.
 ## 결과: 블록이 멀리 있으면 false이며, 몸에 닿은 전방 블록만 true다.
@@ -1199,27 +1196,19 @@ func _punch_hitbox_rect() -> Rect2:
 	)
 
 
-func _draw() -> void:
-	if _attack_animation_remaining <= 0.0:
-		return
-	var hitbox: Rect2 = _punch_hitbox_rect()
-	hitbox.position = hitbox.position - position
-	draw_rect(hitbox, Color(1.0, 0.15, 0.1, 0.9), false, 2.0)
-
-
 ## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
 ## 순서: 활성 네 셀 중심 계산 → difference=cell-character
 ##       → horizontal_reach=0이면 원형 거리, 아니면 같은 방향/x reach/y reach 검사.
 ## 결과: 셀 하나라도 범위 안이면 true이며 피스/캐릭터 상태는 바꾸지 않는다.
 func _is_near_active_piece(horizontal_reach: float, radial_reach: float) -> bool:
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
 		var cell: Vector2i = controller.active_origin + local_cell # 활성 절대 보드 셀.
 		var cell_center: Vector2 = Vector2( # 숨은 행 offset을 뺀 셀 중심 픽셀.
 			(float(cell.x) + 0.5) * CELL_SIZE,
-			(float(cell.y - Stage4BoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
+			(float(cell.y - MainBoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
 		)
 		var difference: Vector2 = cell_center - position # 캐릭터 중심에서 셀 중심으로의 벡터.
 		if is_zero_approx(horizontal_reach):
@@ -1237,18 +1226,18 @@ func _is_near_active_piece(horizontal_reach: float, radial_reach: float) -> bool
 ## 결과: 가장 아래·중앙에 가까운 안전 Vector2 또는 공간이 없으면 null을 반환한다.
 func _find_safe_position() -> Variant:
 	var x_order: Array[int] = [4, 5, 3, 6, 2, 7, 1, 8, 0, 9] # 중앙 우선 x 순서.
-	for y: int in range(Stage4BoardModel.HEIGHT - 1, Stage4BoardModel.HIDDEN_ROWS, -1):
+	for y: int in range(MainBoardModel.HEIGHT - 1, MainBoardModel.HIDDEN_ROWS, -1):
 		for x: int in x_order:
 			if _cell_is_solid(Vector2i(x, y)) or _cell_is_solid(Vector2i(x, y - 1)):
 				continue
 			var supported: bool = ( # 아래 셀이 바닥 또는 solid여서 설 수 있는지.
-				y == Stage4BoardModel.HEIGHT - 1
+				y == MainBoardModel.HEIGHT - 1
 				or _cell_is_solid(Vector2i(x, y + 1))
 			)
 			if supported:
 				return Vector2(
 					(float(x) + 0.5) * CELL_SIZE,
-					float(y + 1 - Stage4BoardModel.HIDDEN_ROWS) * CELL_SIZE
+					float(y + 1 - MainBoardModel.HIDDEN_ROWS) * CELL_SIZE
 					- CHARACTER_HEIGHT * 0.5
 				)
 	return null
@@ -1270,7 +1259,7 @@ func _find_top_respawn_position() -> Variant:
 ## 결과: X가 각 보드 열 중앙이고 Y가 96px인 충돌 없는 후보만 왼쪽부터 반환한다.
 func _top_respawn_candidates() -> Array[Vector2]:
 	var candidates: Array[Vector2] = []
-	for x: int in range(Stage4BoardModel.WIDTH):
+	for x: int in range(MainBoardModel.WIDTH):
 		var candidate: Vector2 = Vector2(
 			(float(x) + 0.5) * CELL_SIZE,
 			RESPAWN_CENTER_Y
@@ -1285,14 +1274,14 @@ func _top_respawn_candidates() -> Array[Vector2]:
 ## 결과: 경계 접촉은 허용하고 양의 면적으로 1px이라도 교차할 때만 true다.
 func _respawn_overlaps_any_block(candidate: Vector2) -> bool:
 	var body_rect: Rect2 = _respawn_rect_at(candidate)
-	for y: int in range(Stage4BoardModel.HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
-			if controller.board.cells[y][x] == Stage4BoardModel.EMPTY:
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
 				continue
 			if _rects_overlap_with_area(body_rect, _board_cell_rect(Vector2i(x, y))):
 				return true
 
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
@@ -1324,9 +1313,9 @@ func _rects_overlap_with_area(first: Rect2, second: Rect2) -> bool:
 func _cell_is_solid(cell: Vector2i) -> bool:
 	if not controller.board.is_inside(cell):
 		return false
-	if controller.board.get_cell(cell) != Stage4BoardModel.EMPTY:
+	if controller.board.get_cell(cell) != MainBoardModel.EMPTY:
 		return true
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
@@ -1342,7 +1331,7 @@ func _board_cell_rect(cell: Vector2i) -> Rect2:
 	return Rect2(
 		Vector2(
 			cell.x * CELL_SIZE,
-			(cell.y - Stage4BoardModel.HIDDEN_ROWS) * CELL_SIZE
+			(cell.y - MainBoardModel.HIDDEN_ROWS) * CELL_SIZE
 		),
 		Vector2.ONE * CELL_SIZE
 	)
@@ -1353,7 +1342,6 @@ func _board_cell_rect(cell: Vector2i) -> Rect2:
 ##       → feedback 만료 시 text clear/signal.
 ## 결과: timer가 음수가 되지 않고 0을 경계로 각 기능이 자동 종료된다.
 func _update_timers(delta: float) -> void:
-	var attack_was_active: bool = _attack_animation_remaining > 0.0
 	rotation_cooldown_remaining = maxf(0.0, rotation_cooldown_remaining - delta)
 	_attack_cooldown_remaining = maxf(0.0, _attack_cooldown_remaining - delta)
 	_attack_animation_remaining = maxf(0.0, _attack_animation_remaining - delta)
@@ -1364,8 +1352,6 @@ func _update_timers(delta: float) -> void:
 	_hang_regrab_remaining = maxf(0.0, _hang_regrab_remaining - delta)
 	_hang_jump_grace_remaining = maxf(0.0, _hang_jump_grace_remaining - delta)
 	_wall_jump_control_remaining = maxf(0.0, _wall_jump_control_remaining - delta)
-	if attack_was_active or _attack_animation_remaining > 0.0:
-		queue_redraw()
 	if _feedback_remaining <= 0.0 and not feedback_text.is_empty():
 		feedback_text = ""
 		feedback_changed.emit()
@@ -1641,8 +1627,8 @@ func _reset_character() -> void:
 	_was_grounded_for_stamina = true
 	_reset_self_respawn_input()
 	position = Vector2(
-		Stage4Layout.BOARD_SIZE.x * 0.5,
-		Stage4Layout.BOARD_SIZE.y - CHARACTER_HEIGHT * 0.5
+		MainLayout.BOARD_SIZE.x * 0.5,
+		MainLayout.BOARD_SIZE.y - CHARACTER_HEIGHT * 0.5
 	)
 	velocity = Vector2.ZERO
 	sprite.flip_h = false

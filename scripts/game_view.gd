@@ -1,4 +1,4 @@
-class_name Stage4GameView
+class_name MainGameView
 extends Control
 
 ## [역할 / C++ 대응]
@@ -14,21 +14,21 @@ extends Control
 ## `@onready var x = $Path`는 노드가 씬 트리에 준비된 뒤 child pointer를 캐시한다.
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
-const DISPLAY_SCALE: float = Stage4Layout.DISPLAY_SCALE
-const CELL_SIZE: float = Stage4Layout.CELL_SIZE
-const GAME_VIEWPORT_SIZE: Vector2i = Stage4Layout.GAME_VIEWPORT_SIZE
-const BOARD_ORIGIN: Vector2 = Stage4Layout.BOARD_ORIGIN
-const BOARD_SIZE: Vector2 = Stage4Layout.BOARD_SIZE
-const PANEL_RECT: Rect2 = Stage4Layout.HUD_RECT
+const DISPLAY_SCALE: float = MainLayout.DISPLAY_SCALE
+const CELL_SIZE: float = MainLayout.CELL_SIZE
+const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
+const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
+const BOARD_SIZE: Vector2 = MainLayout.BOARD_SIZE
+const PANEL_RECT: Rect2 = MainLayout.HUD_RECT
 const STAMINA_BAR_RECT: Rect2 = Rect2(584.0, 878.0, 352.0, 14.0)
 const PUNCH_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
 const ROTATION_BAR_RECT: Rect2 = Rect2(584.0, 998.0, 352.0, 14.0)
 const SELF_RESPAWN_BAR_RECT: Rect2 = Rect2(
-	Stage4Layout.BOARD_ORIGIN + Vector2(84.0, Stage4Layout.BOARD_SIZE.y - 78.0),
+	MainLayout.BOARD_ORIGIN + Vector2(84.0, MainLayout.BOARD_SIZE.y - 78.0),
 	Vector2(312.0, 12.0)
 )
 const SELF_RESPAWN_PANEL_RECT: Rect2 = Rect2(
-	Stage4Layout.BOARD_ORIGIN + Vector2(48.0, Stage4Layout.BOARD_SIZE.y - 94.0),
+	MainLayout.BOARD_ORIGIN + Vector2(48.0, MainLayout.BOARD_SIZE.y - 94.0),
 	Vector2(384.0, 76.0)
 )
 
@@ -57,8 +57,8 @@ const CHARACTER_TEXTURE: Texture2D = preload("res://assets/sprites/player_animat
 const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 원본 영역.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
-@onready var controller: Stage4GameController = $GameController # 표시할 게임 상태의 소유자.
-@onready var character: Stage4CharacterController = $BoardPhysics/Character # 표시할 캐릭터 상태.
+@onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
+@onready var character: MainCharacterController = $BoardPhysics/Character # 표시할 캐릭터 상태.
 
 # `_build_interface()`가 생성하고 `_refresh()`가 내용을 바꾸는 retained UI 노드.
 var _title_label: Label # 고정 게임 제목.
@@ -111,7 +111,7 @@ func _draw() -> void:
 ## 결과: 이후 `_refresh()`가 참조할 멤버 Label들이 모두 유효해진다.
 func _build_interface() -> void:
 	_title_label = _create_label(
-		"KUNG FU TETRIS : STAGE 4",
+		"KUNG FU TETRIS",
 		Vector2(40.0, 22.0),
 		Vector2(920.0, 42.0),
 		28,
@@ -284,41 +284,41 @@ func _draw_panel(rect: Rect2) -> void:
 func _draw_board() -> void:
 	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), BOARD_COLOR)
 
-	for y: int in range(Stage4BoardModel.VISIBLE_HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
-			var cell_rect: Rect2 = _cell_rect(Vector2i(x, y + Stage4BoardModel.HIDDEN_ROWS)) # 현재 화면 셀 사각형.
-			var piece_type: int = controller.board.cells[y + Stage4BoardModel.HIDDEN_ROWS][x] # 고정 타입/EMPTY.
-			if piece_type != Stage4BoardModel.EMPTY:
+	for y: int in range(MainBoardModel.VISIBLE_HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			var cell_rect: Rect2 = _cell_rect(Vector2i(x, y + MainBoardModel.HIDDEN_ROWS)) # 현재 화면 셀 사각형.
+			var piece_type: int = controller.board.cells[y + MainBoardModel.HIDDEN_ROWS][x] # 고정 타입/EMPTY.
+			if piece_type != MainBoardModel.EMPTY:
 				_draw_block(cell_rect, piece_type, 1.0)
 
-	if controller.state == Stage4GameController.GameState.GAME_OVER:
+	if controller.state == MainGameController.GameState.GAME_OVER:
 		return
 
 	var ghost_position: Vector2i = controller.ghost_origin() # 활성 피스의 예상 착지 원점.
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
 		var ghost_cell: Vector2i = ghost_position + local_cell # 고스트의 절대 보드 셀.
-		if ghost_cell.y >= Stage4BoardModel.HIDDEN_ROWS:
+		if ghost_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_ghost(_cell_rect(ghost_cell), controller.active_type)
 
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(
+	for local_cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
 		var active_cell: Vector2i = controller.active_origin + local_cell # 활성 절대 보드 셀.
-		if active_cell.y >= Stage4BoardModel.HIDDEN_ROWS:
+		if active_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_block(
 				_cell_rect(active_cell),
 				controller.active_type,
 				1.0
 			)
 
-	for x: int in range(Stage4BoardModel.WIDTH + 1):
+	for x: int in range(MainBoardModel.WIDTH + 1):
 		var line_x: float = BOARD_ORIGIN.x + float(x) * CELL_SIZE
 		draw_line(Vector2(line_x, BOARD_ORIGIN.y), Vector2(line_x, BOARD_ORIGIN.y + BOARD_SIZE.y), GRID_COLOR)
-	for y: int in range(Stage4BoardModel.VISIBLE_HEIGHT + 1):
+	for y: int in range(MainBoardModel.VISIBLE_HEIGHT + 1):
 		var line_y: float = BOARD_ORIGIN.y + float(y) * CELL_SIZE
 		draw_line(Vector2(BOARD_ORIGIN.x, line_y), Vector2(BOARD_ORIGIN.x + BOARD_SIZE.x, line_y), GRID_COLOR)
 
@@ -333,7 +333,7 @@ func _draw_next_piece() -> void:
 
 	var preview_cell_size: float = 32.0
 	var preview_origin: Vector2 = preview_rect.position + Vector2(104.0, 16.0)
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(controller.next_type, 0):
+	for local_cell: Vector2i in MainTetrominoData.get_cells(controller.next_type, 0):
 		var cell_rect: Rect2 = Rect2( # 이번 local cell의 preview 픽셀 영역.
 			preview_origin + Vector2(local_cell) * preview_cell_size,
 			Vector2.ONE * preview_cell_size
@@ -413,7 +413,7 @@ func _draw_hud_sections() -> void:
 func _draw_character_bars() -> void:
 	_draw_bar(
 		STAMINA_BAR_RECT,
-		character.stamina / Stage4CharacterController.MAX_STAMINA,
+		character.stamina / MainCharacterController.MAX_STAMINA,
 		CYAN
 	)
 	_draw_bar(
@@ -443,7 +443,7 @@ func _draw_bar(rect: Rect2, ratio: float, color: Color) -> void:
 ## 순서: PLAYING이면 조기 종료, 아니면 보드 전체에 반투명 검정 rect draw.
 ## 결과: 아래 게임 화면은 유지하면서 pause/game-over 상태를 시각적으로 분리한다.
 func _draw_state_overlay() -> void:
-	if controller.state == Stage4GameController.GameState.PLAYING:
+	if controller.state == MainGameController.GameState.PLAYING:
 		return
 	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.01, 0.02, 0.04, 0.80))
 
@@ -453,7 +453,7 @@ func _draw_state_overlay() -> void:
 ##       → destination을 1px 줄이고 alpha modulation과 함께 texture draw.
 ## 결과: enum 순서와 무관하게 이름 기반 올바른 블록 이미지가 그려진다.
 func _draw_block(rect: Rect2, piece_type: int, alpha: float) -> void:
-	var piece_name: String = Stage4TetrominoData.get_display_name(piece_type) # atlas Dictionary key.
+	var piece_name: String = MainTetrominoData.get_display_name(piece_type) # atlas Dictionary key.
 	var source_region: Rect2 = BLOCK_SPRITE_REGIONS.get(piece_name, Rect2()) # 원본 sprite 영역.
 	if source_region == Rect2():
 		return
@@ -477,7 +477,7 @@ func _draw_ghost(rect: Rect2, piece_type: int) -> void:
 ## 순서: hidden rows를 y에서 제거 → x/y에 CELL_SIZE 곱함 → BOARD_ORIGIN 더함.
 ## 결과: 보드 좌표에 대응하는 48×48 View 로컬 Rect2를 반환한다.
 func _cell_rect(board_cell: Vector2i) -> Rect2:
-	var visible_y: int = board_cell.y - Stage4BoardModel.HIDDEN_ROWS # 화면 기준 0~19 y.
+	var visible_y: int = board_cell.y - MainBoardModel.HIDDEN_ROWS # 화면 기준 0~19 y.
 	return Rect2(
 		BOARD_ORIGIN + Vector2(board_cell.x * CELL_SIZE, visible_y * CELL_SIZE),
 		Vector2.ONE * CELL_SIZE
@@ -497,7 +497,7 @@ func _refresh() -> void:
 	)
 
 	var life_icons: String = "♥".repeat(character.lives) + "♡".repeat( # 남은/잃은 생명을 한 문자열로 표현.
-		Stage4CharacterController.MAX_LIVES - character.lives
+		MainCharacterController.MAX_LIVES - character.lives
 	)
 	var cooldown_text: String = ( # 회전 킥이 가능하면 "준비", 아니면 남은 초.
 		"준비"
@@ -520,11 +520,11 @@ func _refresh() -> void:
 	)
 
 	match controller.state:
-		Stage4GameController.GameState.PAUSED:
-			_status_label.text = "일시정지\n\nP 또는 Esc로 계속"
+		MainGameController.GameState.PAUSED:
+			_status_label.text = "일시정지\n\nP로 계속 · Esc로 메뉴"
 			_status_label.visible = true
-		Stage4GameController.GameState.GAME_OVER:
-			_status_label.text = "게임 오버\n\nR 키로 다시 시작"
+		MainGameController.GameState.GAME_OVER:
+			_status_label.text = "게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴"
 			_status_label.visible = true
 		_:
 			_status_label.visible = false

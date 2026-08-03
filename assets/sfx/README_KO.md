@@ -6,8 +6,10 @@
 
 - 피격: `01_player_hurt.wav`
 - 블록 펀치: `02_block_punch.wav`
-- 블록 공중제비/회전 킥: `03_block_flip.wav`
+- 블록 플립: `03a_block_flip.wav`
 - 점프: `04_jump.wav`
+- 줄 제거: `07_block_elimination.wav`
+- 메뉴 선택: `08_select.wav`
 
 ## 명상
 
@@ -17,11 +19,11 @@
 
 ## 차지 공격
 
-1. 버튼을 누를 때 `06a_charge_start.wav`를 재생합니다.
-2. 누르는 동안 `06b_charge_loop.wav`를 반복합니다.
-3. 0.4초에 `06c_charge_tier1.wav`를 한 번 겹쳐 재생합니다.
-4. 0.9초에 `06d_charge_ready.wav`를 한 번 겹쳐 재생합니다.
-5. 버튼을 놓거나 취소할 때 루프를 멈추고 `06e_charge_release.wav`를 재생합니다.
+1. 버튼을 0.4초 유지하면 `06a_charge_start.wav`를 재생합니다.
+2. 차지 중에는 `06b_charge_loop.wav`를 반복합니다.
+3. 전방 블록을 2칸 밀면 `06c_charge_tier1.wav`를 한 번 재생합니다.
+4. 전방 블록을 3칸 밀면 `06d_charge_ready.wav`를 한 번 재생합니다.
+5. 차지 루프가 시작된 뒤 버튼을 놓거나 취소하면 루프를 멈추고 `06e_charge_release.wav`를 재생합니다.
 
 ## Godot 권장 설정
 

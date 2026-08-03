@@ -1,4 +1,4 @@
-class_name Stage4CharacterAnimationData
+class_name MainCharacterAnimationData
 extends RefCounted
 
 ## [역할 / C++ 대응]

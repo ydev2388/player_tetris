@@ -1,4 +1,4 @@
-class_name Stage4BoardPhysics
+class_name MainBoardPhysics
 extends Node2D
 
 ## [역할 / C++ 대응]
@@ -13,17 +13,17 @@ extends Node2D
 ## CharacterController.validate_position()을 안전망으로 deferred call한다.
 ## 씬 경로 `$Node`는 C++에서 미리 주입받은 자식 노드 포인터와 비슷하다.
 
-const CELL_SIZE: float = Stage4Layout.CELL_SIZE # 화면·물리가 공유하는 48px 셀.
+const CELL_SIZE: float = MainLayout.CELL_SIZE # 화면·물리가 공유하는 48px 셀.
 const BOARD_PIXEL_SIZE: Vector2 = Vector2(
-	Stage4BoardModel.WIDTH * CELL_SIZE,
-	Stage4BoardModel.VISIBLE_HEIGHT * CELL_SIZE
+	MainBoardModel.WIDTH * CELL_SIZE,
+	MainBoardModel.VISIBLE_HEIGHT * CELL_SIZE
 ) # 화면에 보이는 보드의 전체 픽셀 크기(480×960).
 
 # main.tscn에서 주입되는 협력 노드들.
-@onready var controller: Stage4GameController = $"../GameController" # authoritative BoardModel 소유자.
+@onready var controller: MainGameController = $"../GameController" # authoritative BoardModel 소유자.
 @onready var locked_body: StaticBody2D = $LockedBlocks # 이미 고정된 셀 collision의 부모.
 @onready var active_body: AnimatableBody2D = $ActivePiece # 낙하 중 피스 collision의 부모.
-@onready var character: Stage4CharacterController = $Character # 겹침 재검증을 요청할 플레이어.
+@onready var character: MainCharacterController = $Character # 겹침 재검증을 요청할 플레이어.
 
 # 논리 보드가 같을 때 수백 개의 고정 CollisionShape 재생성을 피하는 캐시다.
 var _last_board_signature: int = -1 # 마지막 collider 재구성 때의 고정 보드 hash.
@@ -89,13 +89,13 @@ func _build_boundaries() -> void:
 ## 결과: locked_body의 자식 collision들이 현재 BoardModel과 정확히 대응한다.
 func _rebuild_locked_colliders() -> void:
 	_clear_shapes(locked_body)
-	for y: int in range(Stage4BoardModel.HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
-			if controller.board.cells[y][x] == Stage4BoardModel.EMPTY:
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
 				continue
 			var center: Vector2 = Vector2( # 숨은 행 offset을 뺀 해당 셀의 픽셀 중심.
 				(float(x) + 0.5) * CELL_SIZE,
-				(float(y - Stage4BoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
+				(float(y - MainBoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
 			)
 			_add_box_shape(locked_body, center, Vector2.ONE * CELL_SIZE)
 
@@ -108,12 +108,12 @@ func _sync_active_piece() -> void:
 	_clear_shapes(active_body)
 	active_body.position = Vector2(
 		controller.active_origin.x * CELL_SIZE,
-		(controller.active_origin.y - Stage4BoardModel.HIDDEN_ROWS) * CELL_SIZE
+		(controller.active_origin.y - MainBoardModel.HIDDEN_ROWS) * CELL_SIZE
 	)
-	if controller.state == Stage4GameController.GameState.GAME_OVER:
+	if controller.state == MainGameController.GameState.GAME_OVER:
 		return
 
-	for cell: Vector2i in Stage4TetrominoData.get_cells(
+	for cell: Vector2i in MainTetrominoData.get_cells(
 		controller.active_type,
 		controller.active_rotation
 	):
@@ -152,8 +152,8 @@ func _add_box_shape(body: CollisionObject2D, center: Vector2, box_size: Vector2)
 ## 결과: 보드를 바꾸지 않고 현재 셀 배열의 정수 signature를 반환한다.
 func _board_signature() -> int:
 	var signature: int = 17 # 31 기반 rolling hash의 초기 seed.
-	for y: int in range(Stage4BoardModel.HEIGHT):
-		for x: int in range(Stage4BoardModel.WIDTH):
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
 			signature = signature * 31 + controller.board.cells[y][x] + 2
 	return signature
 

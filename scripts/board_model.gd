@@ -1,4 +1,4 @@
-class_name Stage4BoardModel
+class_name MainBoardModel
 extends RefCounted
 
 ## [역할 / C++ 대응]
@@ -8,7 +8,7 @@ extends RefCounted
 ##
 ## [호출 관계]
 ## 생성자/주 호출자: GameController. 조회 호출자: GameView, BoardPhysics,
-## CharacterController, 테스트. 호출 대상: Stage4TetrominoData.get_cells().
+## CharacterController, 테스트. 호출 대상: MainTetrominoData.get_cells().
 ## 이 클래스는 signal을 내보내지 않는다. 변경 알림은 상위 GameController가 담당한다.
 
 const WIDTH: int = 10 # 보드의 가로 셀 수. 유효 x는 0~9.
@@ -21,7 +21,7 @@ const EMPTY: int = -1 # 셀이 어떤 테트로미노에도 점유되지 않았�
 var cells: Array[PackedInt32Array] = [] # 실제 보드 저장소. 바깥 index=y, 안쪽 index=x.
 
 
-## 상황: `Stage4BoardModel.new()`로 논리 보드를 만들 때 자동 호출된다.
+## 상황: `MainBoardModel.new()`로 논리 보드를 만들 때 자동 호출된다.
 ## 순서: `reset()` 한 단계로 22개의 빈 행을 구성한다.
 ## 결과: 즉시 배치 판정을 수행할 수 있는 빈 보드가 된다.
 func _init() -> void:
@@ -41,7 +41,7 @@ func reset() -> void:
 ## 순서: 각 로컬 셀마다 origin을 더함 → 경계 검사 → 기존 셀 점유 검사 → 실패 즉시 false.
 ## 결과: 네 칸이 모두 보드 안의 EMPTY일 때만 true이며 보드는 변경하지 않는다.
 func can_place(piece_type: int, rotation: int, origin: Vector2i) -> bool:
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(piece_type, rotation):
+	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
 		var board_cell: Vector2i = origin + local_cell # 피스 로컬 좌표를 보드 절대 셀로 변환한 값.
 		if not is_inside(board_cell):
 			return false
@@ -64,7 +64,7 @@ func get_drop_distance(piece_type: int, rotation: int, origin: Vector2i) -> int:
 ## 순서: 로컬 네 칸 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
 ## 결과: 해당 cells가 EMPTY에서 타입 정수로 바뀐다. 줄 삭제는 이 함수가 하지 않는다.
 func lock_piece(piece_type: int, rotation: int, origin: Vector2i) -> void:
-	for local_cell: Vector2i in Stage4TetrominoData.get_cells(piece_type, rotation):
+	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
 		var board_cell: Vector2i = origin + local_cell # 실제 cells[y][x]에 기록할 절대 셀.
 		if is_inside(board_cell):
 			cells[board_cell.y][board_cell.x] = piece_type
@@ -117,14 +117,6 @@ func get_cell(cell: Vector2i) -> int:
 	if not is_inside(cell):
 		return EMPTY
 	return cells[cell.y][cell.x]
-
-
-## 상황: 테스트나 보드 구성 코드가 특정 셀을 강제로 설정할 때 호출한다.
-## 순서: ① `is_inside()` assert ② 유효하면 cells[y][x]에 value 대입.
-## 결과: 셀 하나가 변경되며 잘못된 좌표는 개발 중 즉시 assertion으로 드러난다.
-func set_cell(cell: Vector2i, value: int) -> void:
-	assert(is_inside(cell), "보드 범위를 벗어난 셀을 설정할 수 없습니다.")
-	cells[cell.y][cell.x] = value
 
 
 ## 상황: `clear_full_lines()`가 행 하나의 삭제 여부를 판단할 때 호출한다.

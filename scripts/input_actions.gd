@@ -1,8 +1,8 @@
-class_name Stage4InputActions
+class_name MainInputActions
 extends RefCounted
 
 ## [역할 / C++ 대응]
-## Stage 4에서 쓰는 입력 action의 메타데이터와 InputMap 등록을 한곳에서 관리한다.
+## Main에서 쓰는 입력 action의 메타데이터와 InputMap 등록을 한곳에서 관리한다.
 ## `Dictionary`는 `std::unordered_map<Variant, Variant>`, `StringName`(`&"..."`)은
 ## Godot이 빠르게 비교하도록 intern한 문자열에 가깝다.
 ##
@@ -65,8 +65,8 @@ const DEFINITIONS: Array[Dictionary] = [
 	{
 		"action": &"pause_game",
 		"label": "일시정지",
-		"defaults": [KEY_P, KEY_ESCAPE],
-		"slots": 2,
+		"defaults": [KEY_P],
+		"slots": 1,
 	},
 	{
 		"action": &"restart_game",
@@ -106,8 +106,8 @@ static func get_default_keys(action_name: StringName) -> Array[int]:
 
 
 ## 상황: GameController/CharacterController가 시작되어 필수 action을 보장해야 할 때 호출한다.
-## 순서: ① 모든 정의 순회 ② action별 기본 키 계산 ③ `_ensure_action()`로 없는 항목만 보충.
-## 결과: 기존 사용자 키는 유지하면서 누락된 action/기본 키만 InputMap에 추가한다.
+## 순서: ① 모든 정의 순회 ② action별 기본 키 계산 ③ `_ensure_action()`로 빈 항목만 보충.
+## 결과: 기존 사용자 키는 유지하면서 비어 있는 action에만 기본 키를 추가한다.
 static func ensure_defaults() -> void:
 	for definition: Dictionary in DEFINITIONS:
 		_ensure_action(definition["action"], get_default_keys(definition["action"]))
@@ -128,24 +128,14 @@ static func apply_bindings(bindings: Dictionary) -> void:
 
 
 ## 상황: `ensure_defaults()`가 action 하나의 존재와 기본 키를 보장할 때 호출한다.
-## 순서: ① action이 없으면 생성 ② 각 기본 키 순회 ③ 기존 여부 검사 ④ 없을 때 event 추가.
-## 결과: 중복 없이 기본 키가 보충되며 기존 event는 삭제되지 않는다.
+## 순서: ① action이 이미 있으면 종료 ② 없으면 생성 ③ 기본 키를 추가.
+## 결과: 사용자 키 또는 의도적인 미지정 상태의 action에는 기본 event가 섞이지 않는다.
 static func _ensure_action(action_name: StringName, key_codes: Array[int]) -> void:
-	if not InputMap.has_action(action_name):
-		InputMap.add_action(action_name)
+	if InputMap.has_action(action_name):
+		return
+	InputMap.add_action(action_name)
 	for key_code: int in key_codes:
-		if not _has_physical_key(action_name, key_code):
-			InputMap.action_add_event(action_name, _key_event(key_code))
-
-
-## 상황: `_ensure_action()`이 같은 물리 키의 중복 추가를 피하려 할 때 호출한다.
-## 순서: ① action event 순회 ② InputEventKey RTTI 검사 ③ 안전한 downcast 후 keycode 비교.
-## 결과: 일치하는 키를 하나라도 찾으면 true, 끝까지 없으면 false다.
-static func _has_physical_key(action_name: StringName, key_code: int) -> bool:
-	for event: InputEvent in InputMap.action_get_events(action_name):
-		if event is InputEventKey and (event as InputEventKey).physical_keycode == key_code:
-			return true
-	return false
+		InputMap.action_add_event(action_name, _key_event(key_code))
 
 
 ## 상황: 저장 데이터처럼 정적 타입이 없는 Variant를 키 배열로 사용하기 전에 호출한다.

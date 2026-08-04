@@ -5,15 +5,18 @@ signal game_loaded(game_root: Node)
 signal exit_requested
 
 const GAME_SCENE_DEFAULT: String = "res://scenes/main.tscn"
-const PORTRAIT: Texture2D = preload("res://assets/player_animations.png")
+const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
+const TUTORIAL_PAGE_COUNT: int = 5
+const PORTRAIT: Texture2D = preload("res://assets/sprites/player_animations.png")
 const PORTRAIT_SOURCE: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0)
-const BLOCK_TEXTURE: Texture2D = preload("res://assets/block_sprites.png")
+const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
 const ORANGE_BLOCK_SOURCE: Rect2 = Rect2(1745.0, 255.0, 210.0, 215.0)
 const TUTORIAL_CANVAS_SCRIPT: Script = preload(
 	"res://start_screen/scripts/tutorial_canvas.gd"
 )
 const UI_SCRIPT: Script = preload("res://start_screen/scripts/start_screen_ui.gd")
+const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
 
 const BACKGROUND: Color = Color("#f7f8fb")
 const PANEL: Color = Color("#ffffff")
@@ -58,6 +61,13 @@ var _music_value_label: Label
 var _sfx_value_label: Label
 var _game_host: Control
 var _game_instance: Node
+var _game_exit_overlay: Control
+var _game_exit_yes_button: Button
+var _game_exit_no_button: Button
+var _game_exit_was_playing: bool = false
+var _select_sfx_player: AudioStreamPlayer
+var _select_sfx_timer: Timer
+var _skip_initial_select_sfx: bool = true
 
 var _capture_overlay: Control
 var _capture_label: Label
@@ -69,6 +79,7 @@ var _message_label: Label
 
 
 func _ready() -> void:
+	set_process_input(true)
 	set_process_unhandled_key_input(true)
 	_font = SystemFont.new()
 	_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
@@ -79,6 +90,15 @@ func _ready() -> void:
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
 	add_child(settings)
+	_select_sfx_player = AudioStreamPlayer.new()
+	_select_sfx_player.bus = &"SFX"
+	_select_sfx_player.volume_db = -20.0
+	add_child(_select_sfx_player)
+	_select_sfx_timer = Timer.new()
+	_select_sfx_timer.one_shot = true
+	_select_sfx_timer.wait_time = 0.06
+	_select_sfx_timer.timeout.connect(_select_sfx_player.stop)
+	add_child(_select_sfx_timer)
 
 	_build_interface()
 	_refresh_key_buttons()
@@ -129,7 +149,7 @@ func show_volume() -> void:
 
 
 func next_tutorial_page() -> void:
-	tutorial_page = mini(tutorial_page + 1, 3)
+	tutorial_page = mini(tutorial_page + 1, TUTORIAL_PAGE_COUNT - 1)
 	_refresh_tutorial()
 
 
@@ -154,7 +174,6 @@ func start_game() -> bool:
 	_game_instance.name = "LoadedGame"
 	_game_host.add_child(_game_instance)
 	_show_screen(Screen.GAME)
-	settings.apply_bindings.call_deferred()
 	game_loaded.emit(_game_instance)
 	return true
 
@@ -185,6 +204,20 @@ func cancel_key_capture() -> void:
 	_capture_overlay.visible = false
 
 
+## 상황: 게임 화면의 자식 노드나 GUI가 키를 소비하기 전에 Esc 메뉴 입력을 확인한다.
+## 결과: 실제 키 이벤트 경로에서도 메뉴 복귀 Yes/No 창이 항상 최우선으로 열린다.
+func _input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key_event: InputEventKey = event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return
+	if _handle_game_exit_prompt_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_menu_confirm_input(key_event):
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey:
 		return
@@ -192,7 +225,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not key_event.pressed or key_event.echo:
 		return
 
-	if _handle_key_capture(key_event) or _handle_back_navigation(key_event):
+	if (
+		_handle_key_capture(key_event)
+		or _handle_back_navigation(key_event)
+	):
 		get_viewport().set_input_as_handled()
 
 
@@ -213,10 +249,63 @@ func _handle_key_capture(key_event: InputEventKey) -> bool:
 	return true
 
 
+## 결과: 게임 중 Esc로 확인창을 열고, 열린 뒤에는 방향키·Z·X를 처리한다.
+func _handle_game_exit_prompt_input(key_event: InputEventKey) -> bool:
+	if _game_exit_overlay != null and _game_exit_overlay.visible:
+		var key_code: int = key_event.physical_keycode
+		if key_code == KEY_NONE:
+			key_code = key_event.keycode
+		if key_code == KEY_UP or key_code == KEY_DOWN:
+			if _game_exit_yes_button.has_focus():
+				_game_exit_no_button.grab_focus()
+			else:
+				_game_exit_yes_button.grab_focus()
+			return true
+		if key_code == KEY_Z:
+			if _game_exit_yes_button.has_focus():
+				_confirm_return_to_main_menu()
+			else:
+				_hide_game_exit_prompt()
+			return true
+		if key_code == KEY_X:
+			_hide_game_exit_prompt()
+			return true
+		return _is_escape_key(key_event)
+	if current_screen != Screen.GAME or not _is_escape_key(key_event):
+		return false
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller == null:
+		return false
+	_show_game_exit_prompt()
+	return true
+
+
+## 결과: 게임 밖의 초점 버튼은 Z로 누르고 Enter는 선택키로 쓰지 않는다.
+func _handle_menu_confirm_input(key_event: InputEventKey) -> bool:
+	if current_screen == Screen.GAME or _capture_overlay.visible:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_ENTER or key_code == KEY_KP_ENTER:
+		return true
+	if key_code != KEY_Z:
+		return false
+	var focused_button: Button = get_viewport().gui_get_focus_owner() as Button
+	if focused_button != null:
+		focused_button.pressed.emit()
+	return true
+
+
+## 결과: 물리 키와 논리 키 중 하나가 Esc이면 true이며 event를 변경하지 않는다.
+func _is_escape_key(key_event: InputEventKey) -> bool:
+	return key_event.physical_keycode == KEY_ESCAPE or key_event.keycode == KEY_ESCAPE
+
+
 func _handle_back_navigation(key_event: InputEventKey) -> bool:
 	if current_screen == Screen.GAME:
 		return false
-	if key_event.physical_keycode != KEY_ESCAPE and key_event.keycode != KEY_ESCAPE:
+	if not _is_escape_key(key_event):
 		return false
 
 	match current_screen:
@@ -243,6 +332,7 @@ func _build_interface() -> void:
 	_build_volume_screen()
 	_build_capture_overlay()
 	_build_message_overlay()
+	_build_game_exit_overlay()
 
 
 func _build_main_screen() -> void:
@@ -308,11 +398,12 @@ func _build_main_screen() -> void:
 			18
 		)
 		button.pressed.connect(data[2])
+		button.focus_entered.connect(_play_select_sfx)
 		_main_buttons.append(button)
 
 	_create_label(
 		panel,
-		"↑ ↓ 선택    ENTER 확인",
+		"↑ ↓ 선택    Z 확인",
 		Rect2(66.0, 604.0, 340.0, 28.0),
 		13,
 		MUTED
@@ -348,7 +439,7 @@ func _build_tutorial_screen() -> void:
 	_tutorial_next_button.pressed.connect(next_tutorial_page)
 	_tutorial_counter = _create_label(
 		screen,
-		"1 / 4",
+		"1 / %d" % TUTORIAL_PAGE_COUNT,
 		Rect2(422.0, 652.0, 116.0, 34.0),
 		17,
 		TEXT,
@@ -479,12 +570,12 @@ func _build_key_rows(screen: Control) -> void:
 
 func _build_key_row(screen: Control, definition: Dictionary, index: int) -> void:
 	var action_name: StringName = definition["action"]
-	var y_value: float = 150.0 + index * 46.0
+	var y_value: float = 150.0 + index * 40.0
 	_add_key_row_stripe(screen, y_value, index % 2 == 0)
 	_create_label(
 		screen,
 		String(definition["label"]),
-		Rect2(108.0, y_value + 8.0, 210.0, 28.0),
+		Rect2(108.0, y_value + 5.0, 210.0, 26.0),
 		15,
 		TEXT
 	)
@@ -493,7 +584,7 @@ func _build_key_row(screen: Control, definition: Dictionary, index: int) -> void
 	var primary: Button = _create_button(
 		screen,
 		"",
-		Rect2(350.0, y_value, 150.0, 38.0),
+		Rect2(350.0, y_value, 150.0, 34.0),
 		CYAN,
 		13
 	)
@@ -513,8 +604,8 @@ func _add_key_row_stripe(screen: Control, y_value: float, visible: bool) -> void
 	if not visible:
 		return
 	var stripe: ColorRect = ColorRect.new()
-	stripe.position = Vector2(96.0, y_value - 3.0)
-	stripe.size = Vector2(768.0, 43.0)
+	stripe.position = Vector2(96.0, y_value - 2.0)
+	stripe.size = Vector2(768.0, 38.0)
 	stripe.color = Color(0.86, 0.89, 0.93, 0.82)
 	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(stripe)
@@ -531,7 +622,7 @@ func _build_secondary_key_control(
 		_create_label(
 			screen,
 			"—",
-			Rect2(520.0, y_value + 8.0, 150.0, 24.0),
+			Rect2(520.0, y_value + 5.0, 150.0, 24.0),
 			15,
 			Color(0.45, 0.55, 0.68),
 			HORIZONTAL_ALIGNMENT_CENTER
@@ -541,7 +632,7 @@ func _build_secondary_key_control(
 	var secondary: Button = _create_button(
 		screen,
 		"",
-		Rect2(520.0, y_value, 150.0, 38.0),
+		Rect2(520.0, y_value, 150.0, 34.0),
 		ORANGE,
 		13
 	)
@@ -550,7 +641,7 @@ func _build_secondary_key_control(
 	var clear_button: Button = _create_button(
 		screen,
 		"지우기",
-		Rect2(688.0, y_value, 74.0, 38.0),
+		Rect2(688.0, y_value, 74.0, 34.0),
 		MUTED,
 		12
 	)
@@ -753,6 +844,57 @@ func _build_message_overlay() -> void:
 	okay_button.pressed.connect(_hide_message)
 
 
+## 상황: 게임 중 Esc로 메인 메뉴 복귀 여부를 물을 modal UI를 준비한다.
+## 호출: `_build_interface()`가 일반 화면과 다른 overlay를 모두 만든 뒤 한 번 호출한다.
+## 결과: 질문과 Yes/No 버튼이 생성되며 실제 요청 전까지 숨김 상태를 유지한다.
+func _build_game_exit_overlay() -> void:
+	_game_exit_overlay = Control.new()
+	_game_exit_overlay.name = "GameExitOverlay"
+	_game_exit_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_exit_overlay.z_as_relative = false
+	_game_exit_overlay.z_index = 100
+	_game_exit_overlay.visible = false
+	add_child(_game_exit_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_game_exit_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_game_exit_overlay,
+		Rect2(230.0, 390.0, 540.0, 280.0),
+		PANEL,
+		PURPLE,
+		12
+	)
+	_create_label(
+		panel,
+		"메뉴로 나가겠습니까?",
+		Rect2(40.0, 52.0, 460.0, 52.0),
+		25,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_game_exit_yes_button = _create_button(
+		panel,
+		"Yes",
+		Rect2(72.0, 166.0, 180.0, 52.0),
+		CYAN,
+		16
+	)
+	_game_exit_yes_button.name = "GameExitYesButton"
+	_game_exit_yes_button.pressed.connect(_confirm_return_to_main_menu)
+	_game_exit_no_button = _create_button(
+		panel,
+		"No",
+		Rect2(288.0, 166.0, 180.0, 52.0),
+		DANGER,
+		16
+	)
+	_game_exit_no_button.name = "GameExitNoButton"
+	_game_exit_no_button.pressed.connect(_hide_game_exit_prompt)
+
+
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
 	for stored_screen: Variant in _screens.values():
@@ -777,9 +919,9 @@ func _refresh_tutorial() -> void:
 	if _tutorial_canvas == null:
 		return
 	_tutorial_canvas.set_page(tutorial_page)
-	_tutorial_counter.text = "%d / 4" % (tutorial_page + 1)
+	_tutorial_counter.text = "%d / %d" % [tutorial_page + 1, TUTORIAL_PAGE_COUNT]
 	_tutorial_prev_button.disabled = tutorial_page == 0
-	_tutorial_next_button.disabled = tutorial_page == 3
+	_tutorial_next_button.disabled = tutorial_page == TUTORIAL_PAGE_COUNT - 1
 
 
 func _refresh_key_buttons() -> void:
@@ -833,6 +975,76 @@ func _show_message(message: String) -> void:
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+
+
+## 결과: modal을 최상단에 표시하고 게임 입력을 잠근 뒤 No에 초점을 둔다.
+func _show_game_exit_prompt() -> void:
+	if _game_exit_overlay == null:
+		return
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller == null:
+		return
+	if _game_exit_overlay.visible:
+		return
+	_game_exit_was_playing = game_controller.state == MainGameController.GameState.PLAYING
+	if _game_exit_was_playing:
+		game_controller.toggle_pause()
+	game_controller.set_physics_process(false)
+	_game_exit_overlay.visible = true
+	_game_exit_overlay.move_to_front()
+	_game_exit_no_button.grab_focus.call_deferred()
+
+
+## 상황: No 버튼 또는 열린 확인창에서 다시 Esc를 눌렀을 때 호출한다.
+## 결과: modal만 닫고 현재 게임 오버 화면과 R 재시작 입력을 다시 활성화한다.
+func _hide_game_exit_prompt() -> void:
+	if _game_exit_overlay == null:
+		return
+	var was_playing: bool = _game_exit_was_playing
+	_game_exit_was_playing = false
+	_game_exit_overlay.visible = false
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.set_physics_process(true)
+		if was_playing and game_controller.state == MainGameController.GameState.PAUSED:
+			game_controller.toggle_pause()
+
+
+## 상황: 메뉴 복귀 확인창에서 Yes를 선택했을 때 호출한다.
+## 순서: modal 숨김 → 실행 중 게임 제거 예약 → 메뉴 창 크기 복원 → 메인 화면 표시.
+## 결과: 다음 GAME START는 새 게임 인스턴스를 만들며 메인 메뉴 첫 버튼에 초점이 간다.
+func _confirm_return_to_main_menu() -> void:
+	_hide_game_exit_prompt()
+	if _game_instance != null and is_instance_valid(_game_instance):
+		_game_instance.queue_free()
+	_game_instance = null
+	_apply_menu_viewport_size()
+	show_main_menu()
+
+
+## 결과: 현재 로드된 게임의 authoritative controller를 찾거나 없으면 null을 반환한다.
+func _loaded_game_controller() -> MainGameController:
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		return null
+	return _game_instance.get_node_or_null("GameController") as MainGameController
+
+
+## 상황: 게임 전용 1000×1080 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
+## 결과: content scale과 실제 창 크기를 메뉴 설계 크기 960×800으로 복원한다.
+func _apply_menu_viewport_size() -> void:
+	var window: Window = get_window()
+	window.content_scale_size = MENU_VIEWPORT_SIZE
+	if not DisplayServer.get_name().contains("headless"):
+		window.size = MENU_VIEWPORT_SIZE
+
+
+func _play_select_sfx() -> void:
+	if _skip_initial_select_sfx:
+		_skip_initial_select_sfx = false
+		return
+	_select_sfx_player.stream = SFX_SELECT
+	_select_sfx_player.play()
+	_select_sfx_timer.start()
 
 
 func _create_screen(screen_name: String, screen_type: Screen) -> Control:

@@ -1,4 +1,4 @@
-class_name Stage4CharacterAnimationData
+class_name MainCharacterAnimationData
 extends RefCounted
 
 ## [역할 / C++ 대응]
@@ -14,14 +14,17 @@ extends RefCounted
 
 const IDLE: String = "idle" # 지상 대기/기본 상태 key.
 const HANG: String = "hang" # 벽 또는 블록에 매달린 상태 key.
-const PULL: String = "pull" # 블록 당기기 일회성 동작 key.
 const ATTACK: String = "attack" # 펀치 일회성 동작 key.
 const JUMP: String = "jump" # 공중 이동 상태 key.
+const ROTATION_KICK: String = "rotation_kick" # S 블록 플립 전용 1회전 상태 key.
 
-const IDLE_TEXTURE: Texture2D = preload("res://assets/player_animations.png") # idle과 pull frame 시트.
-const HANG_TEXTURE: Texture2D = preload("res://assets/player_hang_animations.png") # hang frame 시트.
-const ATTACK_TEXTURE: Texture2D = preload("res://assets/player_attack_animations.png") # punch 시트.
-const JUMP_TEXTURE: Texture2D = preload("res://assets/player_jump_animations.png") # jump frame 시트.
+const IDLE_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # idle frame 시트.
+const HANG_TEXTURE: Texture2D = preload("res://assets/sprites/player_hang_animations.png") # hang frame 시트.
+const ATTACK_TEXTURE: Texture2D = preload("res://assets/sprites/player_attack_animations.png") # punch 시트.
+const JUMP_TEXTURE: Texture2D = preload("res://assets/sprites/player_jump_animations.png") # jump frame 시트.
+const ROTATION_KICK_TEXTURE: Texture2D = preload(
+	"res://assets/sprites/player_rotation_kick_animations.png"
+) # 기존 jump 픽셀을 동일한 중심축에 재배치한 회전 킥 시트.
 
 # 상태별 sprite-sheet source frame 목록.
 const REGIONS: Dictionary = {
@@ -36,12 +39,6 @@ const REGIONS: Dictionary = {
 		Rect2(470, 80, 365, 700),
 		Rect2(910, 80, 365, 700),
 		Rect2(1350, 80, 365, 700),
-	],
-	PULL: [
-		Rect2(25, 770, 200, 285),
-		Rect2(235, 770, 200, 285),
-		Rect2(435, 770, 200, 285),
-		Rect2(635, 770, 200, 285),
 	],
 	ATTACK: [
 		Rect2(30, 180, 380, 550),
@@ -59,15 +56,25 @@ const REGIONS: Dictionary = {
 		Rect2(1490, 190, 230, 460),
 		Rect2(1750, 320, 220, 330),
 	],
+	ROTATION_KICK: [
+		Rect2(0, 0, 64, 64),
+		Rect2(64, 0, 64, 64),
+		Rect2(128, 0, 64, 64),
+		Rect2(192, 0, 64, 64),
+		Rect2(256, 0, 64, 64),
+		Rect2(320, 0, 64, 64),
+		Rect2(384, 0, 64, 64),
+		Rect2(448, 0, 64, 64),
+	],
 }
 
 # 상태별 한 frame의 표시 시간(초).
 const FRAME_DURATIONS: Dictionary = {
 	IDLE: 0.18,
 	HANG: 0.16,
-	PULL: 0.16,
 	ATTACK: 0.10,
 	JUMP: 0.0875,
+	ROTATION_KICK: 0.0525,
 }
 
 
@@ -82,6 +89,8 @@ static func texture_for(state: String) -> Texture2D:
 			return ATTACK_TEXTURE
 		JUMP:
 			return JUMP_TEXTURE
+		ROTATION_KICK:
+			return ROTATION_KICK_TEXTURE
 		_:
 			return IDLE_TEXTURE
 

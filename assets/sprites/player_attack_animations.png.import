@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bu025f252djga"
-path="res://.godot/imported/player_jump_animations_v2.png-a8ab159631f1e99ee9540fdecd98b0a1.ctex"
+uid="uid://cb32ha5p16nni"
+path="res://.godot/imported/player_attack_animations.png-8ae30b5f8d2484853c46b21b53314e44.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/player_jump_animations_v2.png"
-dest_files=["res://.godot/imported/player_jump_animations_v2.png-a8ab159631f1e99ee9540fdecd98b0a1.ctex"]
+source_file="res://assets/sprites/player_attack_animations.png"
+dest_files=["res://.godot/imported/player_attack_animations.png-8ae30b5f8d2484853c46b21b53314e44.ctex"]
 
 [params]
 

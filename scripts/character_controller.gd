@@ -878,11 +878,13 @@ func _start_rotation_spin() -> void:
 
 
 ## 상황: 일반 이동 중 C를 누르고 regrab cooldown이 0일 때 호출한다.
-## 순서: cooldown 검사 → facing 쪽 Ray 우선, 반대쪽 fallback → collider 조회
+## 순서: cooldown 검사 → 고정 지지면이면 종료 → facing 쪽 Ray 우선, 반대쪽 fallback → collider 조회
 ##       → Node2D+stamina 검사 → hang/body/위치/벽방향 저장 → 조향 취소/정지/feedback.
 ## 결과: 유효한 벽을 찾을 때만 is_hanging=true가 되어 다음 frame부터 hang branch로 간다.
 func _try_start_hang() -> void:
 	if _hang_regrab_remaining > 0.0:
+		return
+	if _has_fixed_support_underfoot():
 		return
 
 	var ray: RayCast2D # 우선순위 검사 끝에 실제 매달릴 충돌을 감지한 RayCast.

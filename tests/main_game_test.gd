@@ -46,6 +46,30 @@ func _run() -> void:
 	)
 	var controller: MainGameController = GAME_CONTROLLER.new()
 	controller.reset_game(20260801)
+	controller.board.reset()
+	var spawn_cells_valid: bool = true
+	for piece_type: int in range(MainTetrominoData.TYPE_COUNT):
+		var cells: Array[Vector2i] = MainTetrominoData.get_cells(piece_type, 0)
+		var minimum_x: int = cells[0].x
+		var maximum_x: int = cells[0].x
+		for cell: Vector2i in cells:
+			minimum_x = mini(minimum_x, cell.x)
+			maximum_x = maxi(maximum_x, cell.x)
+		var candidates: Array[Vector2i] = controller._valid_spawn_origins(piece_type)
+		var expected_count: int = MainBoardModel.WIDTH - 2 - (maximum_x - minimum_x)
+		spawn_cells_valid = spawn_cells_valid and candidates.size() == expected_count
+		for origin: Vector2i in candidates:
+			for cell: Vector2i in cells:
+				var board_cell: Vector2i = origin + cell
+				spawn_cells_valid = (
+					spawn_cells_valid
+					and board_cell.x >= 1
+					and board_cell.x <= MainBoardModel.WIDTH - 2
+				)
+	_expect(
+		spawn_cells_valid,
+		"모든 테트로미노 spawn 후보는 양쪽 경계 열을 비운다."
+	)
 	_expect(
 		controller.has_method("_physics_process")
 			and not controller.has_method("_process"),
@@ -61,6 +85,7 @@ func _run() -> void:
 		"현재 선택 효과음 리소스를 유지한다."
 	)
 	await _test_release_punch()
+	await _test_fixed_support_grab()
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -123,6 +148,59 @@ func _test_release_punch() -> void:
 		"전방 hitbox 밖의 블록은 놓아도 이동하지 않는다."
 	)
 	Input.action_release(&"character_punch")
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._charge_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	character._charge_loop_player.stream = null
+	scene.free()
+	await process_frame
+
+
+func _test_fixed_support_grab() -> void:
+	var scene: MainGameView = GAME_SCENE.instantIATE()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	await process_frame
+	scene.process_mode = Node.PROCESS_MODE_DISABLED
+
+	var controller: MainGameController = scene.get_node("GameController")
+	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	controller.board.reset()
+	for x: int in range(MainBoardModel.WIDTH):
+		controller.board.cells[18][x] = MainTetrominoData.Type.J
+	controller.board.cells[17][5] = MainTetrominoData.Type.J
+	board_physics._sync_from_model()
+	await physics_frame
+
+	character.position = Vector2(216.0, 721.0)
+	character.facing = 1
+	character.stamina = MainCharacterController.MAX_STAMINA
+	character._hang_regrab_remaining = 0.0
+	character.right_ray.force_raycast_update()
+	Input.action_release(&"character_grab")
+	Input.action_press(&"character_grab")
+	_expect(
+		character._has_fixed_support_underfoot(),
+		"고정 지지면 위 C-grab 회귀 테스트가 발밑 지지를 확인한다."
+	)
+	_expect(
+		character.right_ray.is_colliding(),
+		"고정 지지면 위 C-grab 회귀 테스트가 옆 벽을 감지한다."
+	)
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging
+			and character._hang_body == null
+			and character._get_animation_state() == MainCharacterController.ANIMATION_DATA.IDLE,
+		"고정 지지면 위 C-grab은 매달림 상태로 전환되지 않는다."
+	)
+	Input.action_release(&"character_grab")
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()

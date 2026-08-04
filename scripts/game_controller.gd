@@ -208,8 +208,8 @@ func _valid_spawn_origins(piece_type: int) -> Array[Vector2i]:
 		minimum_x = mini(minimum_x, cell.x)
 		maximum_x = maxi(maximum_x, cell.x)
 
-	for origin_x: int in range(-minimum_x, MainBoardModel.WIDTH - maximum_x):
-		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 현재 검사 중인 spawn 원점.
+	for origin_x: int in range(1 - minimum_x, MainBoardModel.WIDTH - 1 - maximum_x):
+		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 양쪽 경계 한 열을 비운 spawn 원점.
 		if board.can_place(piece_type, 0, origin):
 			candidates.append(origin)
 	return candidates

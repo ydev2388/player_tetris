@@ -44,6 +44,11 @@ func _run() -> void:
 			and MainCharacterController.push_distance_for_charge(0.9) == 3,
 		"펀치 hold 단계는 1·2·3칸 순서다."
 	)
+	_expect(
+		MainGameController.GRAVITY_SPEED_MULTIPLIER == 1.5
+			and MainGameController.MEDITATION_TIME_SCALE == 2.0,
+		"기본 낙하는 1.5배이며 명상 중에는 그 속도의 2배다."
+	)
 	var controller: MainGameController = GAME_CONTROLLER.new()
 	controller.reset_game(20260801)
 	controller.board.reset()
@@ -74,6 +79,25 @@ func _run() -> void:
 		controller.has_method("_physics_process")
 			and not controller.has_method("_process"),
 		"게임 진행은 현재 physics process 경로를 사용한다."
+	)
+	var stage_clear_count: Array[int] = [0]
+	controller.stage_cleared.connect(func(_score_value: int) -> void: stage_clear_count[0] += 1)
+	controller.reset_game(20260801)
+	controller._advance_stage_timer(MainGameController.SURVIVAL_TIME_SECONDS)
+	_expect(
+		stage_clear_count[0] == 1
+			and controller.stage_time_remaining == 0.0
+			and controller.state == MainGameController.GameState.PAUSED,
+		"일반 스테이지는 90초 생존 시 클리어된다."
+	)
+	controller.stage_number = 5
+	controller.reset_game(20260801)
+	controller._advance_stage_timer(MainGameController.SURVIVAL_TIME_SECONDS)
+	_expect(
+		stage_clear_count[0] == 1
+			and controller.stage_time_remaining == MainGameController.SURVIVAL_TIME_SECONDS
+			and controller.state == MainGameController.GameState.PLAYING,
+		"보스 스테이지에는 생존 타이머 클리어가 없다."
 	)
 	controller.free()
 	_expect(
@@ -109,6 +133,16 @@ func _test_release_punch() -> void:
 	await physics_frame
 	await process_frame
 	scene.process_mode = Node.PROCESS_MODE_DISABLED
+	var timer_label: Label = scene.find_child("StageTimerLabel", true, false) as Label
+	var stats_label: Label = scene.find_child("StatsLabel", true, false) as Label
+	_expect(
+		timer_label != null and timer_label.text.contains("01:30"),
+		"캐릭터 카드 위치에 90초 남은 시간이 표시된다."
+	)
+	_expect(
+		stats_label != null and not stats_label.text.contains("삭제한 줄"),
+		"HUD는 삭제한 줄 수를 표시하지 않는다."
+	)
 
 	var controller: MainGameController = scene.get_node("GameController")
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")

@@ -53,8 +53,6 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
-const CHARACTER_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # HUD 초상화 시트.
-const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 원본 영역.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
@@ -64,6 +62,7 @@ const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 �
 var _title_label: Label # 고정 게임 제목.
 var _next_label: Label # 다음 블록 preview 제목.
 var _stats_label: Label # score/level/line 수치.
+var _stage_timer_label: Label
 var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
 var _stamina_label: Label # 스태미나 숫자.
 var _punch_label: Label # 보조 정보인 펀치 단계.
@@ -100,7 +99,6 @@ func _draw() -> void:
 	_draw_meditation_effect()
 	_draw_hud_sections()
 	_draw_next_piece()
-	_draw_character_card()
 	_draw_character_bars()
 	_draw_state_overlay()
 
@@ -137,6 +135,16 @@ func _build_interface() -> void:
 	)
 	_stats_label.name = "StatsLabel"
 	_stats_label.add_theme_constant_override("line_spacing", 9)
+	_stage_timer_label = _create_label(
+		"",
+		Vector2(584.0, 552.0),
+		Vector2(352.0, 140.0),
+		28,
+		CYAN
+	)
+	_stage_timer_label.name = "StageTimerLabel"
+	_stage_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stage_timer_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
 	_life_label = _create_label(
 		"",
@@ -374,23 +382,6 @@ func _draw_meditation_effect() -> void:
 	)
 
 
-## 상황: `_draw()`가 우측 HUD 상단의 캐릭터 정적 카드를 그릴 때 호출한다.
-## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
-## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
-func _draw_character_card() -> void:
-	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
-	draw_texture_rect_region(CHARACTER_TEXTURE, portrait_rect, CHARACTER_SOURCE_RECT)
-	draw_string(
-		_system_font,
-		Vector2(662.0, 538.0),
-		"KUNG FU FIGHTER",
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1.0,
-		16,
-		CYAN
-	)
-
-
 ## 상황: 세 핵심 상태와 초상 영역을 좁은 패널 안에서 카드로 구분한다.
 func _draw_hud_sections() -> void:
 	var card_color: Color = Color("#f8fafc")
@@ -492,9 +483,17 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	_stats_label.text = (
-		"점수                         %08d\n\n레벨                              %02d\n\n삭제한 줄                       %03d"
-		% [controller.score, controller.level, controller.total_lines]
+		"점수                         %08d\n\n레벨                              %02d"
+		% [controller.score, controller.level]
 	)
+	if controller.is_survival_stage():
+		var remaining_seconds: int = ceili(controller.stage_time_remaining)
+		_stage_timer_label.text = "남은 시간\n%02d:%02d" % [
+			remaining_seconds / 60,
+			remaining_seconds % 60,
+		]
+	else:
+		_stage_timer_label.text = "BOSS STAGE\n보스를 처치하세요"
 
 	var life_icons: String = "♥".repeat(character.lives) + "♡".repeat( # 남은/잃은 생명을 한 문자열로 표현.
 		MainCharacterController.MAX_LIVES - character.lives

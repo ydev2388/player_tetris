@@ -18,6 +18,7 @@ signal game_changed # 피스/점수/상태 변경 후 View와 BoardPhysics에 �
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
+signal stage_cleared(score_value: int)
 
 enum GameState {
 	PLAYING,
@@ -29,8 +30,10 @@ enum GameState {
 const SPAWN_Y: int = 1 # 새 피스 원점의 숨은 보드 행 y.
 const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 게임 시간(초).
 const MAX_LOCK_RESETS: int = 15 # 이동/회전으로 lock delay를 초기화할 수 있는 최대 횟수.
-const MEDITATION_TIME_SCALE: float = 2.0 # 명상 중 테트리스 중력/lock 시간 배율.
+const GRAVITY_SPEED_MULTIPLIER: float = 1.5 # 기본 테트리스 중력/lock 시간 배율.
+const MEDITATION_TIME_SCALE: float = 2.0 # 명상 시 기본 속도에 추가로 적용할 배율.
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
+const SURVIVAL_TIME_SECONDS: float = 90.0
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # action 등록 유틸리티.
 
 # SRS(Super Rotation System) wall-kick 표.
@@ -71,12 +74,15 @@ var next_type: int = MainTetrominoData.Type.I # 다음 spawn의 타입.
 var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
 var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
 var total_lines: int = 0 # 제거한 누적 행 수. 10줄마다 level이 증가한다.
+var stage_number: int = 1
+var stage_time_remaining: float = SURVIVAL_TIME_SECONDS
 
 # 현재 피스 하나에만 적용되는 내부 accumulator/counter.
 var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
 var _lock_accumulator: float = 0.0 # 현재 접지에서 누적된 고정 대기시간(초).
 var _lock_resets: int = 0 # 현재 피스의 이동/회전 lock delay 초기화 횟수.
 var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x 전용 난수 엔진.
+var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
 
 
 ## 상황: main.tscn의 GameController가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
@@ -85,6 +91,9 @@ var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	INPUT_ACTIONS.ensure_defaults()
+	var game_root: Node = get_parent()
+	if game_root != null:
+		stage_number = int(game_root.get_meta("stage_number", 1))
 	reset_game()
 
 
@@ -102,11 +111,12 @@ func _physics_process(delta: float) -> void:
 	if state != GameState.PLAYING:
 		return
 
-	var effective_delta: float = ( # 명상 배율을 적용해 테트리스 규칙에만 사용할 시간.
-		delta * MEDITATION_TIME_SCALE if meditation_active else delta
-	)
+	var effective_delta: float = delta * GRAVITY_SPEED_MULTIPLIER
+	if meditation_active:
+		effective_delta *= MEDITATION_TIME_SCALE
 	_advance_gravity(effective_delta)
 	_advance_lock_delay(effective_delta)
+	_advance_stage_timer(delta)
 
 
 ## 상황: PLAYING frame에서 중력에 따른 셀 낙하를 진행할 때 호출한다.
@@ -156,6 +166,8 @@ func reset_game(seed_value: int = -1) -> void:
 	score = 0
 	level = 1
 	total_lines = 0
+	stage_time_remaining = SURVIVAL_TIME_SECONDS
+	_shown_stage_seconds = ceili(SURVIVAL_TIME_SECONDS)
 	state = GameState.PLAYING
 	meditation_active = false
 	_reset_piece_timers()
@@ -163,6 +175,26 @@ func reset_game(seed_value: int = -1) -> void:
 	spawn_next_piece()
 	game_restarted.emit()
 	game_changed.emit()
+
+
+func is_survival_stage() -> bool:
+	return stage_number < 5
+
+
+func _advance_stage_timer(delta: float) -> void:
+	if not is_survival_stage():
+		return
+	stage_time_remaining = maxf(stage_time_remaining - delta, 0.0)
+	var shown_seconds: int = ceili(stage_time_remaining)
+	if shown_seconds != _shown_stage_seconds:
+		_shown_stage_seconds = shown_seconds
+		game_changed.emit()
+	if stage_time_remaining > 0.0:
+		return
+	state = GameState.PAUSED
+	meditation_active = false
+	game_changed.emit()
+	stage_cleared.emit(score)
 
 
 ## 상황: 게임 시작 또는 이전 피스를 고정한 뒤 다음 활성 피스가 필요할 때 호출한다.

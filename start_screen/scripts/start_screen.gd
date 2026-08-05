@@ -31,6 +31,7 @@ const DANGER: Color = Color("#d9485f")
 
 enum Screen {
 	MAIN,
+	STAGE_SELECT,
 	TUTORIAL,
 	OPTIONS,
 	KEY_CUSTOM,
@@ -45,11 +46,15 @@ enum Screen {
 var settings: StartScreenSettings
 var current_screen: Screen = Screen.MAIN
 var tutorial_page: int = 0
+var selected_stage_number: int = 1
 
 var _font: SystemFont
 var _ui: RefCounted
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
+var _stage_buttons: Array[Button] = []
+var _stage_labels: Array[Label] = []
+var _stage_currency_label: Label
 var _options_first_button: Button
 var _key_buttons: Dictionary = {}
 var _key_status: Label
@@ -76,6 +81,13 @@ var _capture_slot: int = -1
 
 var _message_overlay: Control
 var _message_label: Label
+var _stage_result_overlay: Control
+var _stage_result_label: Label
+var _stage_result_reward_label: Label
+var _stage_result_button: Button
+var _progress_reset_overlay: Control
+var _progress_reset_yes_button: Button
+var _progress_reset_no_button: Button
 
 
 func _ready() -> void:
@@ -89,6 +101,7 @@ func _ready() -> void:
 	settings.name = "StartScreenSettings"
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
+	settings.progress_changed.connect(_refresh_stage_select)
 	add_child(settings)
 	_select_sfx_player = AudioStreamPlayer.new()
 	_select_sfx_player.bus = &"SFX"
@@ -126,7 +139,14 @@ func _draw() -> void:
 
 
 func show_main_menu() -> void:
+	_hide_stage_result()
 	_show_screen(Screen.MAIN)
+
+
+func show_stage_select() -> void:
+	_hide_stage_result()
+	_refresh_stage_select()
+	_show_screen(Screen.STAGE_SELECT)
 
 
 func show_tutorial() -> void:
@@ -158,9 +178,14 @@ func previous_tutorial_page() -> void:
 	_refresh_tutorial()
 
 
-func start_game() -> bool:
+func start_game(stage_number: int = -1) -> bool:
 	if _game_instance != null and is_instance_valid(_game_instance):
 		return true
+	if stage_number < 1:
+		stage_number = selected_stage_number
+	if not settings.is_stage_unlocked(stage_number):
+		_show_message("아직 잠긴 스테이지입니다.")
+		return false
 	if not ResourceLoader.exists(game_scene_path, "PackedScene"):
 		_show_message("게임 장면을 찾을 수 없습니다.\n%s" % game_scene_path)
 		return false
@@ -172,7 +197,12 @@ func start_game() -> bool:
 
 	_game_instance = (game_resource as PackedScene).instantiate()
 	_game_instance.name = "LoadedGame"
+	_game_instance.set_meta("stage_number", stage_number)
+	selected_stage_number = stage_number
 	_game_host.add_child(_game_instance)
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
 	_show_screen(Screen.GAME)
 	game_loaded.emit(_game_instance)
 	return true
@@ -213,6 +243,10 @@ func _input(event: InputEvent) -> void:
 	if not key_event.pressed or key_event.echo:
 		return
 	if _handle_game_exit_prompt_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_debug_completion_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_progress_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -280,6 +314,19 @@ func _handle_game_exit_prompt_input(key_event: InputEventKey) -> bool:
 	return true
 
 
+func _handle_debug_completion_input(key_event: InputEventKey) -> bool:
+	if not OS.is_debug_build() or current_screen != Screen.GAME:
+		return false
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		return false
+	if _game_exit_overlay != null and _game_exit_overlay.visible:
+		return false
+	if not _is_enter_key(key_event):
+		return false
+	_complete_stage_for_debug()
+	return true
+
+
 ## 결과: 게임 밖의 초점 버튼은 Z로 누르고 Enter는 선택키로 쓰지 않는다.
 func _handle_menu_confirm_input(key_event: InputEventKey) -> bool:
 	if current_screen == Screen.GAME or _capture_overlay.visible:
@@ -302,13 +349,62 @@ func _is_escape_key(key_event: InputEventKey) -> bool:
 	return key_event.physical_keycode == KEY_ESCAPE or key_event.keycode == KEY_ESCAPE
 
 
+func _is_x_key(key_event: InputEventKey) -> bool:
+	return key_event.physical_keycode == KEY_X or key_event.keycode == KEY_X
+
+
+func _handle_progress_reset_prompt_input(key_event: InputEventKey) -> bool:
+	if _progress_reset_overlay == null or not _progress_reset_overlay.visible:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_LEFT or key_code == KEY_RIGHT:
+		if _progress_reset_yes_button.has_focus():
+			_progress_reset_no_button.grab_focus()
+		else:
+			_progress_reset_yes_button.grab_focus()
+		return true
+	if key_code == KEY_Z:
+		if _progress_reset_yes_button.has_focus():
+			_confirm_progress_reset()
+		else:
+			_hide_progress_reset_prompt()
+		return true
+	if _is_escape_key(key_event) or _is_x_key(key_event):
+		_hide_progress_reset_prompt()
+		return true
+	return false
+
+
+func _show_progress_reset_prompt() -> void:
+	_progress_reset_overlay.visible = true
+	_progress_reset_overlay.move_to_front()
+	_progress_reset_no_button.grab_focus.call_deferred()
+
+
+func _hide_progress_reset_prompt() -> void:
+	_progress_reset_overlay.visible = false
+	_options_first_button.grab_focus.call_deferred()
+
+
+func _confirm_progress_reset() -> void:
+	var reset_error: Error = settings.reset_stage_progress()
+	if reset_error != OK:
+		_show_message("진행 데이터를 삭제하지 못했습니다: %s" % error_string(reset_error))
+		return
+	_hide_progress_reset_prompt()
+
+
 func _handle_back_navigation(key_event: InputEventKey) -> bool:
 	if current_screen == Screen.GAME:
 		return false
-	if not _is_escape_key(key_event):
+	if not (_is_escape_key(key_event) or _is_x_key(key_event)):
 		return false
 
 	match current_screen:
+		Screen.STAGE_SELECT:
+			show_main_menu()
 		Screen.TUTORIAL, Screen.OPTIONS:
 			show_main_menu()
 		Screen.KEY_CUSTOM, Screen.VOLUME:
@@ -326,13 +422,16 @@ func _build_interface() -> void:
 	add_child(_game_host)
 
 	_build_main_screen()
+	_build_stage_select_screen()
 	_build_tutorial_screen()
 	_build_options_screen()
 	_build_key_screen()
 	_build_volume_screen()
 	_build_capture_overlay()
 	_build_message_overlay()
+	_build_progress_reset_overlay()
 	_build_game_exit_overlay()
+	_build_stage_result_overlay()
 
 
 func _build_main_screen() -> void:
@@ -383,7 +482,7 @@ func _build_main_screen() -> void:
 	panel.add_child(portrait)
 
 	var button_data: Array = [
-		["GAME START", CYAN, start_game],
+		["GAME START", CYAN, show_stage_select],
 		["게임 설명", ORANGE, show_tutorial],
 		["OPTION", PURPLE, show_options],
 		["EXIT", DANGER, request_exit],
@@ -408,6 +507,68 @@ func _build_main_screen() -> void:
 		13,
 		MUTED
 	)
+
+
+func _build_stage_select_screen() -> void:
+	var screen: Control = _create_screen("StageSelectScreen", Screen.STAGE_SELECT)
+	_add_screen_title(screen, "STAGE SELECT", "클리어한 스테이지의 별은 다음 도전에 이어집니다")
+	_stage_currency_label = _create_label(
+		screen,
+		"별 0개",
+		Rect2(680.0, 54.0, 210.0, 40.0),
+		18,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
+	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
+		var x_position: float = 70.0 + float(stage_number - 1) * 166.0
+		var panel: Panel = _create_panel(
+			screen,
+			Rect2(x_position, 190.0, 150.0, 340.0),
+			PANEL,
+			accents[stage_number - 1],
+			10
+		)
+		_create_label(
+			panel,
+			"1-%d%s" % [stage_number, "  BOSS" if stage_number == 5 else ""],
+			Rect2(10.0, 26.0, 130.0, 38.0),
+			19,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		var status_label: Label = _create_label(
+			panel,
+			"",
+			Rect2(10.0, 102.0, 130.0, 72.0),
+			17,
+			ORANGE,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		_stage_labels.append(status_label)
+		var stage_button: Button = _create_button(
+			panel,
+			"시작",
+			Rect2(20.0, 235.0, 110.0, 48.0),
+			accents[stage_number - 1],
+			14
+		)
+		stage_button.name = "StageButton%d" % stage_number
+		stage_button.pressed.connect(_on_stage_selected.bind(stage_number))
+		stage_button.focus_entered.connect(_play_select_sfx)
+		_stage_buttons.append(stage_button)
+
+	var back_button: Button = _create_button(
+		screen,
+		"메인으로",
+		Rect2(390.0, 650.0, 180.0, 48.0),
+		PURPLE,
+		14
+	)
+	back_button.pressed.connect(show_main_menu)
+	_refresh_stage_select()
 
 
 func _build_tutorial_screen() -> void:
@@ -479,11 +640,42 @@ func _build_options_screen() -> void:
 		"볼륨 설정 열기",
 		show_volume
 	)
+	var reset_panel: Panel = _create_panel(
+		screen,
+		Rect2(310.0, 575.0, 340.0, 130.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		reset_panel,
+		"진행 데이터 초기화",
+		Rect2(20.0, 14.0, 300.0, 30.0),
+		18,
+		DANGER,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		reset_panel,
+		"스테이지 해금과 별 재화를 지웁니다.",
+		Rect2(20.0, 45.0, 300.0, 24.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	var reset_button: Button = _create_button(
+		reset_panel,
+		"진행 상황 삭제",
+		Rect2(70.0, 78.0, 200.0, 38.0),
+		DANGER,
+		14
+	)
+	reset_button.pressed.connect(_show_progress_reset_prompt)
 
 	var back_button: Button = _create_button(
 		screen,
 		"메인으로",
-		Rect2(390.0, 650.0, 180.0, 48.0),
+		Rect2(390.0, 725.0, 180.0, 40.0),
 		PURPLE,
 		14
 	)
@@ -844,6 +1036,60 @@ func _build_message_overlay() -> void:
 	okay_button.pressed.connect(_hide_message)
 
 
+func _build_progress_reset_overlay() -> void:
+	_progress_reset_overlay = Control.new()
+	_progress_reset_overlay.name = "ProgressResetOverlay"
+	_progress_reset_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_progress_reset_overlay.z_as_relative = false
+	_progress_reset_overlay.z_index = 150
+	_progress_reset_overlay.visible = false
+	add_child(_progress_reset_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_progress_reset_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_progress_reset_overlay,
+		Rect2(220.0, 270.0, 520.0, 260.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		panel,
+		"진행 데이터를 삭제할까요?",
+		Rect2(40.0, 38.0, 440.0, 38.0),
+		24,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		panel,
+		"스테이지 해금과 별 재화가 초기화됩니다.",
+		Rect2(40.0, 92.0, 440.0, 32.0),
+		15,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_progress_reset_yes_button = _create_button(
+		panel,
+		"삭제",
+		Rect2(72.0, 170.0, 180.0, 46.0),
+		DANGER,
+		15
+	)
+	_progress_reset_yes_button.pressed.connect(_confirm_progress_reset)
+	_progress_reset_no_button = _create_button(
+		panel,
+		"취소",
+		Rect2(268.0, 170.0, 180.0, 46.0),
+		CYAN,
+		15
+	)
+	_progress_reset_no_button.pressed.connect(_hide_progress_reset_prompt)
+
+
 ## 상황: 게임 중 Esc로 메인 메뉴 복귀 여부를 물을 modal UI를 준비한다.
 ## 호출: `_build_interface()`가 일반 화면과 다른 overlay를 모두 만든 뒤 한 번 호출한다.
 ## 결과: 질문과 Yes/No 버튼이 생성되며 실제 요청 전까지 숨김 상태를 유지한다.
@@ -895,6 +1141,97 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_no_button.pressed.connect(_hide_game_exit_prompt)
 
 
+func _build_stage_result_overlay() -> void:
+	_stage_result_overlay = Control.new()
+	_stage_result_overlay.name = "StageResultOverlay"
+	_stage_result_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_result_overlay.z_as_relative = false
+	_stage_result_overlay.z_index = 200
+	_stage_result_overlay.visible = false
+	add_child(_stage_result_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_stage_result_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_stage_result_overlay,
+		Rect2(220.0, 250.0, 520.0, 300.0),
+		PANEL,
+		ORANGE,
+		12
+	)
+	_stage_result_label = _create_label(
+		panel,
+		"",
+		Rect2(40.0, 40.0, 440.0, 84.0),
+		27,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_stage_result_reward_label = _create_label(
+		panel,
+		"",
+		Rect2(40.0, 140.0, 440.0, 42.0),
+		17,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_stage_result_button = _create_button(
+		panel,
+		"스테이지 선택으로",
+		Rect2(150.0, 220.0, 220.0, 46.0),
+		CYAN,
+		14
+	)
+	_stage_result_button.name = "StageResultButton"
+	_stage_result_button.pressed.connect(show_stage_select)
+
+
+func _show_stage_result(result: Dictionary) -> void:
+	if _stage_result_overlay == null:
+		return
+	var stage_number: int = int(result.get("stage_number", selected_stage_number))
+	var stars: int = int(result.get("stars", 3))
+	var reward: int = int(result.get("reward", 0))
+	_stage_result_label.text = "1-%d 클리어!\n%s" % [stage_number, _star_text(stars)]
+	_stage_result_reward_label.text = "별 보상 +%d   (보유 %d)" % [
+		reward,
+		int(result.get("star_currency", settings.star_currency)),
+	]
+	_stage_result_overlay.visible = true
+	_stage_result_overlay.move_to_front()
+	_stage_result_button.grab_focus.call_deferred()
+
+
+func _hide_stage_result() -> void:
+	if _stage_result_overlay != null:
+		_stage_result_overlay.visible = false
+
+
+func _complete_stage_for_debug() -> void:
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		return
+	_complete_stage(3)
+
+
+func _on_survival_stage_cleared(_score_value: int) -> void:
+	_complete_stage(1)
+
+
+func _complete_stage(stars: int) -> void:
+	var result: Dictionary = settings.complete_stage(selected_stage_number, stars)
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
+		return
+	if _game_instance != null and is_instance_valid(_game_instance):
+		_game_instance.queue_free()
+	_game_instance = null
+	_apply_menu_viewport_size()
+	_show_screen(Screen.STAGE_SELECT)
+	_show_stage_result(result)
+
+
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
 	for stored_screen: Variant in _screens.values():
@@ -906,6 +1243,12 @@ func _show_screen(screen_type: Screen) -> void:
 	match screen_type:
 		Screen.MAIN:
 			_main_buttons[0].grab_focus.call_deferred()
+		Screen.STAGE_SELECT:
+			if not _stage_buttons.is_empty():
+				var focus_index: int = clampi(selected_stage_number - 1, 0, _stage_buttons.size() - 1)
+				if _stage_buttons[focus_index].disabled:
+					focus_index = 0
+				_stage_buttons[focus_index].grab_focus.call_deferred()
 		Screen.TUTORIAL:
 			_tutorial_next_button.grab_focus.call_deferred()
 		Screen.OPTIONS:
@@ -922,6 +1265,33 @@ func _refresh_tutorial() -> void:
 	_tutorial_counter.text = "%d / %d" % [tutorial_page + 1, TUTORIAL_PAGE_COUNT]
 	_tutorial_prev_button.disabled = tutorial_page == 0
 	_tutorial_next_button.disabled = tutorial_page == TUTORIAL_PAGE_COUNT - 1
+
+
+func _refresh_stage_select() -> void:
+	if settings == null or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT:
+		return
+	_stage_currency_label.text = "별 %d개" % settings.star_currency
+	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
+		var index: int = stage_number - 1
+		var unlocked: bool = settings.is_stage_unlocked(stage_number)
+		_stage_labels[index].text = "%s\n%s" % [
+			_star_text(settings.get_stage_best_stars(stage_number)),
+			"입장 가능" if unlocked else "잠김",
+		]
+		_stage_buttons[index].disabled = not unlocked
+		_stage_buttons[index].text = "시작" if unlocked else "잠김"
+
+
+func _on_stage_selected(stage_number: int) -> void:
+	if settings.is_stage_unlocked(stage_number):
+		start_game(stage_number)
+
+
+func _star_text(stars: int) -> String:
+	var result: String = ""
+	for star_index: int in range(StartScreenSettings.MAX_STAGE_STARS):
+		result += "★" if star_index < stars else "☆"
+	return result
 
 
 func _refresh_key_buttons() -> void:
@@ -963,6 +1333,15 @@ func _on_music_changed(value: float) -> void:
 func _on_sfx_changed(value: float) -> void:
 	settings.set_sfx_percent(value)
 	_sfx_value_label.text = "%d%%" % roundi(value)
+
+
+func _is_enter_key(key_event: InputEventKey) -> bool:
+	return (
+		key_event.physical_keycode == KEY_ENTER
+		or key_event.physical_keycode == KEY_KP_ENTER
+		or key_event.keycode == KEY_ENTER
+		or key_event.keycode == KEY_KP_ENTER
+	)
 
 
 func _show_message(message: String) -> void:

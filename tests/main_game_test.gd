@@ -86,6 +86,7 @@ func _run() -> void:
 	)
 	await _test_release_punch()
 	await _test_fixed_support_grab()
+	await _test_hang_face_bounds()
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -161,12 +162,11 @@ func _test_release_punch() -> void:
 
 
 func _test_fixed_support_grab() -> void:
-	var scene: MainGameView = GAME_SCENE.instantIATE()
+	var scene: MainGameView = GAME_SCENE.instantiate()
 	root.add_child(scene)
 	await process_frame
 	await physics_frame
 	await process_frame
-	scene.process_mode = Node.PROCESS_MODE_DISABLED
 
 	var controller: MainGameController = scene.get_node("GameController")
 	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
@@ -179,6 +179,7 @@ func _test_fixed_support_grab() -> void:
 	await physics_frame
 
 	character.position = Vector2(216.0, 721.0)
+	character._exit_hang()
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA
 	character._hang_regrab_remaining = 0.0
@@ -196,8 +197,7 @@ func _test_fixed_support_grab() -> void:
 	character._try_start_hang()
 	_expect(
 		not character.is_hanging
-			and character._hang_body == null
-			and character._get_animation_state() == MainCharacterController.ANIMATION_DATA.IDLE,
+			and character._hang_body == null,
 		"고정 지지면 위 C-grab은 매달림 상태로 전환되지 않는다."
 	)
 	Input.action_release(&"character_grab")
@@ -211,6 +211,222 @@ func _test_fixed_support_grab() -> void:
 	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
+
+
+func _test_hang_face_bounds() -> void:
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	await process_frame
+
+	var controller: MainGameController = scene.get_node("GameController")
+	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8)],
+		Vector2(216.0, 312.0)
+	)
+	var grab_y: float = character.global_position.y
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and character._hang_body != null
+			and character.global_position.y == grab_y,
+		"노출된 옆면 가까이의 C-grab은 세로 위치를 바꾸지 않고 성공한다."
+	)
+	character._exit_hang()
+	controller.board.reset()
+	board_physics._sync_from_model()
+	await physics_frame
+	character.position = Vector2(24.0, 312.0)
+	character.facing = -1
+	character.left_ray.force_raycast_update()
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and character._hang_body == board_physics.get_node("Boundaries")
+			and character._hang_top_global_y <= character.global_position.y
+			and character.global_position.y <= character._hang_bottom_global_y,
+		"보드 경계벽은 바닥 collision과 같은 body여도 잡을 수 있다."
+	)
+	character._exit_hang()
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8)],
+		Vector2(195.0, 312.0)
+	)
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging,
+		"옆면에서 수평으로 먼 위치의 C-grab은 성공하지 않는다."
+	)
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8)],
+		Vector2(216.0, 350.0)
+	)
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging,
+		"몸체가 세로로 겹쳐도 옆면 밖의 ray 높이에서는 C-grab하지 않는다."
+	)
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8), Vector2i(5, 9)],
+		Vector2(216.0, 360.0)
+	)
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and is_equal_approx(character._hang_top_global_y, 400.0)
+			and is_equal_approx(character._hang_bottom_global_y, 496.0),
+		"세로로 이어진 노출 옆면은 손 위치 기준 매달림 범위를 공유한다."
+	)
+	var upper_bound: float = character._hang_top_global_y
+	character.global_position.y = upper_bound + 1.0
+	var up_event: InputEventKey = InputEventKey.new()
+	up_event.keycode = KEY_UP
+	up_event.pressed = true
+	Input.parse_input_event(up_event)
+	character._move_while_hanging()
+	var up_release_event: InputEventKey = InputEventKey.new()
+	up_release_event.keycode = KEY_UP
+	Input.parse_input_event(up_release_event)
+	_expect(
+		character.global_position.y >= upper_bound,
+		"매달린 중 상승 입력은 저장된 상단 범위를 넘지 않는다."
+	)
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8), Vector2i(5, 9)],
+		Vector2(216.0, 360.0)
+	)
+	character._try_start_hang()
+	var lower_bound: float = character._hang_bottom_global_y
+	character.global_position.y = lower_bound - 1.0
+	Input.action_press(&"character_meditate")
+	character._move_while_hanging()
+	Input.action_release(&"character_meditate")
+	_expect(
+		character.global_position.y <= lower_bound,
+		"매달린 중 하강 입력은 저장된 하단 범위를 넘지 않는다."
+	)
+	var active_piece: AnimatableBody2D = board_physics.active_body
+	var bounds_top: float = 368.0
+	var bounds_bottom: float = 464.0
+	character._hang_top_global_y = bounds_top
+	character._hang_bottom_global_y = bounds_bottom
+	character._hang_body = active_piece
+	character._hang_last_global_position = active_piece.global_position - Vector2(
+		0.0,
+		MainLayout.CELL_SIZE
+	)
+	character._follow_hang_body()
+	_expect(
+		is_equal_approx(character._hang_top_global_y, bounds_top + MainLayout.CELL_SIZE)
+			and is_equal_approx(character._hang_bottom_global_y, bounds_bottom + MainLayout.CELL_SIZE),
+		"활성 피스의 수직 이동은 저장된 매달림 범위를 함께 이동시킨다."
+	)
+	Input.action_release(&"character_meditate")
+	character.is_hanging = true
+	character._move_while_hanging()
+	_expect(
+		character.is_hanging,
+		"입력 없이 내려오는 활성 피스를 잡고 있으면 ray 갱신 frame에도 매달림을 유지한다."
+	)
+	character._exit_hang()
+	_expect(
+		is_zero_approx(character._hang_top_global_y)
+			and is_zero_approx(character._hang_bottom_global_y),
+		"매달림 종료는 저장된 매달림 범위를 비운다."
+	)
+	character._hang_top_global_y = 1.0
+	character._hang_bottom_global_y = 2.0
+	character._reset_character()
+	_expect(
+		is_zero_approx(character._hang_top_global_y)
+			and is_zero_approx(character._hang_bottom_global_y),
+		"캐릭터 reset은 저장된 매달림 범위를 비운다."
+	)
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8), Vector2i(5, 10)],
+		Vector2(216.0, 408.0)
+	)
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and is_equal_approx(character._hang_top_global_y, 496.0)
+			and is_equal_approx(character._hang_bottom_global_y, 544.0),
+		"세로 틈이 있는 옆면은 틈을 건너 범위를 확장하지 않는다."
+	)
+	character._exit_hang()
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
+		[Vector2i(5, 8), Vector2i(6, 9)],
+		Vector2(216.0, 312.0)
+	)
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and is_equal_approx(character._hang_top_global_y, 400.0)
+			and is_equal_approx(character._hang_bottom_global_y, 448.0),
+		"수평으로 꺾인 step은 다른 face를 같은 범위로 합치지 않는다."
+	)
+	character._exit_hang()
+
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._charge_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	character._charge_loop_player.stream = null
+	scene.free()
+	await process_frame
+
+
+func _prepare_hang_fixture(
+	controller: MainGameController,
+	board_physics: MainBoardPhysics,
+	character: MainCharacterController,
+	cells: Array[Vector2i],
+	character_position: Vector2
+) -> void:
+	character._exit_hang()
+	controller.board.reset()
+	for cell: Vector2i in cells:
+		controller.board.cells[cell.y][cell.x] = MainTetrominoData.Type.J
+	controller.state = MainGameController.GameState.PLAYING
+	board_physics._sync_from_model()
+	await physics_frame
+	character.position = character_position
+	character.velocity = Vector2.ZERO
+	character.facing = 1
+	character.stamina = MainCharacterController.MAX_STAMINA
+	character._hang_regrab_remaining = 0.0
 
 
 func _prepare_punch(

@@ -52,6 +52,7 @@ const JUMP_RELEASE_MULTIPLIER: float = 0.45 # 상승 중 키를 놓을 때 y속�
 const WALL_JUMP_HORIZONTAL_SPEED: float = 185.0 * GIT_GRID_SCALE # 벽 반대 x속도(px/s).
 const WALL_JUMP_VERTICAL_MULTIPLIER: float = 1.0 # 벽점프의 JUMP_VELOCITY 배율.
 const HANG_CLIMB_SPEED: float = 78.0 * GIT_GRID_SCALE # 매달린 상하 이동속도(px/s).
+const HANG_HAND_OFFSET_Y: float = CHARACTER_HEIGHT / 3.0 # hang 스프라이트 손의 캐릭터 중심 기준 높이.
 const HANG_REGRAB_COOLDOWN: float = 0.18 # 벽점프 직후 같은 벽 재매달림 금지 초.
 const HANG_JUMP_GRACE_TIME: float = 0.15 # grab을 놓은 뒤에도 벽점프 가능한 초.
 const WALL_JUMP_STEER_TIME: float = 0.65 # 벽점프 뒤 원래 벽 방향 공중 조향 보정 초.
@@ -104,6 +105,7 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 @onready var sprite: Sprite2D = $Sprite # animation/flip/회전/색/깜빡임 대상.
 @onready var left_ray: RayCast2D = $LeftRay # 왼쪽 매달릴 collision 탐지기.
 @onready var right_ray: RayCast2D = $RightRay # 오른쪽 매달릴 collision 탐지기.
+@onready var boundaries: StaticBody2D = $"../Boundaries" # 바닥과 양쪽 보드 벽 collision 소유자.
 
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
@@ -132,6 +134,8 @@ var _pending_rotation_launch_velocity: float = 0.0 # 새 active collider 동기�
 var _post_spin_animation_seeded: bool = false # 종료 frame seed를 한 번 보존할 flag.
 var _hang_body: Node2D # 매달린 실제 collider. 활성 피스면 움직임을 따라간다.
 var _hang_last_global_position: Vector2 # 붙은 body의 이전 frame 위치; 이동 delta 계산용.
+var _hang_top_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 상단.
+var _hang_bottom_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 하단.
 var _coyote_remaining: float = 0.0 # 0보다 크면 발판을 떠났어도 지상점프 허용.
 var _jump_buffer_remaining: float = 0.0 # 0보다 크면 최근 jump press를 착지까지 기억.
 var _hang_regrab_remaining: float = 0.0 # 0보다 크면 새 매달리기 시작 금지.
@@ -498,6 +502,11 @@ func _handle_hanging(delta: float) -> void:
 	_follow_hang_body()
 	if not is_hanging:
 		return
+	global_position.y = clampf(
+		global_position.y,
+		_hang_top_global_y,
+		_hang_bottom_global_y
+	)
 	if _has_fixed_support_underfoot():
 		_exit_hang()
 		return
@@ -536,24 +545,35 @@ func _follow_hang_body() -> void:
 			_exit_hang()
 			return
 		global_position += body_delta
+		_hang_top_global_y += body_delta.y
+		_hang_bottom_global_y += body_delta.y
 		_hang_last_global_position = _hang_body.global_position
 
 
 ## 상황: 붙은 body를 따라간 뒤 사용자의 위/아래 매달림 이동을 적용할 때 호출한다.
 ## 순서: 방향 조회 → velocity 설정 → 무입력이면 true → move_and_slide
-##       → 양 RayCast 강제 갱신 → 붙은 쪽 충돌 확인 → 접촉 없으면 hang 해제/false.
+##       → 외부 옆면 범위 clamp → 양 RayCast 강제 갱신 → 붙은 쪽 충돌 확인.
 ## 결과: 벽을 따라 이동하되 끝을 벗어난 순간 일반 공중 상태로 전환된다.
 func _move_while_hanging() -> bool:
 	var climb_direction: float = _hang_climb_direction() # 위 -1, 정지 0, 아래 +1.
 	velocity = Vector2(0.0, climb_direction * HANG_CLIMB_SPEED)
+	var hang_ray: RayCast2D = (
+		left_ray if _hang_jump_facing < 0 else right_ray
+	)
 	if is_zero_approx(climb_direction):
 		return true
 
 	move_and_slide()
+	global_position.y = clampf(
+		global_position.y,
+		_hang_top_global_y,
+		_hang_bottom_global_y
+	)
 	left_ray.force_raycast_update()
 	right_ray.force_raycast_update()
 	var still_touching_wall: bool = ( # 최초 매달린 벽 방향 RayCast의 최신 충돌 상태.
-		left_ray.is_colliding() if _hang_jump_facing < 0 else right_ray.is_colliding()
+		hang_ray.is_colliding()
+		and hang_ray.get_collider() == _hang_body
 	)
 	if still_touching_wall:
 		return true
@@ -887,6 +907,8 @@ func _try_start_hang() -> void:
 	if _has_fixed_support_underfoot():
 		return
 
+	left_ray.force_raycast_update()
+	right_ray.force_raycast_update()
 	var ray: RayCast2D # 우선순위 검사 끝에 실제 매달릴 충돌을 감지한 RayCast.
 	if facing < 0 and left_ray.is_colliding():
 		ray = left_ray
@@ -904,10 +926,13 @@ func _try_start_hang() -> void:
 	var collider: Object = ray.get_collider() # 벽 또는 활성 피스일 수 있는 런타임 객체.
 	if collider is Node2D and stamina > 0.0:
 		var returned_from_wall_jump: bool = _wall_jump_control_remaining > 0.0 # 직전 벽으로 복귀했는지.
-		is_hanging = true
 		_hang_body = collider as Node2D
-		_hang_last_global_position = _hang_body.global_position
 		_hang_jump_facing = facing
+		if not _set_hang_vertical_bounds(ray):
+			_hang_body = null
+			return
+		is_hanging = true
+		_hang_last_global_position = _hang_body.global_position
 		_hang_jump_grace_remaining = 0.0
 		_pending_rotation_launch_velocity = 0.0
 		_cancel_wall_jump_control()
@@ -917,11 +942,101 @@ func _try_start_hang() -> void:
 
 
 ## 상황: grab 해제, stamina 소진, 벽 끝, 벽점프 또는 피해로 hang을 끝낼 때 호출한다.
-## 순서: is_hanging=false → `_hang_body=null`.
+## 순서: is_hanging=false → `_hang_body=null` → 외부 옆면 범위 초기화.
 ## 결과: 다음 physics frame은 일반 이동 branch를 실행하고 body를 더 이상 추적하지 않는다.
 func _exit_hang() -> void:
 	is_hanging = false
 	_hang_body = null
+	_hang_top_global_y = 0.0
+	_hang_bottom_global_y = 0.0
+
+
+## 상황: C로 잡은 충돌 지점에서 세로로 이어진 외부 옆면 범위를 저장할 때 호출한다.
+## 순서: RayCast 접촉점의 노출된 셀 외곽면을 찾고, 같은 면에서 위·아래로 맞닿은 셀만 확장한다.
+## 결과: 매달림 이동은 처음 잡은 블록 옆면의 실제 길이를 넘지 않으며, 면을 못 찾으면 false다.
+func _set_hang_vertical_bounds(ray: RayCast2D) -> bool:
+	var collision_rects: Array[Rect2] = []
+	for child: Node in _hang_body.get_children():
+		if not child is CollisionShape2D:
+			continue
+		var collision: CollisionShape2D = child as CollisionShape2D
+		if collision.disabled or collision.shape == null:
+			continue
+		collision_rects.append(collision.global_transform * collision.shape.get_rect())
+
+	if collision_rects.is_empty():
+		_clear_hang_vertical_bounds()
+		return false
+
+	var contact_point: Vector2 = ray.get_collision_point()
+	var hit_rect: Rect2 = Rect2()
+	var found_hit_face: bool = false
+	for rect: Rect2 in collision_rects:
+		var face_x: float = rect.position.x if _hang_jump_facing > 0 else rect.end.x
+		if not is_equal_approx(face_x, contact_point.x):
+			continue
+		if contact_point.y < rect.position.y or contact_point.y > rect.end.y:
+			continue
+		if _hang_body == boundaries or _is_hang_face_exposed(rect, collision_rects):
+			hit_rect = rect
+			found_hit_face = true
+			break
+
+	if not found_hit_face:
+		_clear_hang_vertical_bounds()
+		return false
+	if _hang_body == boundaries:
+		_hang_top_global_y = hit_rect.position.y + HANG_HAND_OFFSET_Y
+		_hang_bottom_global_y = hit_rect.end.y + HANG_HAND_OFFSET_Y
+		return true
+
+	var hang_face_x: float = (
+		hit_rect.position.x if _hang_jump_facing > 0 else hit_rect.end.x
+	)
+	var top_y: float = hit_rect.position.y
+	var bottom_y: float = hit_rect.end.y
+	var expanded: bool = true
+	while expanded:
+		expanded = false
+		for rect: Rect2 in collision_rects:
+			var face_x: float = rect.position.x if _hang_jump_facing > 0 else rect.end.x
+			if not is_equal_approx(face_x, hang_face_x):
+				continue
+			if not _is_hang_face_exposed(rect, collision_rects):
+				continue
+			if is_equal_approx(rect.end.y, top_y):
+				top_y = rect.position.y
+				expanded = true
+			if is_equal_approx(rect.position.y, bottom_y):
+				bottom_y = rect.end.y
+				expanded = true
+
+	_hang_top_global_y = top_y + HANG_HAND_OFFSET_Y
+	_hang_bottom_global_y = bottom_y + HANG_HAND_OFFSET_Y
+	return true
+
+
+func _clear_hang_vertical_bounds() -> void:
+	_hang_top_global_y = 0.0
+	_hang_bottom_global_y = 0.0
+
+
+## 상황: 후보 셀의 매달리는 쪽 면이 다른 셀로 막혔는지 확인할 때 호출한다.
+## 결과: 캐릭터 쪽에 맞닿은 셀이 없을 때만 true다.
+func _is_hang_face_exposed(rect: Rect2, collision_rects: Array[Rect2]) -> bool:
+	for other: Rect2 in collision_rects:
+		if other == rect:
+			continue
+		var touches_hang_side: bool = (
+			is_equal_approx(other.end.x, rect.position.x)
+			if _hang_jump_facing > 0
+			else is_equal_approx(other.position.x, rect.end.x)
+		)
+		if not touches_hang_side:
+			continue
+		if minf(other.end.y, rect.end.y) > maxf(other.position.y, rect.position.y):
+			return false
+	return true
 
 
 ## 상황: 접지하거나 다른 배타 행동이 시작되어 벽점프 특수 조향을 끝낼 때 호출한다.
@@ -1597,6 +1712,8 @@ func _reset_character() -> void:
 	stamina = MAX_STAMINA
 	facing = 1
 	is_hanging = false
+	_hang_body = null
+	_clear_hang_vertical_bounds()
 	is_meditating = false
 	controller.set_meditation_active(false)
 	charge_time = 0.0

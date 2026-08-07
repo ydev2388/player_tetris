@@ -19,6 +19,8 @@ extends CharacterBody2D
 
 signal stats_changed # 생명/stamina/cooldown 변경을 GameView에 알린다.
 signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
+signal binding_started
+signal binding_ended
 
 # 좌표/이동 상수. Godot 2D는 +x가 오른쪽, +y가 아래이므로 점프 속도는 음수다.
 # GIT_GRID_SCALE은 원본 28px 기준 수치를 현재 48px 셀에 맞추는 배율이다.
@@ -70,6 +72,7 @@ const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무�
 const ATTACK_COOLDOWN: float = 0.48 # 일반 공격 재사용 대기시간(초).
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 일반 공격 스프라이트 재생시간(초).
 const PUNCH_HITBOX_WIDTH: float = 27.2 # 몸 앞 일반 공격 판정 길이(px).
+const ROTATION_HEAD_REACH: float = 12.0 # S 회전만 머리 위로 추가할 판정(12px).
 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
@@ -96,6 +99,8 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 @onready var left_ray: RayCast2D = $LeftRay # 왼쪽 매달릴 collision 탐지기.
 @onready var right_ray: RayCast2D = $RightRay # 오른쪽 매달릴 collision 탐지기.
 @onready var boundaries: StaticBody2D = $"../Boundaries" # 바닥과 양쪽 보드 벽 collision 소유자.
+@onready var locked_blocks: StaticBody2D = $"../LockedBlocks" # 고정 블록 collision 소유자.
+@onready var active_piece_body: StaticBody2D = $"../ActivePiece" # 현재 낙하 중인 블록 collision 소유자.
 
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
@@ -107,6 +112,8 @@ var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림에 사용.
 var facing: int = 1 # 바라보는 방향: 왼쪽 -1, 오른쪽 +1.
 var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 이동 branch를 실행.
 var is_meditating: bool = false # true면 정지·회복하고 Controller 테트리스 시간을 2배로 함.
+var is_bound: bool = false # Stage 1-4 덩굴 속박 중이면 모든 캐릭터 이동 branch를 막는다.
+var binding_timer: float = 0.0 # 속박 종료까지 남은 실제 시간(초).
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 회전 킥 입력 거부; 매 frame 감소.
 var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
 
@@ -172,6 +179,10 @@ func _physics_process(delta: float) -> void:
 		_stop_for_inactive_game()
 		return
 	_update_timers(delta)
+	if is_bound:
+		_update_binding(delta)
+		_finish_physics_frame(delta)
+		return
 	if _handle_self_respawn_input(delta):
 		_finish_physics_frame(delta)
 		return
@@ -198,9 +209,43 @@ func _physics_process(delta: float) -> void:
 ## 결과: 캐릭터가 움직이지 않고 명상에 의한 테트리스 배율도 남지 않는다.
 func _stop_for_inactive_game() -> void:
 	_set_meditating(false)
+	if controller.state == MainGameController.GameState.GAME_OVER:
+		_end_binding()
 	velocity = Vector2.ZERO
 	if not Input.is_action_pressed(&"character_self_respawn"):
 		_reset_self_respawn_input()
+
+
+func apply_binding(duration: float = 2.0) -> void:
+	if is_bound or controller.state != MainGameController.GameState.PLAYING:
+		return
+	_set_meditating(false)
+	_exit_hang()
+	_cancel_jump_intent()
+	_cancel_wall_jump_control()
+	_pending_rotation_launch_velocity = 0.0
+	velocity = Vector2.ZERO
+	is_bound = true
+	binding_timer = duration
+	binding_started.emit()
+	stats_changed.emit()
+
+
+func _update_binding(delta: float) -> void:
+	velocity = Vector2.ZERO
+	binding_timer = maxf(0.0, binding_timer - delta)
+	if binding_timer <= 0.0:
+		_end_binding()
+
+
+func _end_binding() -> void:
+	if not is_bound:
+		binding_timer = 0.0
+		return
+	is_bound = false
+	binding_timer = 0.0
+	binding_ended.emit()
+	stats_changed.emit()
 
 
 ## 상황: PLAYING 중 자력 재스폰 키를 누르거나 놓을 때 매 physics frame 호출한다.
@@ -255,6 +300,7 @@ func _can_start_meditating() -> bool:
 ## 결과: gameplay 상태에 맞는 sprite가 적용되고 새 블록 겹침/추락 피해가 처리된다.
 func _finish_physics_frame(delta: float) -> void:
 	_update_visual_state(delta)
+	controller.notify_binding_surface_contact(can_receive_binding())
 	validate_position()
 
 
@@ -411,10 +457,14 @@ func _attempt_punch() -> void:
 	_attack_cooldown_remaining = ATTACK_COOLDOWN
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_play_sfx(SFX_PUNCH)
-	if _punch_hits_active_piece() and controller.push_active_piece(facing, 1):
+	var hits_active_piece: bool = _punch_hits_active_piece()
+	var pushed_active_piece: bool = hits_active_piece and controller.push_active_piece(facing, 1)
+	if pushed_active_piece:
 		_set_feedback("펀치: 1칸")
 	else:
 		_set_feedback("일반 펀치")
+	if hits_active_piece and controller.active_piece_has_visible_thorns():
+		take_thorn_damage()
 	stats_changed.emit()
 
 
@@ -661,7 +711,7 @@ func _set_meditating(active: bool) -> void:
 
 
 ## 상황: S 블록 플립이 action 우선순위에서 선택됐을 때 호출한다.
-## 순서: cooldown → spin 시작 → 활성 피스 88px 근접 검사
+## 순서: cooldown → spin 시작 → 펀치 hitbox와 머리 위 12px로 활성 피스 대상 검사
 ##       → 가까우면 실제 물리 몸체 점유 셀을 계산해 Controller.try_rotate(facing, 금지 셀)
 ##       → 성공/공간 부족/대상 없음별 y속도/cooldown/feedback → signal.
 ## 결과: 스태미나를 쓰지 않으며 대상이 없어도 한 바퀴 동작과 짧은 cooldown이 적용된다.
@@ -671,7 +721,7 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	_start_rotation_spin()
-	if not _is_near_active_piece(0.0, MainLayout.scaled(88.0)):
+	if not _rotation_hits_active_piece():
 		_pending_rotation_launch_velocity = 0.0
 		_set_feedback("활성 블록에 닿지 않음")
 		velocity.y = MainLayout.scaled(-120.0)
@@ -687,6 +737,8 @@ func _attempt_rotation_kick() -> void:
 		_pending_rotation_launch_velocity = MainLayout.scaled(-260.0)
 		rotation_cooldown_remaining = ROTATION_COOLDOWN
 		_set_feedback("공중 회전 킥 성공")
+		if controller.active_piece_has_visible_thorns():
+			take_thorn_damage()
 	else:
 		_pending_rotation_launch_velocity = 0.0
 		velocity.y = MainLayout.scaled(-140.0)
@@ -747,6 +799,13 @@ func _punch_hits_active_piece() -> bool:
 	return _active_piece_overlaps_rect(_punch_hitbox_rect())
 
 
+func _rotation_hits_active_piece() -> bool:
+	var hitbox: Rect2 = _punch_hitbox_rect()
+	hitbox.position.y -= ROTATION_HEAD_REACH
+	hitbox.size.y += ROTATION_HEAD_REACH
+	return _active_piece_overlaps_rect(hitbox)
+
+
 func _punch_hitbox_rect() -> Rect2:
 	var body_rect: Rect2 = _character_collider_rect()
 	var fist_x: float = body_rect.end.x if facing > 0 else body_rect.position.x - PUNCH_HITBOX_WIDTH
@@ -754,6 +813,26 @@ func _punch_hitbox_rect() -> Rect2:
 		Vector2(fist_x, body_rect.position.y),
 		Vector2(PUNCH_HITBOX_WIDTH, body_rect.size.y)
 	)
+
+
+## 상황: Stage 1-4 속박 판정이 현재 접촉 위치에서 허용되는지 조회할 때 호출한다.
+## 순서: 활성 피스 접촉 차단 → 고정 블록/바닥 지지 또는 고정 body 매달림 확인.
+## 결과: 활성 피스에 닿는 동안은 속박되지 않고, 고정 지지면·고정 블록·벽에서만 true다.
+func can_receive_binding() -> bool:
+	if _is_touching_active_piece():
+		return false
+	if is_hanging:
+		return _hang_body == boundaries or _hang_body == locked_blocks
+	return is_on_floor() and _has_fixed_support_underfoot()
+
+
+func _is_touching_active_piece() -> bool:
+	if _hang_body == active_piece_body:
+		return true
+	for index: int in range(get_slide_collision_count()):
+		if get_slide_collision(index).get_collider() == active_piece_body:
+			return true
+	return _active_piece_overlaps_rect(_character_collider_rect())
 
 
 ## 상황: 지연된 회전 킥 발사 경로가 새 활성 피스와 겹치는지 확인할 때 호출한다.
@@ -1086,10 +1165,22 @@ func _is_below_board() -> bool:
 ##       → feedback → 생명 0이면 end_game/return → 안전 위치 탐색 → 없으면 end_game,
 ##       있으면 상단 한 칸 아래의 무작위 안전 열로 이동 → stats signal.
 ## 결과: 같은 압착에서 연속 피해를 막고 살아 있으면 블록과 겹치지 않게 상단에서 재시작한다.
-func take_damage() -> void:
+func take_damage(feedback_message: String = "압착 피해! 목숨 -1") -> void:
 	if _invulnerability_remaining > 0.0:
 		return
-	_lose_life_and_respawn("압착 피해! 목숨 -1")
+	_lose_life_and_respawn(feedback_message)
+
+
+func take_thorn_damage() -> void:
+	if _invulnerability_remaining > 0.0:
+		return
+	lives -= 1
+	_invulnerability_remaining = INVULNERABILITY_SECONDS
+	_play_sfx(SFX_HURT)
+	_set_feedback("가시 펀치 피해! 목숨 -1")
+	if lives <= 0:
+		controller.end_game()
+	stats_changed.emit()
 
 
 ## 상황: 압착 또는 자력 재스폰이 실제 생명 하나를 소비하기로 확정했을 때 호출한다.
@@ -1138,30 +1229,6 @@ func self_respawn_hold_ratio() -> float:
 	if _self_respawn_requires_release:
 		return 0.0
 	return clampf(_self_respawn_hold_time / SELF_RESPAWN_HOLD_SECONDS, 0.0, 1.0)
-
-
-## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
-## 순서: 활성 네 셀 중심 계산 → difference=cell-character
-##       → horizontal_reach=0이면 원형 거리, 아니면 같은 방향/x reach/y reach 검사.
-## 결과: 셀 하나라도 범위 안이면 true이며 피스/캐릭터 상태는 바꾸지 않는다.
-func _is_near_active_piece(horizontal_reach: float, radial_reach: float) -> bool:
-	for local_cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
-		var cell: Vector2i = controller.active_origin + local_cell # 활성 절대 보드 셀.
-		var cell_center: Vector2 = Vector2( # 숨은 행 offset을 뺀 셀 중심 픽셀.
-			(float(cell.x) + 0.5) * CELL_SIZE,
-			(float(cell.y - MainBoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
-		)
-		var difference: Vector2 = cell_center - position # 캐릭터 중심에서 셀 중심으로의 벡터.
-		if is_zero_approx(horizontal_reach):
-			if difference.length() <= radial_reach:
-				return true
-		elif signf(difference.x) == signf(horizontal_reach):
-			if absf(difference.x) <= absf(horizontal_reach) and absf(difference.y) <= radial_reach:
-				return true
-	return false
 
 
 ## 상황: 피해 후 생명이 남아 캐릭터를 겹치지 않는 발판으로 옮길 때 호출한다.
@@ -1512,6 +1579,8 @@ func _reset_character() -> void:
 	_hang_body = null
 	_clear_hang_vertical_bounds()
 	is_meditating = false
+	is_bound = false
+	binding_timer = 0.0
 	controller.set_meditation_active(false)
 	rotation_cooldown_remaining = 0.0
 	_attack_cooldown_remaining = 0.0

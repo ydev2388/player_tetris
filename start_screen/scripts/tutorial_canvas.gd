@@ -545,7 +545,7 @@ func _draw_special_keys_page() -> void:
 			4.0,
 			true
 		)
-	_text(Vector2(444.0, 238.0), "점수·보드·목숨을 처음부터 시작합니다.", 13, MUTED)
+	_text(Vector2(444.0, 238.0), "보드·목숨을 처음부터 시작합니다.", 13, MUTED)
 
 	# Q: 1초 홀드 진행도 뒤 목숨을 하나 쓰고 상단에 재등장한다.
 	_text(Vector2(44.0, 303.0), "자력 재스폰", 19, TEXT)

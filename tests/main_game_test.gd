@@ -32,9 +32,9 @@ func _run() -> void:
 	)
 	_expect(
 		is_equal_approx(MainGameController.LOCK_DELAY_SECONDS, 0.5)
-			and is_equal_approx(MainGameController.GRAVITY_INTERVAL_START, 7.0 / 15.0)
+			and is_equal_approx(MainGameController.GRAVITY_INTERVAL_SECONDS, 7.0 / 15.0)
 			and MainGameController.MEDITATION_TIME_SCALE == 2.0,
-		"기본 낙하·고정 시간은 1.5배 속도값 자체이며 명상 중에는 2배다."
+		"기본 낙하·고정 시간은 고정값이며 명상 중 낙하만 2배다."
 	)
 	_expect(
 		MainGameController.stage_stars_for_lines(0) == 0
@@ -121,9 +121,20 @@ func _run() -> void:
 		FileAccess.file_exists("res://assets/sfx/08_select.wav"),
 		"현재 선택 효과음 리소스를 유지한다."
 	)
+	_expect(
+		FileAccess.file_exists("res://assets/sprites/thron_sprite.png")
+			and MainGameView.THORN_SOURCE_REGION.size == Vector2(128.0, 104.0),
+		"가시 스프라이트 시트와 48px overlay source 영역을 사용한다."
+	)
+	_expect(
+		FileAccess.file_exists("res://assets/sprites/bind_sprite.png")
+			and MainGameView.BIND_SOURCE_REGION.size == Vector2(277.0, 364.0),
+		"속박 스프라이트 시트와 source 영역을 사용한다."
+	)
 	await _test_top_hud()
 	await _test_fixed_support_grab()
 	await _test_hang_face_bounds()
+	await _test_stage_gimmicks()
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -148,21 +159,21 @@ func _test_top_hud() -> void:
 	await process_frame
 	scene.process_mode = Node.PROCESS_MODE_DISABLED
 	var lines_label: Label = scene.find_child("LinesLabel", true, false) as Label
-	var level_label: Label = scene.find_child("LevelLabel", true, false) as Label
+	var lives_label: Label = scene.find_child("LivesLabel", true, false) as Label
 	var next_label: Label = scene.find_child("NextLabel", true, false) as Label
 	var timer_label: Label = scene.find_child("TimerLabel", true, false) as Label
 	_expect(
 		lines_label != null
 			and lines_label.text.contains("파괴")
-			and level_label != null
-			and level_label.text.contains("LEVEL")
+			and lives_label != null
+			and lives_label.text == "목숨: 3"
 			and next_label != null
 			and timer_label != null
 			and timer_label.text == "01:30"
 			and timer_label.position.y < MainLayout.BOARD_ORIGIN.y
 			and next_label.position.x > MainLayout.BOARD_ORIGIN.x + MainLayout.BOARD_SIZE.x * 0.5
 			and next_label.position.y < MainLayout.BOARD_ORIGIN.y,
-		"보드 폭에 맞춘 상단 HUD에 타이머·레벨·다음 블록 카드를 표시한다."
+		"보드 폭에 맞춘 상단 HUD에 타이머·파괴 줄·다음 블록 카드를 표시한다."
 	)
 	_expect(
 		scene.find_child("StatsLabel", true, false) == null
@@ -173,6 +184,14 @@ func _test_top_hud() -> void:
 	)
 
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	var binding_sprite: Sprite2D = scene.get_node_or_null("BoardPhysics/Character/BindingSprite") as Sprite2D
+	_expect(
+		binding_sprite != null
+			and binding_sprite.z_index > character.sprite.z_index
+			and binding_sprite.region_enabled
+			and binding_sprite.region_rect == MainGameView.BIND_SOURCE_REGION,
+		"속박 덩굴은 캐릭터 위에 표시되는 overlay Sprite2D를 사용한다."
+	)
 	character.stamina = 0.0
 	character._update_sprite_modulation()
 	_expect(
@@ -429,6 +448,265 @@ func _test_hang_face_bounds() -> void:
 	)
 	character._exit_hang()
 
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	scene.free()
+	await process_frame
+
+
+func _test_stage_gimmicks() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	controller.stage_number = 1
+	controller.reset_game(20260801)
+	_expect(
+		controller.get_stage_gimmick_config()["thorn_probability"] == 0.0
+			and not controller.get_stage_gimmick_config()["binding_enabled"],
+		"Stage 1-1은 가시·속박 기믹이 없다."
+	)
+	controller.stage_number = 2
+	controller.reset_game(20260801)
+	_expect(
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.20),
+		"Stage 1-2 가시 확률은 20%다."
+	)
+	controller.active_piece_has_thorns = true
+	controller.thorn_visible = true
+	controller._advance_stage_gimmicks(1.0)
+	_expect(not controller.thorn_visible, "가시 piece는 1초 후 OFF가 된다.")
+	controller._advance_stage_gimmicks(1.0)
+	_expect(not controller.thorn_visible, "가시 OFF는 1초 경과 후에도 유지된다.")
+	controller._advance_stage_gimmicks(1.0)
+	_expect(controller.thorn_visible, "가시 OFF는 2초 후 다시 ON이 된다.")
+	controller.state = MainGameController.GameState.PAUSED
+	var paused_thorn_timer: float = controller.thorn_phase_timer
+	controller._advance_stage_gimmicks(1.0)
+	_expect(
+		is_equal_approx(controller.thorn_phase_timer, paused_thorn_timer)
+			and controller.thorn_visible,
+		"PAUSED에서는 가시 ON/OFF 시간이 흐르지 않는다."
+	)
+	controller.state = MainGameController.GameState.PLAYING
+	controller.thorn_phase_timer = 1.0
+	controller.lock_active_piece()
+	_expect(
+		is_zero_approx(controller.thorn_phase_timer)
+			and controller.thorn_visible == controller.active_piece_has_thorns,
+		"active piece lock은 이전 가시 phase를 다음 piece에 전달하지 않는다."
+	)
+	controller.stage_number = 3
+	controller.reset_game(20260801)
+	_expect(
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.33),
+		"Stage 1-3 가시 확률은 33%다."
+	)
+	controller.stage_number = 5
+	controller.reset_game(20260801)
+	_expect(not controller.active_piece_has_thorns, "Stage 1-5에는 새 가시 기믹이 적용되지 않는다.")
+	controller.free()
+
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	var scene_controller: MainGameController = scene.get_node("GameController")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	scene_controller.stage_number = 2
+	scene_controller.reset_game(20260801)
+	character.position = Vector2(240.0, 840.0)
+	character.lives = MainCharacterController.MAX_LIVES
+	character._invulnerability_remaining = 0.0
+	character._attack_cooldown_remaining = 0.0
+	scene_controller.active_origin = Vector2i(3, 18)
+	scene_controller.active_piece_has_thorns = true
+	scene_controller.thorn_visible = true
+	_expect(
+		character._punch_hits_active_piece(),
+		"가시 피해 테스트는 기존 active piece punch 대상 판정을 사용한다."
+	)
+	var thorn_hit_position: Vector2 = character.position
+	character._attempt_punch()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1
+			and character.position == thorn_hit_position,
+		"가시 ON active piece 직접 punch는 현재 위치에서 목숨 1개만 줄인다."
+	)
+	character._attack_cooldown_remaining = 0.0
+	character._invulnerability_remaining = 0.0
+	character.lives = MainCharacterController.MAX_LIVES
+	scene_controller.thorn_visible = false
+	character._attempt_punch()
+	_expect(character.lives == MainCharacterController.MAX_LIVES, "가시 OFF punch는 목숨을 줄이지 않는다.")
+	character._attack_cooldown_remaining = 0.0
+	character._invulnerability_remaining = 0.0
+	character.position = Vector2(240.0, 300.0)
+	character._attempt_punch()
+	_expect(character.lives == MainCharacterController.MAX_LIVES, "대상 없는 X 입력은 목숨을 줄이지 않는다.")
+	character.position = Vector2(240.0, 840.0)
+	character._finish_physics_frame(0.0)
+	_expect(character.lives == MainCharacterController.MAX_LIVES, "가시 active piece와의 단순 접촉은 목숨을 줄이지 않는다.")
+	scene_controller.active_type = MainTetrominoData.Type.O
+	scene_controller.active_origin = Vector2i(5, 10)
+	scene_controller.active_rotation = 0
+	scene_controller.active_piece_has_thorns = true
+	scene_controller.thorn_visible = true
+	character.position = Vector2(240.0, 456.0)
+	character.facing = 1
+	character.lives = MainCharacterController.MAX_LIVES
+	character._invulnerability_remaining = 0.0
+	character.rotation_cooldown_remaining = 0.0
+	character._spin_remaining = 0.0
+	var rotation_hit_position: Vector2 = character.position
+	character._attempt_rotation_kick()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1
+			and character.position == rotation_hit_position,
+		"가시 ON active piece 회전 킥 성공은 현재 위치에서 목숨 1개를 줄인다."
+	)
+	scene_controller.active_type = MainTetrominoData.Type.O
+	scene_controller.active_rotation = 0
+	scene_controller.active_origin = Vector2i(6, 10)
+	character.position = Vector2(240.0, 456.0)
+	character.facing = 1
+	character.rotation_cooldown_remaining = 0.0
+	character._spin_remaining = 0.0
+	_expect(
+		not character._punch_hits_active_piece(),
+		"S 회전 대상 범위는 펀치와 같은 전방 hitbox를 사용한다."
+	)
+	character._attempt_rotation_kick()
+	_expect(
+		scene_controller.active_rotation == 0,
+		"펀치 범위 밖의 활성 블록은 S 회전 대상이 아니다."
+	)
+	scene_controller.active_type = MainTetrominoData.Type.I
+	scene_controller.active_rotation = 0
+	scene_controller.active_origin = Vector2i(5, 9)
+	character.position = Vector2(240.0, 474.0)
+	character.facing = 1
+	_expect(
+		not character._punch_hits_active_piece()
+			and character._rotation_hits_active_piece(),
+		"S 회전은 펀치 범위 위쪽에 12px의 머리 판정을 추가한다."
+	)
+
+	scene_controller.stage_number = 4
+	scene_controller.reset_game(20260801)
+	character.position = Vector2(240.0, 912.0)
+	character.velocity = Vector2.ZERO
+	await physics_frame
+	var active_body: StaticBody2D = scene.get_node("BoardPhysics/ActivePiece") as StaticBody2D
+	_expect(
+		is_equal_approx(float(scene_controller.get_stage_gimmick_config()["thorn_probability"]), 0.33)
+			and scene_controller.get_stage_gimmick_config()["binding_enabled"],
+		"Stage 1-4는 33% 가시와 속박 기믹을 함께 사용한다."
+	)
+	_expect(
+		is_equal_approx(scene_controller.binding_probability, MainGameController.BINDING_PROBABILITY),
+		"속박 확률은 reset 후 15%에서 시작한다."
+	)
+	character.is_hanging = true
+	character._hang_body = active_body
+	_expect(not character.can_receive_binding(), "활성 피스에 매달린 동안에는 속박 대상이 아니다.")
+	character._hang_body = scene.get_node("BoardPhysics/LockedBlocks")
+	_expect(character.can_receive_binding(), "고정 블록에 매달린 동안에는 속박 대상이다.")
+	character._hang_body = active_body
+	scene_controller._gimmick_roll_overrides.append(true)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(
+		scene_controller.binding_pending and not character.is_bound,
+		"활성 피스 접촉 중 속박 성공은 즉시 속박하지 않는다."
+	)
+	character._exit_hang()
+	scene_controller.reset_game(20260801)
+	character.position = Vector2(240.0, 912.0)
+	character.velocity = Vector2.ZERO
+	await physics_frame
+	scene_controller._advance_stage_gimmicks(9.9)
+	_expect(
+		scene_controller.binding_check_timer < MainGameController.BINDING_CHECK_INTERVAL_SECONDS
+			and not scene_controller.binding_pending
+			and not character.is_bound,
+		"Stage 1-4 속박 판정은 10초 전에는 발생하지 않는다."
+	)
+	scene_controller._gimmick_roll_overrides.append(false)
+	scene_controller._advance_stage_gimmicks(0.1)
+	_expect(
+		not character.is_bound
+			and is_equal_approx(scene_controller.binding_probability, 0.20),
+		"속박 판정 실패 후 다음 확률은 5%p 증가한다."
+	)
+	scene_controller._gimmick_roll_overrides.append(false)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(
+		is_equal_approx(scene_controller.binding_probability, 0.25),
+		"속박 판정이 연속 실패하면 확률이 누적된다."
+	)
+	scene_controller._gimmick_roll_overrides.append(true)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(
+		character.is_bound
+			and is_equal_approx(scene_controller.binding_probability, MainGameController.BINDING_PROBABILITY),
+		"바닥 접촉 중 성공하면 즉시 속박하고 확률을 15%로 되돌린다."
+	)
+	var bound_position: Vector2 = character.position
+	character.velocity = Vector2(500.0, -500.0)
+	character._physics_process(0.5)
+	_expect(character.is_bound and character.position == bound_position and character.velocity == Vector2.ZERO, "속박 중 이동·점프 속도는 차단된다.")
+	character._physics_process(1.5)
+	_expect(not character.is_bound, "속박은 실제 시간 약 2초 후 해제된다.")
+
+	scene_controller.reset_game(20260801)
+	character.position = Vector2(21.0, 400.0)
+	character.velocity = Vector2.ZERO
+	character.facing = -1
+	await physics_frame
+	character.left_ray.force_raycast_update()
+	character._try_start_hang()
+	var wall_hanging: bool = character.is_hanging and character._hang_body == scene.get_node("BoardPhysics/Boundaries")
+	scene_controller._gimmick_roll_overrides.append(true)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(wall_hanging and character.is_bound, "벽에 매달린 중 속박 확률 성공은 즉시 속박한다.")
+
+	scene_controller.reset_game(20260801)
+	character.position = Vector2(240.0, 300.0)
+	character.velocity = Vector2.ZERO
+	await physics_frame
+	scene_controller._gimmick_roll_overrides.append(true)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(scene_controller.binding_pending and not character.is_bound, "공중 속박 성공은 pending으로 저장된다.")
+	scene_controller._gimmick_roll_overrides.append(true)
+	scene_controller._advance_stage_gimmicks(10.0)
+	_expect(scene_controller.binding_pending, "pending 중에는 추가 속박 예약이 중첩되지 않는다.")
+	character.position = Vector2(240.0, 912.0)
+	character._physics_process(0.0)
+	_expect(character.is_bound and not scene_controller.binding_pending, "pending 속박은 다음 바닥 접촉에서 즉시 적용된다.")
+	var pending_timer: float = character.binding_timer
+	character.apply_binding(2.0)
+	_expect(is_equal_approx(character.binding_timer, pending_timer), "속박 중 추가 속박은 중첩되지 않는다.")
+
+	scene_controller.toggle_pause()
+	var pause_binding_timer: float = character.binding_timer
+	var pause_check_timer: float = scene_controller.binding_check_timer
+	character._physics_process(1.0)
+	scene_controller._physics_process(1.0)
+	_expect(
+		is_equal_approx(character.binding_timer, pause_binding_timer)
+			and is_equal_approx(scene_controller.binding_check_timer, pause_check_timer),
+		"PAUSED에서는 속박 지속시간과 10초 판정 시간이 흐르지 않는다."
+	)
+	scene_controller.state = MainGameController.GameState.PLAYING
+	scene_controller.reset_game(20260801)
+	_expect(
+		not scene_controller.binding_pending
+			and not character.is_bound
+			and is_zero_approx(scene_controller.thorn_phase_timer)
+			and scene_controller.thorn_visible == scene_controller.active_piece_has_thorns,
+		"reset은 가시·pending·속박 상태를 초기화한다."
+	)
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()

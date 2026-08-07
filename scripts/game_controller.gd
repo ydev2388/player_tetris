@@ -3,7 +3,7 @@ extends Node
 
 ## [역할 / C++ 대응]
 ## 테트리스 규칙과 시간 진행의 중앙 오케스트레이터다. BoardModel과 PieceBag을 소유하고
-## 활성/다음 피스, 점수, 레벨, 게임 상태를 authoritative state로 유지한다.
+## 활성/다음 피스, 줄 수, 게임 상태를 authoritative state로 유지한다.
 ##
 ## [호출 관계]
 ## Godot: `_ready()`, 매 프레임 `_process(delta)`.
@@ -14,7 +14,7 @@ extends Node
 ## `signal`은 C++ observer/event에 해당한다. `.emit()`하면 `.connect(callback)`으로
 ## 등록된 GameView/BoardPhysics/CharacterController 함수가 호출된다.
 
-signal game_changed # 피스/점수/상태 변경 후 View와 BoardPhysics에 동기화를 요구한다.
+signal game_changed # 피스/상태 변경 후 View와 BoardPhysics에 동기화를 요구한다.
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
@@ -31,12 +31,26 @@ const SPAWN_Y: int = 1 # 새 피스 원점의 숨은 보드 행 y.
 const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 실제 시간(초).
 const MAX_LOCK_RESETS: int = 15 # 이동/회전으로 lock delay를 초기화할 수 있는 최대 횟수.
 const MEDITATION_TIME_SCALE: float = 2.0 # 명상 시 기본 속도에 추가로 적용할 배율.
-const GRAVITY_INTERVAL_START: float = 0.4666666666666667 # 레벨 1의 셀당 낙하 간격(초).
-const GRAVITY_INTERVAL_REDUCTION: float = 0.03666666666666667 # 레벨당 낙하 간격 감소량(초).
-const GRAVITY_INTERVAL_MINIMUM: float = 0.05333333333333334 # 셀당 낙하 간격 하한(초).
+const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙하 간격(초).
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
+const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
 const SURVIVAL_TIME_SECONDS: float = 90.0
+const THORN_ON_SECONDS: float = 1.0
+const THORN_OFF_SECONDS: float = 2.0
+const BINDING_CHECK_INTERVAL_SECONDS: float = 10.0
+const BINDING_PROBABILITY: float = 0.15
+const BINDING_PROBABILITY_STEP: float = 0.05
+const BINDING_DURATION_SECONDS: float = 2.0
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # action 등록 유틸리티.
+
+# 스테이지 기믹 규칙은 이 표에서만 선택한다. 1-5는 기존 보스 흐름을 위해 비활성이다.
+const STAGE_GIMMICKS: Dictionary = {
+	1: {"thorn_probability": 0.0, "binding_enabled": false},
+	2: {"thorn_probability": 0.20, "binding_enabled": false},
+	3: {"thorn_probability": 0.33, "binding_enabled": false},
+	4: {"thorn_probability": 0.33, "binding_enabled": true},
+	5: {"thorn_probability": 0.0, "binding_enabled": false},
+}
 
 # SRS(Super Rotation System) wall-kick 표.
 # key `"old>new"`마다 원점에 더해 시험할 Vector2i 후보를 우선순위 순으로 저장한다.
@@ -72,10 +86,11 @@ var active_type: int = MainTetrominoData.Type.T # 현재 낙하 중인 Type enum
 var active_rotation: int = 0 # 활성 피스 회전 상태 0/1/2/3 = 0/90/180/270도.
 var active_origin: Vector2i = Vector2i(3, SPAWN_Y) # 로컬 셀을 더할 보드 원점.
 var next_type: int = MainTetrominoData.Type.I # 다음 spawn의 타입.
+var active_piece_has_thorns: bool = false # 현재 활성 피스에만 한 번 정해지는 가시 여부.
+var thorn_visible: bool = false # 가시 피스의 현재 ON/OFF phase 표시 상태.
+var thorn_phase_timer: float = 0.0 # 가시 ON/OFF phase accumulator.
 
-var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
-var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
-var total_lines: int = 0 # 제거한 누적 행 수. 10줄마다 level이 증가한다.
+var total_lines: int = 0 # 제거한 누적 행 수.
 var stage_number: int = 1
 var stage_time_remaining: float = SURVIVAL_TIME_SECONDS
 
@@ -84,7 +99,13 @@ var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않�
 var _lock_accumulator: float = 0.0 # 현재 접지에서 누적된 고정 대기시간(초).
 var _lock_resets: int = 0 # 현재 피스의 이동/회전 lock delay 초기화 횟수.
 var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x 전용 난수 엔진.
+var _gimmick_random: RandomNumberGenerator = RandomNumberGenerator.new() # 기믹 전용 결정론 난수 엔진.
+var _gimmick_roll_overrides: Array[bool] = [] # 자동 테스트가 확률 결과만 주입하는 내부 훅.
+var binding_check_timer: float = 0.0 # Stage 1-4 10초 주기 accumulator.
+var binding_pending: bool = false # 공중에서 성공한 속박의 단일 pending 상태.
+var binding_probability: float = BINDING_PROBABILITY # 다음 속박 판정에 사용할 누적 확률.
 var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
+@onready var character: MainCharacterController = get_node_or_null("../BoardPhysics/Character") as MainCharacterController
 
 
 ## 상황: main.tscn의 GameController가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
@@ -118,16 +139,17 @@ func _physics_process(delta: float) -> void:
 		effective_delta *= MEDITATION_TIME_SCALE
 	_advance_gravity(effective_delta)
 	_advance_lock_delay(effective_delta)
+	_advance_stage_gimmicks(delta)
 	_advance_stage_timer(delta)
 
 
 ## 상황: PLAYING frame에서 중력에 따른 셀 낙하를 진행할 때 호출한다.
-## 순서: delta 누적 → level 간격 조회 → 간격 이상인 동안 반복
+## 순서: delta 누적 → 고정 간격 조회 → 간격 이상인 동안 반복
 ##       → 아래 배치 가능 시 이동/emit, 막히면 잔여 누적을 비우고 종료.
 ## 결과: 큰 delta에서도 낙하 단계를 빠뜨리지 않고 바닥에서는 lock 처리에 넘긴다.
 func _advance_gravity(effective_delta: float) -> void:
 	_fall_accumulator += effective_delta
-	var interval: float = gravity_interval() # 현재 level에서 한 셀 내려가는 데 필요한 초.
+	var interval: float = GRAVITY_INTERVAL_SECONDS # 한 셀 내려가는 데 필요한 초.
 	while _fall_accumulator >= interval:
 		_fall_accumulator -= interval
 		if board.can_place(active_type, active_rotation, active_origin + Vector2i.DOWN):
@@ -155,7 +177,7 @@ func _advance_lock_delay(effective_delta: float) -> void:
 
 
 ## 상황: 최초 시작, R 입력 또는 테스트가 완전히 새 게임을 요구할 때 호출한다.
-## 순서: 보드 reset → 새 bag/난수 seed → 점수/상태/timer 초기화
+## 순서: 보드 reset → 새 bag/난수 seed → 상태/timer 초기화
 ##       → next 확보 → 첫 spawn → restarted/change signal.
 ## 결과: 이전 상태가 모두 폐기되고 같은 seed면 같은 게임 순서를 재현한다.
 func reset_game(seed_value: int = -1) -> void:
@@ -163,15 +185,19 @@ func reset_game(seed_value: int = -1) -> void:
 	bag = MainPieceBag.new(seed_value)
 	if seed_value >= 0:
 		_spawn_random.seed = seed_value + SPAWN_RANDOM_SEED_OFFSET
+		_gimmick_random.seed = seed_value + GIMMICK_RANDOM_SEED_OFFSET
 	else:
 		_spawn_random.randomize()
-	score = 0
-	level = 1
+		_gimmick_random.randomize()
 	total_lines = 0
 	stage_time_remaining = SURVIVAL_TIME_SECONDS
 	_shown_stage_seconds = ceili(SURVIVAL_TIME_SECONDS)
 	state = GameState.PLAYING
 	meditation_active = false
+	binding_check_timer = 0.0
+	binding_pending = false
+	binding_probability = BINDING_PROBABILITY
+	_reset_active_piece_gimmick()
 	_reset_piece_timers()
 	next_type = bag.next_piece()
 	spawn_next_piece()
@@ -181,6 +207,114 @@ func reset_game(seed_value: int = -1) -> void:
 
 func is_survival_stage() -> bool:
 	return stage_number < 5
+
+
+func get_stage_gimmick_config() -> Dictionary:
+	return STAGE_GIMMICKS.get(stage_number, STAGE_GIMMICKS[1]) as Dictionary
+
+
+func _advance_stage_gimmicks(delta: float) -> void:
+	if state != GameState.PLAYING:
+		return
+	var config: Dictionary = get_stage_gimmick_config()
+	if float(config.get("thorn_probability", 0.0)) > 0.0:
+		_advance_thorn_timer(delta)
+	else:
+		_reset_active_piece_gimmick()
+	if not bool(config.get("binding_enabled", false)):
+		binding_check_timer = 0.0
+		binding_pending = false
+		binding_probability = BINDING_PROBABILITY
+		return
+	binding_check_timer += delta
+	while binding_check_timer >= BINDING_CHECK_INTERVAL_SECONDS:
+		binding_check_timer -= BINDING_CHECK_INTERVAL_SECONDS
+		_attempt_binding_roll()
+
+
+func _advance_thorn_timer(delta: float) -> void:
+	if not active_piece_has_thorns:
+		thorn_visible = false
+		thorn_phase_timer = 0.0
+		return
+	thorn_phase_timer += delta
+	var changed: bool = false
+	var phase_duration: float = THORN_ON_SECONDS if thorn_visible else THORN_OFF_SECONDS
+	while thorn_phase_timer >= phase_duration:
+		thorn_phase_timer -= phase_duration
+		thorn_visible = not thorn_visible
+		changed = true
+		phase_duration = THORN_ON_SECONDS if thorn_visible else THORN_OFF_SECONDS
+	if changed:
+		game_changed.emit()
+
+
+func _initialize_active_piece_gimmick() -> void:
+	var probability: float = float(get_stage_gimmick_config().get("thorn_probability", 0.0))
+	active_piece_has_thorns = probability > 0.0 and _gimmick_random.randf() < probability
+	thorn_visible = active_piece_has_thorns
+	thorn_phase_timer = 0.0
+
+
+func _reset_active_piece_gimmick() -> void:
+	active_piece_has_thorns = false
+	thorn_visible = false
+	thorn_phase_timer = 0.0
+
+
+func active_piece_has_visible_thorns() -> bool:
+	return (
+		float(get_stage_gimmick_config().get("thorn_probability", 0.0)) > 0.0
+		and active_piece_has_thorns
+		and thorn_visible
+	)
+
+
+func _attempt_binding_roll() -> void:
+	if binding_pending or _character_is_bound():
+		return
+	if not _next_gimmick_roll():
+		binding_probability = minf(
+			1.0,
+			binding_probability + BINDING_PROBABILITY_STEP
+		)
+		return
+	binding_probability = BINDING_PROBABILITY
+	if _character_has_surface_contact():
+		if is_instance_valid(character):
+			character.apply_binding(BINDING_DURATION_SECONDS)
+	else:
+		binding_pending = true
+
+
+func notify_binding_surface_contact(surface_contact: bool) -> void:
+	if (
+		not binding_pending
+		or not surface_contact
+		or not bool(get_stage_gimmick_config().get("binding_enabled", false))
+	):
+		return
+	if _character_is_bound():
+		binding_pending = false
+		return
+	if not is_instance_valid(character):
+		return
+	binding_pending = false
+	character.apply_binding(BINDING_DURATION_SECONDS)
+
+
+func _character_has_surface_contact() -> bool:
+	return is_instance_valid(character) and character.can_receive_binding()
+
+
+func _character_is_bound() -> bool:
+	return is_instance_valid(character) and character.is_bound
+
+
+func _next_gimmick_roll() -> bool:
+	if not _gimmick_roll_overrides.is_empty():
+		return _gimmick_roll_overrides.pop_front()
+	return _gimmick_random.randf() < binding_probability
 
 
 func _advance_stage_timer(delta: float) -> void:
@@ -210,6 +344,7 @@ func spawn_next_piece() -> bool:
 	active_type = next_type
 	next_type = bag.next_piece()
 	active_rotation = 0
+	_reset_active_piece_gimmick()
 	_reset_piece_timers()
 
 	var spawn_origin: Variant = _choose_random_spawn_origin(active_type) # Vector2i 또는 불가를 뜻하는 null.
@@ -217,6 +352,7 @@ func spawn_next_piece() -> bool:
 		end_game()
 		return false
 	active_origin = spawn_origin as Vector2i
+	_initialize_active_piece_gimmick()
 
 	game_changed.emit()
 	return true
@@ -349,7 +485,7 @@ func _piece_overlaps_forbidden_cells(
 
 
 ## 상황: 접지 lock delay가 끝나 활성 피스를 고정 블록으로 전환할 때 호출한다.
-## 순서: PLAYING 검사 → board.lock_piece → clear_full_lines → 점수/줄/레벨
+## 순서: PLAYING 검사 → board.lock_piece → clear_full_lines → 줄
 ##       → hidden-row top-out이면 end_game → 아니면 spawn_next_piece.
 ## 결과: 현재 피스 수명이 끝나고 게임오버 또는 다음 피스로 전환된다.
 func lock_active_piece() -> void:
@@ -357,11 +493,10 @@ func lock_active_piece() -> void:
 		return
 
 	board.lock_piece(active_type, active_rotation, active_origin)
+	_reset_active_piece_gimmick()
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
-		score += line_clear_score(cleared, level)
 		total_lines += cleared
-		level = level_for_lines(total_lines)
 		lines_cleared.emit()
 
 	if board.has_blocks_in_hidden_rows():
@@ -388,6 +523,10 @@ func toggle_pause() -> void:
 func end_game() -> void:
 	state = GameState.GAME_OVER
 	meditation_active = false
+	_reset_active_piece_gimmick()
+	binding_check_timer = 0.0
+	binding_pending = false
+	binding_probability = BINDING_PROBABILITY
 	game_changed.emit()
 
 
@@ -404,33 +543,6 @@ func is_grounded() -> bool:
 func ghost_origin() -> Vector2i:
 	var distance: int = board.get_drop_distance(active_type, active_rotation, active_origin) # 남은 셀 수.
 	return active_origin + Vector2i(0, distance)
-
-
-## 상황: 중력 accumulator의 한 셀 낙하 임계값이 필요할 때 호출한다.
-## 순서: level-1마다 0.036666...초 차감 → `maxf`로 0.053333...초 하한 적용.
-## 결과: 현재 level의 셀당 낙하 간격(초)을 반환한다.
-func gravity_interval() -> float:
-	return maxf(
-		GRAVITY_INTERVAL_MINIMUM,
-		GRAVITY_INTERVAL_START - float(level - 1) * GRAVITY_INTERVAL_REDUCTION
-	)
-
-
-## 상황: 줄 삭제 직후 이번 삭제 점수를 계산할 때 호출한다.
-## 순서: 기본점수 표 생성 → 1~4 범위 검사 → 기본점수×최소 1인 레벨.
-## 결과: 잘못된 줄 수는 0, 정상 입력은 레벨 배율 점수를 반환한다.
-static func line_clear_score(cleared_lines: int, current_level: int) -> int:
-	var base_scores: Array[int] = [0, 100, 300, 550, 900] # index=동시 삭제 줄 수.
-	if cleared_lines < 1 or cleared_lines >= base_scores.size():
-		return 0
-	return base_scores[cleared_lines] * maxi(current_level, 1)
-
-
-## 상황: total_lines가 증가한 뒤 새 레벨을 계산할 때 호출한다.
-## 순서: 음수 lines를 0으로 제한 → 10으로 나눈 몫 floor → 시작 레벨 1 더함.
-## 결과: 0~9줄=1, 10~19줄=2 형태의 정수 레벨을 반환한다.
-static func level_for_lines(lines: int) -> int:
-	return 1 + floori(float(maxi(lines, 0)) / 10.0)
 
 
 static func stage_stars_for_lines(lines: int) -> int:

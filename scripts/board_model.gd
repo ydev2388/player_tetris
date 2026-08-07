@@ -70,7 +70,7 @@ func lock_piece(piece_type: int, rotation: int, origin: Vector2i) -> void:
 			cells[board_cell.y][board_cell.x] = piece_type
 
 
-## 상황: 피스를 고정한 직후 완성된 줄을 정리하고 점수 계산용 개수가 필요할 때 호출한다.
+## 상황: 피스를 고정한 직후 완성된 줄을 정리하고 삭제 개수가 필요할 때 호출한다.
 ## 순서: ① 모든 행 검사 ② 찬 행은 개수만 증가 ③ 나머지는 복사해 survivors에 보존
 ##       ④ HEIGHT가 될 때까지 빈 행을 앞에 삽입 ⑤ cells 교체.
 ## 결과: 완성 행이 사라지고 위 행이 아래로 내려오며 제거한 줄 수를 반환한다.

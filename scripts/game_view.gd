@@ -51,19 +51,28 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"L": Rect2(1745, 255, 210, 215),
 }
 
+const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/thron_sprite.png")
+const THORN_SOURCE_REGION: Rect2 = Rect2(500.0, 64.0, 128.0, 104.0)
+const THORN_DEPTH: float = 18.0
+const THORN_EDGE_OVERLAP: float = 6.0
+const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/bind_sprite.png")
+const BIND_SOURCE_REGION: Rect2 = Rect2(337.0, 65.0, 277.0, 364.0)
+const BIND_DISPLAY_SIZE: Vector2 = Vector2(78.0, 108.0)
+
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
 @onready var character: MainCharacterController = $BoardPhysics/Character # 표시할 캐릭터 상태.
 
 # `_build_interface()`가 생성하고 `_refresh()`가 내용을 바꾸는 retained UI 노드.
-var _level_label: Label
 var _lines_label: Label
+var _lives_label: Label
 var _next_label: Label
 var _timer_label: Label
 var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
 var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
 var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색 막대.
+var _binding_sprite: Sprite2D # 캐릭터 위에 표시하는 속박 덩굴 overlay.
 var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
 
 
@@ -75,9 +84,12 @@ func _ready() -> void:
 	_system_font = SystemFont.new()
 	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
 	_build_interface()
+	_create_binding_overlay()
 	controller.game_changed.connect(_refresh)
 	character.stats_changed.connect(_refresh)
 	character.feedback_changed.connect(_refresh)
+	character.binding_started.connect(_refresh)
+	character.binding_ended.connect(_refresh)
 	_refresh()
 
 
@@ -90,12 +102,13 @@ func _draw() -> void:
 	_draw_panel(Rect2(BOARD_ORIGIN - Vector2(12.0, 12.0), BOARD_SIZE + Vector2(24.0, 24.0)))
 	_draw_board()
 	_draw_meditation_effect()
+	_draw_binding()
 	_draw_next_piece()
 	_draw_state_overlay()
 
 
 ## 상황: `_ready()`에서 값이 바뀌는 텍스트 UI를 최초 한 번 구성할 때 호출한다.
-## 순서: 레벨/파괴 줄/next/feedback/status Label 생성
+## 순서: 파괴 줄/next/feedback/status Label 생성
 ##       → 각 Label별 shadow/alignment/z-index/line spacing을 설정.
 ## 결과: 이후 `_refresh()`가 참조할 멤버 Label들이 모두 유효해진다.
 func _build_interface() -> void:
@@ -103,11 +116,11 @@ func _build_interface() -> void:
 	_lines_label.name = "LinesLabel"
 	_lines_label.add_theme_constant_override("outline_size", 1)
 	_lines_label.add_theme_color_override("font_outline_color", Color("#b4233b"))
-	_level_label = _create_label("", Vector2(205.0, 48.0), Vector2(120.0, 34.0), 24, TEXT_COLOR)
-	_level_label.name = "LevelLabel"
-	_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_level_label.add_theme_constant_override("outline_size", 1)
-	_level_label.add_theme_color_override("font_outline_color", TEXT_COLOR)
+	_lives_label = _create_label("", Vector2(205.0, 42.0), Vector2(150.0, 34.0), 22, TEXT_COLOR)
+	_lives_label.name = "LivesLabel"
+	_lives_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lives_label.add_theme_constant_override("outline_size", 1)
+	_lives_label.add_theme_color_override("font_outline_color", TEXT_COLOR)
 	_next_label = _create_label("NEXT", Vector2(380.0, 23.0), Vector2(72.0, 20.0), 14, TEXT_COLOR)
 	_next_label.name = "NextLabel"
 	_next_label.z_index = 5
@@ -267,6 +280,7 @@ func _draw_board() -> void:
 				controller.active_type,
 				1.0
 			)
+	_draw_thorns()
 
 	for x: int in range(MainBoardModel.WIDTH + 1):
 		var line_x: float = BOARD_ORIGIN.x + float(x) * CELL_SIZE
@@ -274,6 +288,56 @@ func _draw_board() -> void:
 	for y: int in range(MainBoardModel.VISIBLE_HEIGHT + 1):
 		var line_y: float = BOARD_ORIGIN.y + float(y) * CELL_SIZE
 		draw_line(Vector2(BOARD_ORIGIN.x, line_y), Vector2(BOARD_ORIGIN.x + BOARD_SIZE.x, line_y), GRID_COLOR)
+
+
+func _draw_thorns() -> void:
+	if not controller.active_piece_has_visible_thorns():
+		return
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(
+		controller.active_type,
+		controller.active_rotation
+	)
+	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
+	# overlay는 셀 경계에 6px 겹쳐 틈을 없애고, 블록의 48×48 rect는 건드리지 않는다.
+	for local_cell: Vector2i in cells:
+		var active_cell: Vector2i = controller.active_origin + local_cell
+		if active_cell.y < MainBoardModel.HIDDEN_ROWS:
+			continue
+		var cell_rect: Rect2 = _cell_rect(active_cell)
+		var cell_center: Vector2 = cell_rect.get_center()
+		for index: int in range(faces.size()):
+			if cells.has(local_cell + faces[index]):
+				continue
+			var face_center: Vector2 = cell_center + Vector2(faces[index]) * (
+				CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP
+			)
+			draw_set_transform(face_center, angles[index])
+			draw_texture_rect_region(
+				THORN_TEXTURE,
+				Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
+				THORN_SOURCE_REGION
+			)
+	draw_set_transform(Vector2.ZERO, 0.0)
+
+
+func _draw_binding() -> void:
+	if _binding_sprite == null:
+		return
+	_binding_sprite.visible = character.is_bound
+
+
+func _create_binding_overlay() -> void:
+	_binding_sprite = Sprite2D.new()
+	_binding_sprite.name = "BindingSprite"
+	_binding_sprite.texture = BIND_TEXTURE
+	_binding_sprite.region_enabled = true
+	_binding_sprite.region_rect = BIND_SOURCE_REGION
+	_binding_sprite.scale = BIND_DISPLAY_SIZE / BIND_SOURCE_REGION.size
+	_binding_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_binding_sprite.z_index = 1
+	_binding_sprite.visible = false
+	character.add_child(_binding_sprite)
 
 
 ## 상황: `_draw()`가 상단 HUD 카드에 다음 피스 미리보기를 표시할 때 호출한다.
@@ -389,7 +453,7 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	_lines_label.text = "파괴한 줄: %d" % controller.total_lines
-	_level_label.text = "LEVEL %02d" % controller.level
+	_lives_label.text = "목숨: %d" % character.lives
 	var remaining_seconds: int = ceili(controller.stage_time_remaining)
 	_timer_label.text = "%02d:%02d" % [remaining_seconds / 60, remaining_seconds % 60]
 	_timer_label.visible = controller.is_survival_stage()

@@ -17,7 +17,6 @@ func _run() -> void:
 	var legacy_config: ConfigFile = ConfigFile.new()
 	legacy_config.set_value("input", "pause_game", [KEY_ESCAPE])
 	legacy_config.set_value("input", "character_left", [KEY_ESCAPE, KEY_F])
-	legacy_config.set_value("input", "character_punch", [KEY_Q])
 	legacy_config.set_value("input", "character_grab", [KEY_K])
 	legacy_config.set_value("input", "character_rotation_kick", [KEY_BACKSPACE])
 	legacy_config.save(TEST_SETTINGS_PATH)
@@ -42,14 +41,21 @@ func _run() -> void:
 		"저장된 Esc만 제거하고 다른 사용자 키는 유지한다."
 	)
 	_expect(
-		screen.settings.get_action_keys(&"character_self_respawn") == [KEY_NONE],
-		"Q·K·Backspace가 사용 중이면 자력 재스폰을 미지정으로 둔다."
+		screen.settings.get_action_keys(&"character_self_respawn") == [KEY_Q],
+		"삭제된 차지 펀치 키 Q는 자력 재스폰 기본키로 쓴다."
 	)
 	_expect(
 		screen.settings.is_stage_unlocked(1)
 			and not screen.settings.is_stage_unlocked(2)
 			and screen.settings.star_currency == 0,
 		"처음에는 1-1만 열리고 별 화폐는 0이다."
+	)
+	var zero_clear: Dictionary = screen.settings.complete_stage(1, 0)
+	_expect(
+		not bool(zero_clear.get("ok", false))
+			and screen.settings.get_stage_best_stars(1) == 0
+			and screen.settings.star_currency == 0,
+		"줄을 하나도 삭제하지 않으면 스테이지 클리어에 실패한다."
 	)
 	var first_clear: Dictionary = screen.settings.complete_stage(1, 1)
 	_expect(
@@ -138,15 +144,25 @@ func _run() -> void:
 	_expect(controller != null, "실행 중인 게임 controller를 찾는다.")
 	if controller != null:
 		_expect(
-			InputMap.action_get_events(&"character_self_respawn").is_empty(),
-			"미지정 자력 재스폰에 GameController 기본 Q를 중복 추가하지 않는다."
+			InputMap.action_get_events(&"character_self_respawn").size() == 1,
+			"자력 재스폰은 기본 Q 하나를 사용한다."
 		)
 		var escape_event: InputEventKey = InputEventKey.new()
 		escape_event.pressed = true
 		escape_event.physical_keycode = KEY_ESCAPE
 		var handled: bool = screen._handle_game_exit_prompt_input(escape_event)
 		var overlay: Control = screen.find_child("GameExitOverlay", true, false) as Control
-		_expect(handled and overlay != null and overlay.visible, "게임 중 Esc가 확인창을 연다.")
+		var exit_panel: Panel = null
+		if overlay != null:
+			exit_panel = overlay.find_child("GameExitPanel", true, false) as Panel
+		_expect(
+			handled
+				and overlay != null
+				and overlay.visible
+				and exit_panel != null
+				and exit_panel.position == Vector2(60.0, 440.0),
+			"게임 중 Esc가 화면 중앙 확인창을 연다."
+		)
 		_expect(controller.state == MainGameController.GameState.PAUSED, "Esc 메뉴가 게임 상태를 일시정지로 바꾼다.")
 		_expect(not controller.is_physics_processing(), "확인창이 physics process를 잠근다.")
 		var cancel_event: InputEventKey = InputEventKey.new()

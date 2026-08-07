@@ -79,7 +79,7 @@ const FRAME_DURATIONS: Dictionary = {
 
 
 ## 상황: CharacterController._apply_animation_frame()이 현재 상태의 texture를 바꿀 때 호출한다.
-## 순서: ① state match ② hang/attack/jump 전용 시트 선택 ③ 나머지는 기본 idle 시트 선택.
+## 순서: ① state match ② hang/jump 전용 시트 선택 ③ 나머지는 기본 idle 시트 선택.
 ## 결과: Texture2D 참조만 반환하며 리소스나 캐릭터 상태는 변경하지 않는다.
 static func texture_for(state: String) -> Texture2D:
 	match state:

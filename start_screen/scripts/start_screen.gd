@@ -1096,7 +1096,8 @@ func _build_progress_reset_overlay() -> void:
 func _build_game_exit_overlay() -> void:
 	_game_exit_overlay = Control.new()
 	_game_exit_overlay.name = "GameExitOverlay"
-	_game_exit_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_exit_overlay.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_game_exit_overlay.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
 	_game_exit_overlay.z_as_relative = false
 	_game_exit_overlay.z_index = 100
 	_game_exit_overlay.visible = false
@@ -1108,15 +1109,16 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_overlay.add_child(shade)
 	var panel: Panel = _create_panel(
 		_game_exit_overlay,
-		Rect2(230.0, 390.0, 540.0, 280.0),
+		Rect2(60.0, 440.0, 440.0, 260.0),
 		PANEL,
 		PURPLE,
 		12
 	)
+	panel.name = "GameExitPanel"
 	_create_label(
 		panel,
 		"메뉴로 나가겠습니까?",
-		Rect2(40.0, 52.0, 460.0, 52.0),
+		Rect2(20.0, 46.0, 400.0, 52.0),
 		25,
 		TEXT,
 		HORIZONTAL_ALIGNMENT_CENTER
@@ -1124,7 +1126,7 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_yes_button = _create_button(
 		panel,
 		"Yes",
-		Rect2(72.0, 166.0, 180.0, 52.0),
+		Rect2(40.0, 152.0, 160.0, 52.0),
 		CYAN,
 		16
 	)
@@ -1133,7 +1135,7 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_no_button = _create_button(
 		panel,
 		"No",
-		Rect2(288.0, 166.0, 180.0, 52.0),
+		Rect2(240.0, 152.0, 160.0, 52.0),
 		DANGER,
 		16
 	)
@@ -1215,8 +1217,8 @@ func _complete_stage_for_debug() -> void:
 	_complete_stage(3)
 
 
-func _on_survival_stage_cleared(_score_value: int) -> void:
-	_complete_stage(1)
+func _on_survival_stage_cleared(cleared_lines: int) -> void:
+	_complete_stage(MainGameController.stage_stars_for_lines(cleared_lines))
 
 
 func _complete_stage(stars: int) -> void:
@@ -1408,7 +1410,7 @@ func _loaded_game_controller() -> MainGameController:
 	return _game_instance.get_node_or_null("GameController") as MainGameController
 
 
-## 상황: 게임 전용 1000×1080 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
+## 상황: 게임 전용 560×1140 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
 ## 결과: content scale과 실제 창 크기를 메뉴 설계 크기 960×800으로 복원한다.
 func _apply_menu_viewport_size() -> void:
 	var window: Window = get_window()

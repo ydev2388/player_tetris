@@ -39,15 +39,15 @@ const DEFINITIONS: Array[Dictionary] = [
 		"slots": 2,
 	},
 	{
-		"action": &"character_punch",
-		"label": "차지 펀치",
-		"defaults": [KEY_X],
-		"slots": 1,
-	},
-	{
 		"action": &"character_grab",
 		"label": "매달리기",
 		"defaults": [KEY_C],
+		"slots": 1,
+	},
+	{
+		"action": &"character_punch",
+		"label": "일반 공격",
+		"defaults": [KEY_X],
 		"slots": 1,
 	},
 	{

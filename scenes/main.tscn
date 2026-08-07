@@ -22,7 +22,7 @@ script = ExtResource("1_view")
 script = ExtResource("2_controller")
 
 [node name="BoardPhysics" type="Node2D" parent="."]
-position = Vector2(40, 80)
+position = Vector2(40, 120)
 script = ExtResource("3_physics")
 
 [node name="Boundaries" type="StaticBody2D" parent="BoardPhysics"]
@@ -33,10 +33,9 @@ collision_mask = 0
 collision_layer = 1
 collision_mask = 0
 
-[node name="ActivePiece" type="AnimatableBody2D" parent="BoardPhysics"]
+[node name="ActivePiece" type="StaticBody2D" parent="BoardPhysics"]
 collision_layer = 1
 collision_mask = 0
-sync_to_physics = true
 
 [node name="Character" type="CharacterBody2D" parent="BoardPhysics"]
 position = Vector2(240, 912)

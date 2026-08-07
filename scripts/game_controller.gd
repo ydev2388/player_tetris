@@ -18,7 +18,7 @@ signal game_changed # 피스/점수/상태 변경 후 View와 BoardPhysics에 �
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
-signal stage_cleared(score_value: int)
+signal stage_cleared(cleared_lines: int)
 
 enum GameState {
 	PLAYING,
@@ -28,10 +28,12 @@ enum GameState {
 
 # 게임 진행 규칙과 시간 상수.
 const SPAWN_Y: int = 1 # 새 피스 원점의 숨은 보드 행 y.
-const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 게임 시간(초).
+const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 실제 시간(초).
 const MAX_LOCK_RESETS: int = 15 # 이동/회전으로 lock delay를 초기화할 수 있는 최대 횟수.
-const GRAVITY_SPEED_MULTIPLIER: float = 1.5 # 기본 테트리스 중력/lock 시간 배율.
 const MEDITATION_TIME_SCALE: float = 2.0 # 명상 시 기본 속도에 추가로 적용할 배율.
+const GRAVITY_INTERVAL_START: float = 0.4666666666666667 # 레벨 1의 셀당 낙하 간격(초).
+const GRAVITY_INTERVAL_REDUCTION: float = 0.03666666666666667 # 레벨당 낙하 간격 감소량(초).
+const GRAVITY_INTERVAL_MINIMUM: float = 0.05333333333333334 # 셀당 낙하 간격 하한(초).
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const SURVIVAL_TIME_SECONDS: float = 90.0
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # action 등록 유틸리티.
@@ -111,7 +113,7 @@ func _physics_process(delta: float) -> void:
 	if state != GameState.PLAYING:
 		return
 
-	var effective_delta: float = delta * GRAVITY_SPEED_MULTIPLIER
+	var effective_delta: float = delta
 	if meditation_active:
 		effective_delta *= MEDITATION_TIME_SCALE
 	_advance_gravity(effective_delta)
@@ -191,10 +193,13 @@ func _advance_stage_timer(delta: float) -> void:
 		game_changed.emit()
 	if stage_time_remaining > 0.0:
 		return
+	if total_lines < 1:
+		end_game()
+		return
 	state = GameState.PAUSED
 	meditation_active = false
 	game_changed.emit()
-	stage_cleared.emit(score)
+	stage_cleared.emit(total_lines)
 
 
 ## 상황: 게임 시작 또는 이전 피스를 고정한 뒤 다음 활성 피스가 필요할 때 호출한다.
@@ -258,25 +263,24 @@ func _choose_random_spawn_origin(piece_type: int) -> Variant:
 	return candidates[index]
 
 
-## 상황: 캐릭터 펀치가 활성 피스를 수평으로 여러 칸 밀 때 호출한다.
-## 순서: 입력/state 검사 → 방향 ±1 정규화 → 모든 중간 위치 검증
-##       → 이동 전 접지 저장 → origin 이동 → lock delay 조정 → emit.
-## 결과: 전 경로가 비었을 때만 원자적으로 이동해 true, 막히면 변화 없이 false다.
+## 상황: 일반 공격이 활성 피스를 바라보는 방향으로 한 칸 밀 때 호출한다.
+## 결과: 이동 경로가 비어 있으면 피스를 옮기고 true, 아니면 변화 없이 false다.
 func push_active_piece(direction: int, distance: int) -> bool:
 	if state != GameState.PLAYING or direction == 0 or distance < 1:
 		return false
 
-	var normalized_direction: int = signi(direction) # 왼쪽 -1 또는 오른쪽 +1.
+	var normalized_direction: int = signi(direction)
 	for step: int in range(1, distance + 1):
-		var target: Vector2i = active_origin + Vector2i(normalized_direction * step, 0) # 중간 후보.
+		var target: Vector2i = active_origin + Vector2i(normalized_direction * step, 0)
 		if not board.can_place(active_type, active_rotation, target):
 			return false
 
-	var was_grounded: bool = is_grounded() # 이동 전 접지 상태 snapshot.
+	var was_grounded: bool = is_grounded()
 	active_origin += Vector2i(normalized_direction * distance, 0)
 	_reset_lock_after_transform(was_grounded)
 	game_changed.emit()
 	return true
+
 
 
 ## 상황: 캐릭터 회전 킥이 활성 피스를 시계/반시계 방향으로 돌릴 때 호출한다.
@@ -403,10 +407,13 @@ func ghost_origin() -> Vector2i:
 
 
 ## 상황: 중력 accumulator의 한 셀 낙하 임계값이 필요할 때 호출한다.
-## 순서: level-1마다 0.055초 차감 → `maxf`로 0.08초 하한 적용.
+## 순서: level-1마다 0.036666...초 차감 → `maxf`로 0.053333...초 하한 적용.
 ## 결과: 현재 level의 셀당 낙하 간격(초)을 반환한다.
 func gravity_interval() -> float:
-	return maxf(0.08, 0.70 - float(level - 1) * 0.055)
+	return maxf(
+		GRAVITY_INTERVAL_MINIMUM,
+		GRAVITY_INTERVAL_START - float(level - 1) * GRAVITY_INTERVAL_REDUCTION
+	)
 
 
 ## 상황: 줄 삭제 직후 이번 삭제 점수를 계산할 때 호출한다.
@@ -424,6 +431,15 @@ static func line_clear_score(cleared_lines: int, current_level: int) -> int:
 ## 결과: 0~9줄=1, 10~19줄=2 형태의 정수 레벨을 반환한다.
 static func level_for_lines(lines: int) -> int:
 	return 1 + floori(float(maxi(lines, 0)) / 10.0)
+
+
+static func stage_stars_for_lines(lines: int) -> int:
+	var cleared_lines: int = maxi(lines, 0)
+	if cleared_lines >= 3:
+		return 3
+	if cleared_lines >= 2:
+		return 2
+	return 1 if cleared_lines >= 1 else 0
 
 
 ## 상황: 새 게임 또는 새 피스가 시작되어 이전 피스의 시간 상태를 버릴 때 호출한다.

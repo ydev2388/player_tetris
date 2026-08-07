@@ -17,7 +17,7 @@ extends CharacterBody2D
 ## GDScript 핵심: 들여쓰기가 C++의 `{}` 블록을 대신하고, `var x: Type`은 지역/멤버 변수,
 ## `func f(a: T) -> R`은 함수 시그니처, `and/or/not`은 `&&/||/!`에 해당한다.
 
-signal stats_changed # 생명/stamina/charge/cooldown 변경을 GameView에 알린다.
+signal stats_changed # 생명/stamina/cooldown 변경을 GameView에 알린다.
 signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
 
 # 좌표/이동 상수. Godot 2D는 +x가 오른쪽, +y가 아래이므로 점프 속도는 음수다.
@@ -67,9 +67,9 @@ const ROTATION_SPIN_DURATION: float = 0.42 # 전용 8 frame과 한 바퀴 회전
 const SELF_RESPAWN_HOLD_SECONDS: float = 1.0 # 자력 재스폰을 확정하기 위한 연속 입력 시간.
 const POST_SPIN_APEX_SPEED: float = 40.0 * MainLayout.DISPLAY_SCALE # 종료 후 jump frame 경계.
 const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무시하는 초.
-const ATTACK_COOLDOWN: float = 0.48 # 새 펀치 sequence 시작 간격(초).
-const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
-const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # X release 뒤 주먹 판정을 유지하는 시간.
+const ATTACK_COOLDOWN: float = 0.48 # 일반 공격 재사용 대기시간(초).
+const ATTACK_ANIMATION_DURATION: float = 0.4 # 일반 공격 스프라이트 재생시간(초).
+const PUNCH_HITBOX_WIDTH: float = 27.2 # 몸 앞 일반 공격 판정 길이(px).
 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
@@ -80,19 +80,9 @@ const SFX_JUMP: AudioStream = preload("res://assets/sfx/04_jump.wav")
 const SFX_MEDITATION_START: AudioStream = preload("res://assets/sfx/05a_meditation_start.wav")
 const SFX_MEDITATION_LOOP: AudioStream = preload("res://assets/sfx/05b_meditation_loop.wav")
 const SFX_MEDITATION_END: AudioStream = preload("res://assets/sfx/05c_meditation_end.wav")
-const SFX_CHARGE_START: AudioStream = preload("res://assets/sfx/06a_charge_start.wav")
-const SFX_CHARGE_LOOP: AudioStream = preload("res://assets/sfx/06b_charge_loop.wav")
-const SFX_CHARGE_TIER1: AudioStream = preload("res://assets/sfx/06c_charge_tier1.wav")
-const SFX_CHARGE_READY: AudioStream = preload("res://assets/sfx/06d_charge_ready.wav")
-const SFX_CHARGE_RELEASE: AudioStream = preload("res://assets/sfx/06e_charge_release.wav")
 const SFX_BLOCK_ELIMINATION: AudioStream = preload("res://assets/sfx/07_block_elimination.wav")
 const SFX_WALL_CLIMB: AudioStream = preload("res://assets/sfx/09_wall_climb.wav")
 
-# 0.4초/0.9초 hold 뒤 release하면 각각 2칸/3칸 차지 펀치를 실행한다.
-const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # charge 단계별 hold 임계 초.
-const PUNCH_TOTAL_COSTS: Array[float] = [0.0, 8.0, 18.0] # 단계별 누적 비용 조회표.
-const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상한(초).
-const PUNCH_HITBOX_WIDTH: float = 27.2 # 주먹 스프라이트 끝에서 5px 더 넓힌 전방 판정 길이(px).
 const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
 	28.0 * MainLayout.DISPLAY_SCALE,
@@ -110,7 +100,6 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
 var _meditation_loop_player: AudioStreamPlayer
-var _charge_loop_player: AudioStreamPlayer
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
@@ -118,13 +107,11 @@ var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림에 사용.
 var facing: int = 1 # 바라보는 방향: 왼쪽 -1, 오른쪽 +1.
 var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 이동 branch를 실행.
 var is_meditating: bool = false # true면 정지·회복하고 Controller 테트리스 시간을 2배로 함.
-var charge_time: float = 0.0 # 현재 X hold 경과시간. release/reset 때 0.
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 회전 킥 입력 거부; 매 frame 감소.
 var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
 
 # 이 클래스 내부의 상태 기계용 변수. `_`는 C++의 private와 같은 강제 접근 제한은
 # 아니지만 외부에서 사용하지 말라는 GDScript 관례다.
-var _charging: bool = false # X를 누른 뒤 release 전이며 punch 단계를 진행 중인지.
 var _invulnerability_remaining: float = 0.0 # 0보다 크면 take_damage를 무시하고 깜빡임.
 var _feedback_remaining: float = 0.0 # 0이 되면 feedback_text를 지우는 countdown(초).
 var _spin_remaining: float = 0.0 # 회전 킥 sprite 회전을 계속할 countdown(초).
@@ -144,12 +131,9 @@ var _hang_jump_facing: int = 1 # 매달린 벽 방향(-1 왼쪽/+1 오른쪽)을
 var _wall_jump_control_remaining: float = 0.0 # 원래 벽 방향 공중 조향 보정 countdown.
 var _wall_jump_wall_facing: int = 1 # 직전 벽점프가 출발한 벽 방향.
 var _variable_jump_active: bool = false # true면 jump release로 상승속도를 줄일 수 있음.
-var _attack_cooldown_remaining: float = 0.0 # 0보다 크면 새 펀치 sequence 시작 금지.
-var _attack_animation_remaining: float = 0.0 # 0보다 크면 ATTACK animation이 최우선.
-var _pending_punch_stage: int = 0 # 0이면 없음, 1~3이면 판정 대기 중인 펀치 거리.
-var _pending_punch_hit_remaining: float = 0.0 # release 뒤 남은 주먹 판정 시간.
+var _attack_cooldown_remaining: float = 0.0 # 0보다 크면 일반 공격 입력을 무시한다.
+var _attack_animation_remaining: float = 0.0 # 0보다 크면 공격 스프라이트를 우선 표시한다.
 var _ignore_initial_jump_until_released: bool = false # 메뉴 Z로 게임을 열었을 때 첫 점프를 막는다.
-var _charge_audio_started: bool = false # 차지 임계 도달 뒤 차지 사운드가 시작됐는지.
 var _animation_state: String = ANIMATION_DATA.IDLE # 현재 sprite frame table key.
 var _animation_time: float = 0.0 # 현재 animation_state에 머문 경과시간(초).
 var _respawn_airborne_pending: bool = false # 순간이동 직후 이전 바닥 접지 cache를 한 번 무시.
@@ -171,9 +155,7 @@ func _ready() -> void:
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
 	_meditation_loop_player = _create_sfx_player()
-	_charge_loop_player = _create_sfx_player()
 	_meditation_loop_player.finished.connect(_restart_meditation_loop)
-	_charge_loop_player.finished.connect(_restart_charge_loop)
 	_respawn_random.randomize()
 	controller.game_restarted.connect(_reset_character)
 	controller.active_piece_descended.connect(handle_active_piece_descended)
@@ -183,7 +165,7 @@ func _ready() -> void:
 
 ## 상황: Godot의 고정 physics timestep마다 호출되는 캐릭터 최상위 상태 기계다.
 ## 순서: 비PLAYING 조기 정지 → timers 감소 → 기존/신규 명상 branch
-##       → charge 처리 → hanging 또는 normal movement → 공통 시각/위치 검증.
+##       → hanging 또는 normal movement → 공통 시각/위치 검증.
 ## 결과: 한 frame에 서로 배타적인 이동 상태 하나만 실행되고 모든 후처리는 공통 적용된다.
 func _physics_process(delta: float) -> void:
 	if controller.state != MainGameController.GameState.PLAYING:
@@ -204,7 +186,6 @@ func _physics_process(delta: float) -> void:
 		_finish_physics_frame(delta)
 		return
 
-	_handle_charge(delta)
 	if is_hanging:
 		_handle_hanging(delta)
 	else:
@@ -218,8 +199,6 @@ func _physics_process(delta: float) -> void:
 func _stop_for_inactive_game() -> void:
 	_set_meditating(false)
 	velocity = Vector2.ZERO
-	_pending_punch_stage = 0
-	_pending_punch_hit_remaining = 0.0
 	if not Input.is_action_pressed(&"character_self_respawn"):
 		_reset_self_respawn_input()
 
@@ -268,7 +247,6 @@ func _can_start_meditating() -> bool:
 		Input.is_action_pressed(&"character_meditate")
 		and is_on_floor()
 		and not is_hanging
-		and not _charging
 	)
 
 
@@ -276,7 +254,6 @@ func _can_start_meditating() -> bool:
 ## 순서: `_update_visual_state(delta)` → `validate_position()`.
 ## 결과: gameplay 상태에 맞는 sprite가 적용되고 새 블록 겹침/추락 피해가 처리된다.
 func _finish_physics_frame(delta: float) -> void:
-	_resolve_pending_punch(delta)
 	_update_visual_state(delta)
 	validate_position()
 
@@ -393,7 +370,7 @@ func _apply_gravity(grounded: bool, delta: float) -> void:
 
 
 ## 상황: 일반 이동 frame에서 단발 행동 입력을 읽을 때 호출한다.
-## 순서: 회전/점프의 just_pressed 값을 `_dispatch_action_input()`에 전달.
+## 순서: 공격/회전/점프의 just_pressed 값을 `_dispatch_action_input()`에 전달.
 ## 결과: 실제 우선순위 판단은 dispatcher 한곳에서 실행되어 테스트도 같은 경로를 사용할 수 있다.
 func _handle_action_input() -> void:
 	var jump_pressed: bool = Input.is_action_just_pressed(&"character_jump")
@@ -403,24 +380,42 @@ func _handle_action_input() -> void:
 		else:
 			_ignore_initial_jump_until_released = false
 	_dispatch_action_input(
+		Input.is_action_just_pressed(&"character_punch"),
 		Input.is_action_just_pressed(&"character_rotation_kick"),
 		jump_pressed
 	)
 
 
 ## 상황: 실입력 또는 테스트가 동시에 들어온 행동들의 우선순위를 결정할 때 호출한다.
-## 순서: 회전 있으면 jump 취소/회전 후 return → 그 외에만 `_handle_jump_input()`.
-## 결과: 한 frame에 회전 킥 또는 점프 중 하나만 시작된다.
+## 순서: 공격 → 회전 킥 → 점프 순으로 하나만 선택한다.
+## 결과: 한 frame에 공격·회전 킥·점프가 중복 시작되지 않는다.
 func _dispatch_action_input(
+	punch_pressed: bool,
 	rotation_kick_pressed: bool,
 	jump_pressed: bool
 ) -> void:
+	if punch_pressed:
+		_attempt_punch()
+		return
 	if rotation_kick_pressed:
 		_cancel_jump_intent()
 		_attempt_rotation_kick()
 		return
 
 	_handle_jump_input(jump_pressed)
+
+
+func _attempt_punch() -> void:
+	if _attack_cooldown_remaining > 0.0:
+		return
+	_attack_cooldown_remaining = ATTACK_COOLDOWN
+	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
+	_play_sfx(SFX_PUNCH)
+	if _punch_hits_active_piece() and controller.push_active_piece(facing, 1):
+		_set_feedback("펀치: 1칸")
+	else:
+		_set_feedback("일반 펀치")
+	stats_changed.emit()
 
 
 ## 상황: 회전 킥이 점프보다 우선되어 기존 점프 의도를 폐기해야 할 때 호출한다.
@@ -630,128 +625,6 @@ func _perform_wall_jump() -> void:
 	_set_feedback("벽 점프")
 
 
-## 상황: 명상이 아닌 모든 physics frame에서 X 펀치 hold 상태를 갱신할 때 호출한다.
-## 순서: just_pressed면 sequence 시작 → hold 중에는 charge_time만 누적
-##       → release 때 일반 또는 차지 펀치를 한 번 실행한다.
-## 결과: 짧은 탭은 일반 펀치, 0.4/0.9초 hold는 각각 2칸/3칸 차지 펀치가 된다.
-func _handle_charge(delta: float) -> void:
-	if Input.is_action_just_pressed(&"character_punch"):
-		_start_punch_sequence()
-
-	if _charging and Input.is_action_pressed(&"character_punch"):
-		charge_time = minf(PUNCH_MAX_HOLD_TIME, charge_time + delta)
-		if charge_time >= PUNCH_STAGE_TIMES[1]:
-			_start_charge_audio()
-		stats_changed.emit()
-	elif _charging:
-		if charge_time < PUNCH_STAGE_TIMES[1]:
-			_perform_tap_punch()
-		else:
-			_perform_charge_punch(push_distance_for_charge(charge_time))
-		_release_charge_punch()
-
-
-## 상황: X가 새로 눌렸을 때 새 연속 펀치를 시작할 수 있는지 처리한다.
-## 순서: attack cooldown>0이면 종료 → charging=true → 시간/stage 초기화
-##       → 차지 사운드 상태 초기화.
-## 결과: 쿨다운 중 입력은 무시되고, release 전까지 일반/차지 동작을 유보한다.
-func _start_punch_sequence() -> void:
-	if _attack_cooldown_remaining > 0.0:
-		return
-	_charging = true
-	charge_time = 0.0
-	_charge_audio_started = false
-
-
-## 상황: X를 짧게 눌렀다 놓았을 때 일반 펀치를 실행한다.
-## 결과: 공격 animation을 표시하고 0.1초 주먹 판정 중 맞은 활성 블록을 1칸 민다.
-func _perform_tap_punch() -> void:
-	_start_attack_animation()
-	_attack_cooldown_remaining = ATTACK_COOLDOWN
-	_play_sfx(SFX_PUNCH)
-	_begin_punch_hit_confirmation(1)
-	stats_changed.emit()
-
-
-func _start_attack_animation() -> void:
-	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
-	_animation_state = ANIMATION_DATA.ATTACK
-	_animation_time = 0.0
-
-
-## 상황: charging 중 X가 더 이상 눌리지 않은 첫 frame에 호출한다.
-## 순서: charging=false → charge_time=0 → stats signal.
-## 결과: 현재 stage 표시가 0으로 돌아가고 다음 cooldown 이후 새 sequence가 가능하다.
-func _release_charge_punch() -> void:
-	_stop_charge_loop(_charge_audio_started)
-	_charging = false
-	charge_time = 0.0
-	_charge_audio_started = false
-	stats_changed.emit()
-
-
-## 상황: X release 때 hold 시간에 맞는 차지 펀치를 실행할 때 호출한다.
-## 순서: 비용 검사 → attack 시작 → 0.1초 주먹 판정을 예약한다.
-## 결과: 판정 중 블록을 맞춘 경우에만 2칸 또는 3칸을 한 번에 민다.
-func _perform_charge_punch(target_stage: int) -> void:
-	var stamina_cost: float = PUNCH_TOTAL_COSTS[target_stage - 1]
-	if stamina < stamina_cost:
-		_set_feedback("스태미나 부족")
-		return
-	_start_attack_animation()
-	_attack_cooldown_remaining = ATTACK_COOLDOWN
-	_play_sfx(SFX_PUNCH)
-	_begin_punch_hit_confirmation(target_stage)
-	stats_changed.emit()
-
-
-func _begin_punch_hit_confirmation(target_stage: int) -> void:
-	_pending_punch_stage = target_stage
-	_pending_punch_hit_remaining = PUNCH_HIT_CONFIRM_SECONDS
-
-
-func _resolve_pending_punch(delta: float) -> void:
-	if _pending_punch_stage == 0:
-		return
-
-	var target_stage: int = _pending_punch_stage
-	if _punch_hits_active_piece():
-		_pending_punch_stage = 0
-		_pending_punch_hit_remaining = 0.0
-		if controller.push_active_piece(facing, target_stage):
-			if target_stage == 1:
-				_set_feedback("펀치: 1칸")
-			else:
-				stamina -= PUNCH_TOTAL_COSTS[target_stage - 1]
-				if target_stage == 2:
-					_play_sfx_cue(SFX_CHARGE_TIER1)
-				else:
-					_play_sfx_cue(SFX_CHARGE_READY)
-				_set_feedback("차지 펀치: %d칸" % target_stage)
-		else:
-			_set_feedback("이동 경로가 막힘")
-		stats_changed.emit()
-		return
-
-	_pending_punch_hit_remaining = maxf(0.0, _pending_punch_hit_remaining - delta)
-	if _pending_punch_hit_remaining <= 0.0:
-		_pending_punch_stage = 0
-		_set_feedback("일반 펀치" if target_stage == 1 else "공격이 빗나감")
-
-
-## 상황: 명상처럼 펀치와 배타적인 상태에 진입할 때 호출한다.
-## 순서: charging이 아니면 종료 → charging/time 초기화 → stats signal.
-## 결과: 이미 성공한 피스 이동은 유지하고 아직 진행 중인 hold 상태만 취소한다.
-func _cancel_punch_sequence() -> void:
-	if not _charging:
-		return
-	_stop_charge_loop(_charge_audio_started)
-	_charging = false
-	charge_time = 0.0
-	_charge_audio_started = false
-	stats_changed.emit()
-
-
 ## 상황: 명상 진입/종료, pause, 피해 또는 reset에서 명상 상태를 일관되게 바꿀 때 호출한다.
 ## 순서: 요청+PLAYING+접지+비매달림으로 next 계산 → 상태가 같으면 Controller만 동기화
 ##       → 변경 시 둘 다 저장 → 진입이면 펀치/점프/조향 취소·x정지, 종료면 feedback → signal.
@@ -772,7 +645,6 @@ func _set_meditating(active: bool) -> void:
 	if is_meditating:
 		_play_sfx(SFX_MEDITATION_START)
 		_start_meditation_loop()
-		_cancel_punch_sequence()
 		_pending_rotation_launch_velocity = 0.0
 		_jump_buffer_remaining = 0.0
 		_hang_jump_grace_remaining = 0.0
@@ -869,6 +741,19 @@ func _character_collider_rect() -> Rect2:
 		CHARACTER_COLLIDER_OFFSET_Y
 	)
 	return Rect2(collider_center - collider_size * 0.5, collider_size)
+
+
+func _punch_hits_active_piece() -> bool:
+	return _active_piece_overlaps_rect(_punch_hitbox_rect())
+
+
+func _punch_hitbox_rect() -> Rect2:
+	var body_rect: Rect2 = _character_collider_rect()
+	var fist_x: float = body_rect.end.x if facing > 0 else body_rect.position.x - PUNCH_HITBOX_WIDTH
+	return Rect2(
+		Vector2(fist_x, body_rect.position.y),
+		Vector2(PUNCH_HITBOX_WIDTH, body_rect.size.y)
+	)
 
 
 ## 상황: 지연된 회전 킥 발사 경로가 새 활성 피스와 겹치는지 확인할 때 호출한다.
@@ -1197,7 +1082,7 @@ func _is_below_board() -> bool:
 
 
 ## 상황: 자연 낙하 블록과 고정 지지면 사이의 직접 압착을 발견했을 때 호출한다.
-## 순서: 무적이면 종료 → 생명-1/무적 설정 → 명상/hang/jump/charge/속도 해제
+## 순서: 무적이면 종료 → 생명-1/무적 설정 → 명상/hang/jump/속도 해제
 ##       → feedback → 생명 0이면 end_game/return → 안전 위치 탐색 → 없으면 end_game,
 ##       있으면 상단 한 칸 아래의 무작위 안전 열로 이동 → stats signal.
 ## 결과: 같은 압착에서 연속 피해를 막고 살아 있으면 블록과 겹치지 않게 상단에서 재시작한다.
@@ -1220,12 +1105,6 @@ func _lose_life_and_respawn(feedback_message: String) -> void:
 	_hang_regrab_remaining = 0.0
 	_cancel_wall_jump_control()
 	_cancel_jump_intent()
-	_charging = false
-	_stop_charge_loop()
-	charge_time = 0.0
-	_attack_animation_remaining = 0.0
-	_pending_punch_stage = 0
-	_pending_punch_hit_remaining = 0.0
 	_spin_remaining = 0.0
 	_spin_elapsed = 0.0
 	_pending_rotation_launch_velocity = 0.0
@@ -1259,58 +1138,6 @@ func self_respawn_hold_ratio() -> float:
 	if _self_respawn_requires_release:
 		return 0.0
 	return clampf(_self_respawn_hold_time / SELF_RESPAWN_HOLD_SECONDS, 0.0, 1.0)
-
-
-## 상황: GameView/테스트가 현재 연속 펀치 단계를 표시·검증할 때 호출한다.
-## 순서: charging이 아니면 0 조기 반환, 맞으면 현재 hold 시간의 단계를 계산한다.
-## 결과: 외부에서 내부 flag를 직접 읽지 않고 0~3 단계를 얻는다.
-func charge_level() -> int:
-	if not _charging:
-		return 0
-	return push_distance_for_charge(charge_time)
-
-
-## 상황: charge bar와 sprite glow가 펀치 hold 진행률을 요구할 때 호출한다.
-## 순서: charging이면 charge_time/0.9를 0~1 clamp, 아니면 0.
-## 결과: UI에 바로 쓸 수 있는 정규화 float를 반환한다.
-func charge_ratio() -> float:
-	return clampf(charge_time / 0.9, 0.0, 1.0) if _charging else 0.0
-
-
-## 상황: GameView가 회전 킥 cooldown bar를 계산할 때 호출한다.
-## 순서: 남은 초/전체 2초 → 0~1 clamp.
-## 결과: 1은 방금 사용, 0은 즉시 사용 가능을 의미한다.
-func rotation_cooldown_ratio() -> float:
-	return clampf(rotation_cooldown_remaining / ROTATION_COOLDOWN, 0.0, 1.0)
-
-
-## 상황: 테스트/비용 helper가 임의 hold 초의 이론적 펀치 단계를 구할 때 호출한다.
-## 순서: stage index 1부터 임계시간과 비교 → seconds가 작아지는 첫 index 반환
-##       → 모든 임계 이상이면 전체 stage 수 3 반환.
-## 결과: runtime 상태와 무관한 1~3 정수 단계를 반환한다.
-static func push_distance_for_charge(seconds: float) -> int:
-	for stage_index: int in range(1, PUNCH_STAGE_TIMES.size()):
-		if seconds < PUNCH_STAGE_TIMES[stage_index]:
-			return stage_index
-	return PUNCH_STAGE_TIMES.size()
-
-
-## 상황: 펀치가 활성 블록을 실제로 때렸는지 확인할 때 호출한다.
-## 순서: 몸 바로 앞의 좁은 주먹 Rect를 만들고 활성 피스 셀과 양의 면적 교차를 검사한다.
-## 결과: 블록이 멀리 있으면 false이며, 몸에 닿은 전방 블록만 true다.
-func _punch_hits_active_piece() -> bool:
-	return _active_piece_overlaps_rect(_punch_hitbox_rect())
-
-
-func _punch_hitbox_rect() -> Rect2:
-	var body_rect: Rect2 = _character_collider_rect()
-	var fist_x: float = (
-		body_rect.end.x if facing > 0 else body_rect.position.x - PUNCH_HITBOX_WIDTH
-	)
-	return Rect2(
-		Vector2(fist_x, body_rect.position.y),
-		Vector2(PUNCH_HITBOX_WIDTH, body_rect.size.y)
-	)
 
 
 ## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
@@ -1475,7 +1302,7 @@ func _update_timers(delta: float) -> void:
 
 
 ## 상황: gameplay 처리가 끝난 활성 physics frame마다 sprite를 최신 상태로 만들 때 호출한다.
-## 순서: 회전 킥 spin → 명상/charge 색 → 피해 blink → frame animation.
+## 순서: 회전 킥 spin → 명상/스태미나 색 → 피해 blink → frame animation.
 ## 결과: 서로 다른 시각 효과가 고정된 순서로 합성된다.
 func _update_visual_state(delta: float) -> void:
 	_update_spin_visual(delta)
@@ -1529,28 +1356,25 @@ func _seed_post_spin_animation() -> void:
 	_post_spin_animation_seeded = true
 
 
-## 상황: 현재 명상 또는 punch charge 상태를 색으로 표시할 때 호출한다.
-## 순서: 명상이면 시간 pulse/청색 modulation → 아니면 charge_ratio/주황 glow.
-## 결과: sprite.modulate가 두 상태 중 현재 우선 상태를 반영한다.
+## 상황: 명상 상태와 남은 스태미나를 캐릭터 색으로 표시할 때 호출한다.
 func _update_sprite_modulation() -> void:
+	var base_color: Color = Color.WHITE
 	if is_meditating:
 		var meditation_pulse: float = ( # 0~1로 왕복하는 명상 밝기.
 			sin(float(Time.get_ticks_msec()) * 0.008) + 1.0
 		) * 0.5
-		sprite.modulate = Color(
+		base_color = Color(
 			0.72 + meditation_pulse * 0.10,
 			0.92 + meditation_pulse * 0.08,
 			1.0,
 			1.0
 		)
-	else:
-		var charge_glow: float = charge_ratio() # 0~1 punch hold 진행률.
-		sprite.modulate = Color(
-			1.0,
-			1.0 - charge_glow * 0.15,
-			1.0 - charge_glow * 0.35,
-			1.0
-		)
+	var exhaustion: float = 1.0 - clampf(stamina / MAX_STAMINA, 0.0, 1.0)
+	var warning_pulse: float = (sin(float(Time.get_ticks_msec()) * 0.012) + 1.0) * 0.5
+	var warning_strength: float = exhaustion * lerpf(0.35, 1.0, warning_pulse)
+	if stamina <= 0.0:
+		warning_strength = 1.0
+	sprite.modulate = base_color.lerp(Color(1.0, 0.18, 0.18, 1.0), warning_strength)
 
 
 ## 상황: 피해 무적시간을 캐릭터 깜빡임으로 표현할 때 호출한다.
@@ -1592,8 +1416,7 @@ func _advance_character_animation(delta: float) -> void:
 
 
 ## 상황: 겹칠 수 있는 gameplay flag 중 표시할 animation 하나를 고를 때 호출한다.
-## 순서: 회전 킥 → attack timer → hanging → 비접지 jump → idle 순 조기 반환.
-## 결과: `rotation kick > attack > hang > jump > idle` 우선순위 key를 반환한다.
+## 순서: 회전 킥 → 공격 → hanging → 비접지 jump → idle 순 조기 반환.
 func _get_animation_state() -> String:
 	if _spin_remaining > 0.0:
 		return ANIMATION_DATA.ROTATION_KICK
@@ -1607,7 +1430,7 @@ func _get_animation_state() -> String:
 
 
 ## 상황: animation 시간/state가 정해진 뒤 실제 Sprite2D frame을 적용할 때 호출한다.
-## 순서: sprite 유효성 → region 조회 → 기본 target size → attack 너비 확대
+## 순서: sprite 유효성 → region 조회 → 목표 크기
 ##       → texture/region/scale/position 대입.
 ## 결과: 원본 frame 크기가 달라도 게임 안에서는 일정한 캐릭터 높이로 보인다.
 func _apply_animation_frame() -> void:
@@ -1623,7 +1446,6 @@ func _apply_animation_frame() -> void:
 
 
 ## 상황: sprite 표시와 픽셀 마스크 역매핑이 같은 화면 크기를 사용해야 할 때 호출한다.
-## 결과: 공격은 57.6×64px, 그 외 상태는 40×64px 크기를 반환한다.
 func _animation_target_size(animation_state: String) -> Vector2:
 	if animation_state == ANIMATION_DATA.ROTATION_KICK:
 		return Vector2.ONE * CHARACTER_HEIGHT
@@ -1676,38 +1498,13 @@ func _restart_meditation_loop() -> void:
 		_meditation_loop_player.play()
 
 
-func _start_charge_loop() -> void:
-	_charge_loop_player.stream = SFX_CHARGE_LOOP
-	_charge_loop_player.play()
-
-
-func _start_charge_audio() -> void:
-	if _charge_audio_started:
-		return
-	_charge_audio_started = true
-	_play_sfx(SFX_CHARGE_START)
-	_start_charge_loop()
-
-
-func _stop_charge_loop(play_release: bool = false) -> void:
-	_charge_loop_player.stop()
-	if play_release:
-		_play_sfx(SFX_CHARGE_RELEASE)
-
-
-func _restart_charge_loop() -> void:
-	if _charging:
-		_charge_loop_player.play()
-
-
 ## 상황: 캐릭터 최초 준비 또는 GameController.reset_game()의 restart signal에서 호출한다.
 ## 순서: 공개 stats/모든 timer·flag 초기화 → 시작 position/velocity
 ##       → sprite transform/color/visibility → 첫 animation frame → 두 signal.
-## 결과: 이전 게임의 hang body, charge, 무적, animation이 남지 않는 새 캐릭터가 된다.
+## 결과: 이전 게임의 hang body, 무적, animation이 남지 않는 새 캐릭터가 된다.
 func _reset_character() -> void:
 	if _meditation_loop_player:
 		_stop_meditation_loop()
-		_stop_charge_loop()
 	lives = MAX_LIVES
 	stamina = MAX_STAMINA
 	facing = 1
@@ -1716,11 +1513,10 @@ func _reset_character() -> void:
 	_clear_hang_vertical_bounds()
 	is_meditating = false
 	controller.set_meditation_active(false)
-	charge_time = 0.0
 	rotation_cooldown_remaining = 0.0
+	_attack_cooldown_remaining = 0.0
+	_attack_animation_remaining = 0.0
 	feedback_text = ""
-	_charging = false
-	_charge_audio_started = false
 	_invulnerability_remaining = 0.0
 	_feedback_remaining = 0.0
 	_spin_remaining = 0.0
@@ -1736,10 +1532,6 @@ func _reset_character() -> void:
 	_wall_jump_control_remaining = 0.0
 	_wall_jump_wall_facing = 1
 	_variable_jump_active = false
-	_attack_cooldown_remaining = 0.0
-	_attack_animation_remaining = 0.0
-	_pending_punch_stage = 0
-	_pending_punch_hit_remaining = 0.0
 	_animation_state = ANIMATION_DATA.IDLE
 	_animation_time = 0.0
 	_respawn_airborne_pending = false

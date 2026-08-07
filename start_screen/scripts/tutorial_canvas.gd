@@ -189,55 +189,16 @@ func _draw_movement_page() -> void:
 
 
 func _draw_block_action_page() -> void:
-	_draw_page_heading("2. 블록 조작", "펀치와 플립으로 길을 만드세요")
-	var cards: Array[Rect2] = [
-		Rect2(20.0, 70.0, 380.0, 382.0),
-		Rect2(420.0, 70.0, 380.0, 382.0),
-	]
-	for card: Rect2 in cards:
-		_draw_card(card)
-
-	_draw_step_badge(Vector2(44.0, 104.0), 1, ORANGE)
-	_text(Vector2(80.0, 113.0), "차지 펀치", 19, TEXT)
-	var punch_stage: int = _punch_stage(_animation_time)
-	var punch_releasing: bool = _punch_releasing(_animation_time)
-	_key_chip(
-		Vector2(322.0, 96.0),
-		_binding(&"character_punch"),
-		ORANGE,
-		0.85 if punch_releasing else 0.2
-	)
-	_draw_floor(Vector2(42.0, 360.0), 336.0)
-	_draw_animated_character(
-		Rect2(70.0, 241.0, 64.0, 106.0),
-		ANIMATION_DATA.ATTACK if punch_releasing else ANIMATION_DATA.IDLE,
-		fmod(maxf(_animation_time - 0.25, 0.0), 0.4) if punch_releasing else _animation_time,
-		_loop_alpha(2.4)
-	)
-	var punch_block_x: float = 180.0 + float(punch_stage) * 24.0
-	_draw_tetromino(
-		Vector2(punch_block_x, 284.0),
-		CYAN,
-		_loop_alpha(2.4)
-	)
-	_draw_arrow(
-		Vector2(205.0, 275.0),
-		Vector2(342.0, 275.0),
-		ORANGE,
-		4.0,
-		0.85 if punch_releasing else 0.15
-	)
+	_draw_page_heading("2. 블록 조작", "일반 공격과 블록 플립으로 길을 만드세요")
+	_draw_card(Rect2(20.0, 70.0, 780.0, 382.0))
+	_draw_step_badge(Vector2(44.0, 104.0), 1, PURPLE)
+	_text(Vector2(80.0, 113.0), "블록 플립", 19, TEXT)
 	_text(
-		Vector2(306.0, 205.0),
-		"%d칸" % punch_stage if punch_stage > 0 else "유지 중",
+		Vector2(80.0, 145.0),
+		"[%s] 일반 공격: 가까운 블록을 1칸 밀기" % _binding(&"character_punch"),
 		15,
-		ORANGE if punch_releasing else MUTED
+		MUTED
 	)
-	_text(Vector2(44.0, 392.0), "X를 놓을 때 1칸 · 0.4초 유지 후 2칸", 13, MUTED)
-	_text(Vector2(44.0, 415.0), "0.9초 유지 후 3칸 · 전방 블록에 닿을 때", 13, MUTED)
-
-	_draw_step_badge(Vector2(444.0, 104.0), 2, PURPLE)
-	_text(Vector2(480.0, 113.0), "블록 플립", 19, TEXT)
 	var kick_ratio: float = _smooth_ratio(_animation_time, 0.25, 1.05)
 	var kick_frame_elapsed: float = kick_ratio * 0.42
 	var kick_active: bool = _animation_time >= 0.25 and _animation_time <= 1.25
@@ -253,7 +214,7 @@ func _draw_block_action_page() -> void:
 		PURPLE,
 		clampf(sin(kick_ratio * PI) + kick_impact * 0.5, 0.0, 1.0)
 	)
-	_draw_floor(Vector2(442.0, 360.0), 336.0)
+	_draw_floor(Vector2(180.0, 360.0), 440.0)
 	if kick_active:
 		for trail_index: int in range(2, 0, -1):
 			var trail_elapsed: float = maxf(
@@ -262,7 +223,7 @@ func _draw_block_action_page() -> void:
 			)
 			_draw_animated_character(
 				Rect2(
-					500.0 - float(trail_index) * 5.0,
+					300.0 - float(trail_index) * 5.0,
 					236.0,
 					88.0,
 					111.0
@@ -280,7 +241,7 @@ func _draw_block_action_page() -> void:
 	)
 	_draw_animated_character(
 		Rect2(
-			500.0 + sin(kick_ratio * PI) * 10.0,
+			300.0 + sin(kick_ratio * PI) * 10.0,
 			236.0,
 			88.0,
 			111.0
@@ -291,14 +252,14 @@ func _draw_block_action_page() -> void:
 		_rotation_demo_angle(kick_character_elapsed) if kick_active else 0.0
 	)
 	_draw_tetromino(
-		Vector2(650.0, 279.0 - sin(kick_ratio * PI) * 22.0),
+		Vector2(450.0, 279.0 - sin(kick_ratio * PI) * 22.0),
 		RED,
 		kick_loop_alpha,
 		-kick_ratio * PI * 0.5
 	)
 	if kick_impact > 0.0:
 		draw_circle(
-			Vector2(645.0, 289.0),
+			Vector2(445.0, 289.0),
 			8.0 + kick_impact * 15.0,
 			Color(1.0, 0.72, 0.2, kick_impact * 0.32),
 			false,
@@ -306,9 +267,9 @@ func _draw_block_action_page() -> void:
 			true
 		)
 	_draw_arc_arrow(
-		Vector2(638.0, 260.0),
-		Vector2(748.0, 246.0),
-		Vector2(704.0, 205.0),
+		Vector2(438.0, 260.0),
+		Vector2(548.0, 246.0),
+		Vector2(504.0, 205.0),
 		PURPLE,
 		0.25 + 0.75 * sin(kick_ratio * PI)
 	)
@@ -316,13 +277,13 @@ func _draw_block_action_page() -> void:
 		_smooth_ratio(_animation_time, 0.88, 1.12) * kick_loop_alpha
 	)
 	_text(
-		Vector2(650.0, 190.0),
+		Vector2(450.0, 190.0),
 		"90° 플립",
 		14,
 		Color(PURPLE.r, PURPLE.g, PURPLE.b, rotation_label_alpha)
 	)
-	_text(Vector2(444.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
-	_text(Vector2(444.0, 415.0), "쿨타임 2초", 13, MUTED)
+	_text(Vector2(230.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
+	_text(Vector2(230.0, 415.0), "성공 뒤 2초, 실패 뒤 1초 대기", 13, MUTED)
 
 
 func _draw_wall_page() -> void:
@@ -643,26 +604,6 @@ func _movement_ratio(time_value: float) -> float:
 	if time_value < 2.65:
 		return 1.0 - _smooth_ratio(time_value, 1.65, 2.65)
 	return 0.0
-
-
-func _punch_stage(time_value: float) -> int:
-	if time_value < 0.45:
-		return 0
-	if time_value < 0.75:
-		return 1
-	if time_value < 1.25:
-		return 0
-	if time_value < 1.55:
-		return 2
-	return 3
-
-
-func _punch_releasing(time_value: float) -> bool:
-	return (
-		(time_value >= 0.45 and time_value < 0.75)
-		or (time_value >= 1.25 and time_value < 1.55)
-		or time_value >= 1.95
-	)
 
 
 func _wall_stage(time_value: float) -> int:

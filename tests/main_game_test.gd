@@ -14,17 +14,9 @@ func _init() -> void:
 
 func _run() -> void:
 	INPUT_ACTIONS.ensure_defaults()
-	InputMap.action_erase_events(&"character_punch")
-	var custom_event: InputEventKey = InputEventKey.new()
-	custom_event.physical_keycode = KEY_F8
-	InputMap.action_add_event(&"character_punch", custom_event)
-	INPUT_ACTIONS.ensure_defaults()
-	var custom_events: Array[InputEvent] = InputMap.action_get_events(&"character_punch")
 	_expect(
-		custom_events.size() == 1
-			and custom_events[0] is InputEventKey
-			and (custom_events[0] as InputEventKey).physical_keycode == KEY_F8,
-		"사용자 키가 기본값으로 오염되지 않는다."
+		INPUT_ACTIONS.get_default_keys(&"character_punch") == [KEY_X],
+		"일반 공격 기본 키는 X다."
 	)
 	_expect(
 		INPUT_ACTIONS.get_default_keys(&"character_rotation_kick") == [KEY_S],
@@ -39,15 +31,17 @@ func _run() -> void:
 		"최종 입력 목록에 당기기 동작은 없다."
 	)
 	_expect(
-		MainCharacterController.push_distance_for_charge(0.1) == 1
-			and MainCharacterController.push_distance_for_charge(0.4) == 2
-			and MainCharacterController.push_distance_for_charge(0.9) == 3,
-		"펀치 hold 단계는 1·2·3칸 순서다."
+		is_equal_approx(MainGameController.LOCK_DELAY_SECONDS, 0.5)
+			and is_equal_approx(MainGameController.GRAVITY_INTERVAL_START, 7.0 / 15.0)
+			and MainGameController.MEDITATION_TIME_SCALE == 2.0,
+		"기본 낙하·고정 시간은 1.5배 속도값 자체이며 명상 중에는 2배다."
 	)
 	_expect(
-		MainGameController.GRAVITY_SPEED_MULTIPLIER == 1.5
-			and MainGameController.MEDITATION_TIME_SCALE == 2.0,
-		"기본 낙하는 1.5배이며 명상 중에는 그 속도의 2배다."
+		MainGameController.stage_stars_for_lines(0) == 0
+			and MainGameController.stage_stars_for_lines(1) == 1
+			and MainGameController.stage_stars_for_lines(2) == 2
+			and MainGameController.stage_stars_for_lines(3) == 3,
+		"스테이지 줄 클리어 수는 1·2·3줄에서 0·1·2·3별 기준을 적용한다."
 	)
 	var controller: MainGameController = GAME_CONTROLLER.new()
 	controller.reset_game(20260801)
@@ -75,20 +69,39 @@ func _run() -> void:
 		spawn_cells_valid,
 		"모든 테트로미노 spawn 후보는 양쪽 경계 열을 비운다."
 	)
+	var attack_origin: Vector2i = controller.active_origin
+	_expect(
+		controller.push_active_piece(1, 1)
+			and controller.active_origin == attack_origin + Vector2i.RIGHT,
+		"일반 공격용 피스 밀기는 비어 있는 경로에서 한 칸 이동한다."
+	)
 	_expect(
 		controller.has_method("_physics_process")
 			and not controller.has_method("_process"),
 		"게임 진행은 현재 physics process 경로를 사용한다."
 	)
 	var stage_clear_count: Array[int] = [0]
-	controller.stage_cleared.connect(func(_score_value: int) -> void: stage_clear_count[0] += 1)
+	var stage_cleared_lines: Array[int] = [-1]
+	controller.stage_cleared.connect(func(cleared_lines: int) -> void:
+		stage_clear_count[0] += 1
+		stage_cleared_lines[0] = cleared_lines
+	)
 	controller.reset_game(20260801)
 	controller._advance_stage_timer(MainGameController.SURVIVAL_TIME_SECONDS)
 	_expect(
+		stage_clear_count[0] == 0
+			and controller.state == MainGameController.GameState.GAME_OVER,
+		"일반 스테이지에서 한 줄도 지우지 못하면 클리어가 아니라 게임오버다."
+	)
+	controller.reset_game(20260801)
+	controller.total_lines = 3
+	controller._advance_stage_timer(MainGameController.SURVIVAL_TIME_SECONDS)
+	_expect(
 		stage_clear_count[0] == 1
+			and stage_cleared_lines[0] == 3
 			and controller.stage_time_remaining == 0.0
 			and controller.state == MainGameController.GameState.PAUSED,
-		"일반 스테이지는 90초 생존 시 클리어된다."
+		"일반 스테이지는 누적 줄 수와 함께 90초 생존 시 클리어된다."
 	)
 	controller.stage_number = 5
 	controller.reset_game(20260801)
@@ -108,7 +121,7 @@ func _run() -> void:
 		FileAccess.file_exists("res://assets/sfx/08_select.wav"),
 		"현재 선택 효과음 리소스를 유지한다."
 	)
-	await _test_release_punch()
+	await _test_top_hud()
 	await _test_fixed_support_grab()
 	await _test_hang_face_bounds()
 	if _failures == 0:
@@ -127,70 +140,58 @@ func _expect(condition: bool, description: String) -> void:
 		push_error("  [실패] %s" % description)
 
 
-func _test_release_punch() -> void:
+func _test_top_hud() -> void:
 	var scene: MainGameView = GAME_SCENE.instantiate()
 	root.add_child(scene)
 	await process_frame
 	await physics_frame
 	await process_frame
 	scene.process_mode = Node.PROCESS_MODE_DISABLED
-	var timer_label: Label = scene.find_child("StageTimerLabel", true, false) as Label
-	var stats_label: Label = scene.find_child("StatsLabel", true, false) as Label
+	var lines_label: Label = scene.find_child("LinesLabel", true, false) as Label
+	var level_label: Label = scene.find_child("LevelLabel", true, false) as Label
+	var next_label: Label = scene.find_child("NextLabel", true, false) as Label
+	var timer_label: Label = scene.find_child("TimerLabel", true, false) as Label
 	_expect(
-		timer_label != null and timer_label.text.contains("01:30"),
-		"캐릭터 카드 위치에 90초 남은 시간이 표시된다."
+		lines_label != null
+			and lines_label.text.contains("파괴")
+			and level_label != null
+			and level_label.text.contains("LEVEL")
+			and next_label != null
+			and timer_label != null
+			and timer_label.text == "01:30"
+			and timer_label.position.y < MainLayout.BOARD_ORIGIN.y
+			and next_label.position.x > MainLayout.BOARD_ORIGIN.x + MainLayout.BOARD_SIZE.x * 0.5
+			and next_label.position.y < MainLayout.BOARD_ORIGIN.y,
+		"보드 폭에 맞춘 상단 HUD에 타이머·레벨·다음 블록 카드를 표시한다."
 	)
 	_expect(
-		stats_label != null and not stats_label.text.contains("삭제한 줄"),
-		"HUD는 삭제한 줄 수를 표시하지 않는다."
+		scene.find_child("StatsLabel", true, false) == null
+			and scene.find_child("StaminaLabel", true, false) == null
+			and scene.find_child("PunchLabel", true, false) == null
+			and scene.find_child("RotationKickLabel", true, false) == null,
+		"점수·스태미나·펀치·회전 킥 우측 HUD는 없다."
 	)
 
-	var controller: MainGameController = scene.get_node("GameController")
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
-	_prepare_punch(controller, character, Vector2i(4, 19), Vector2(165.0, 912.0))
-	var start_origin: Vector2i = controller.active_origin
-	Input.action_release(&"character_punch")
-	Input.action_press(&"character_punch")
-	character._handle_charge(0.2)
+	character.stamina = 0.0
+	character._update_sprite_modulation()
 	_expect(
-		character._charging
-			and character._pending_punch_stage == 0
-			and controller.active_origin == start_origin,
-		"X를 누르고 유지하는 동안에는 블록이 움직이지 않는다."
+		character.sprite.modulate == Color(1.0, 0.18, 0.18, 1.0),
+		"스태미나가 바닥나면 캐릭터가 완전히 붉어진다."
 	)
-	Input.action_release(&"character_punch")
-	character._handle_charge(0.0)
+	character._attempt_punch()
+	character._advance_character_animation(0.0)
 	_expect(
-		not character._charging
-			and character._pending_punch_stage == 1
-			and controller.active_origin == start_origin,
-		"X를 놓은 뒤에만 1칸 펀치 판정이 예약된다."
+		character._animation_state == "attack"
+			and character.sprite.texture == MainCharacterAnimationData.ATTACK_TEXTURE,
+		"일반 공격은 공격 스프라이트를 표시한다."
 	)
-	character._resolve_pending_punch(0.0)
-	_expect(
-		controller.active_origin == start_origin + Vector2i.RIGHT,
-		"놓은 뒤 전방 hitbox에 닿은 블록만 1칸 이동한다."
-	)
-
-	_prepare_punch(controller, character, Vector2i(7, 1), Vector2(24.0, 912.0))
-	Input.action_press(&"character_punch")
-	character._handle_charge(0.2)
-	Input.action_release(&"character_punch")
-	character._handle_charge(0.0)
-	character._resolve_pending_punch(0.1)
-	_expect(
-		controller.active_origin == Vector2i(7, 1),
-		"전방 hitbox 밖의 블록은 놓아도 이동하지 않는다."
-	)
-	Input.action_release(&"character_punch")
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -238,11 +239,9 @@ func _test_fixed_support_grab() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -325,8 +324,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 400.0)
-			and is_equal_approx(character._hang_bottom_global_y, 496.0),
+			and is_equal_approx(character._hang_top_global_y, board_physics.global_position.y + 320.0)
+			and is_equal_approx(character._hang_bottom_global_y, board_physics.global_position.y + 416.0),
 		"세로로 이어진 노출 옆면은 손 위치 기준 매달림 범위를 공유한다."
 	)
 	var upper_bound: float = character._hang_top_global_y
@@ -360,7 +359,7 @@ func _test_hang_face_bounds() -> void:
 		character.global_position.y <= lower_bound,
 		"매달린 중 하강 입력은 저장된 하단 범위를 넘지 않는다."
 	)
-	var active_piece: AnimatableBody2D = board_physics.active_body
+	var active_piece: StaticBody2D = board_physics.active_body
 	var bounds_top: float = 368.0
 	var bounds_bottom: float = 464.0
 	character._hang_top_global_y = bounds_top
@@ -408,8 +407,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 496.0)
-			and is_equal_approx(character._hang_bottom_global_y, 544.0),
+			and is_equal_approx(character._hang_top_global_y, board_physics.global_position.y + 416.0)
+			and is_equal_approx(character._hang_bottom_global_y, board_physics.global_position.y + 464.0),
 		"세로 틈이 있는 옆면은 틈을 건너 범위를 확장하지 않는다."
 	)
 	character._exit_hang()
@@ -424,8 +423,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 400.0)
-			and is_equal_approx(character._hang_bottom_global_y, 448.0),
+			and is_equal_approx(character._hang_top_global_y, board_physics.global_position.y + 320.0)
+			and is_equal_approx(character._hang_bottom_global_y, board_physics.global_position.y + 368.0),
 		"수평으로 꺾인 step은 다른 face를 같은 범위로 합치지 않는다."
 	)
 	character._exit_hang()
@@ -433,11 +432,9 @@ func _test_hang_face_bounds() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -461,27 +458,3 @@ func _prepare_hang_fixture(
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA
 	character._hang_regrab_remaining = 0.0
-
-
-func _prepare_punch(
-	controller: MainGameController,
-	character: MainCharacterController,
-	origin: Vector2i,
-	character_position: Vector2
-) -> void:
-	controller.board.reset()
-	controller.state = MainGameController.GameState.PLAYING
-	controller.active_type = MainTetrominoData.Type.T
-	controller.active_rotation = 0
-	controller.active_origin = origin
-	controller._reset_piece_timers()
-	character.position = character_position
-	character.velocity = Vector2.ZERO
-	character.facing = 1
-	character.stamina = MainCharacterController.MAX_STAMINA
-	character._charging = false
-	character.charge_time = 0.0
-	character._attack_cooldown_remaining = 0.0
-	character._attack_animation_remaining = 0.0
-	character._pending_punch_stage = 0
-	character._pending_punch_hit_remaining = 0.0

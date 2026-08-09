@@ -7,7 +7,7 @@ signal exit_requested
 const GAME_SCENE_DEFAULT: String = "res://scenes/main.tscn"
 const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
 const TUTORIAL_PAGE_COUNT: int = 5
-const PORTRAIT: Texture2D = preload("res://assets/sprites/player_animations.png")
+const PORTRAIT: Texture2D = preload("res://assets/sprites/player/normal/player_animations.png")
 const PORTRAIT_SOURCE: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0)
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
@@ -1214,11 +1214,22 @@ func _hide_stage_result() -> void:
 func _complete_stage_for_debug() -> void:
 	if _game_instance == null or not is_instance_valid(_game_instance):
 		return
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null and game_controller.is_boss_stage():
+		if game_controller.is_boss_alive():
+			game_controller.damage_boss(game_controller.boss_health)
+		return
 	_complete_stage(3)
 
 
 func _on_survival_stage_cleared(cleared_lines: int) -> void:
-	_complete_stage(MainGameController.stage_stars_for_lines(cleared_lines))
+	var game_controller: MainGameController = _loaded_game_controller()
+	var stars: int = (
+		3
+		if game_controller != null and game_controller.is_boss_stage()
+		else MainGameController.stage_stars_for_lines(cleared_lines)
+	)
+	_complete_stage(stars)
 
 
 func _complete_stage(stars: int) -> void:

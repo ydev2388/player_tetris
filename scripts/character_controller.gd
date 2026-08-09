@@ -112,7 +112,7 @@ var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림에 사용.
 var facing: int = 1 # 바라보는 방향: 왼쪽 -1, 오른쪽 +1.
 var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 이동 branch를 실행.
 var is_meditating: bool = false # true면 정지·회복하고 Controller 테트리스 시간을 2배로 함.
-var is_bound: bool = false # Stage 1-4 덩굴 속박 중이면 모든 캐릭터 이동 branch를 막는다.
+var is_bound: bool = false # 속박 중이면 모든 캐릭터 이동 branch를 막는다.
 var binding_timer: float = 0.0 # 속박 종료까지 남은 실제 시간(초).
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 회전 킥 입력 거부; 매 frame 감소.
 var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
@@ -457,6 +457,11 @@ func _attempt_punch() -> void:
 	_attack_cooldown_remaining = ATTACK_COOLDOWN
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_play_sfx(SFX_PUNCH)
+	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
+		controller.notify_boss_attacked()
+		take_thorn_damage("보스 가시 피해! 목숨 -1")
+		stats_changed.emit()
+		return
 	var hits_active_piece: bool = _punch_hits_active_piece()
 	var pushed_active_piece: bool = hits_active_piece and controller.push_active_piece(facing, 1)
 	if pushed_active_piece:
@@ -721,6 +726,14 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	_start_rotation_spin()
+	if _rotation_hits_boss():
+		_pending_rotation_launch_velocity = 0.0
+		velocity.y = MainLayout.scaled(-120.0)
+		rotation_cooldown_remaining = ROTATION_FAILED_COOLDOWN
+		controller.notify_boss_attacked()
+		take_thorn_damage("보스 가시 피해! 목숨 -1")
+		stats_changed.emit()
+		return
 	if not _rotation_hits_active_piece():
 		_pending_rotation_launch_velocity = 0.0
 		_set_feedback("활성 블록에 닿지 않음")
@@ -800,10 +813,11 @@ func _punch_hits_active_piece() -> bool:
 
 
 func _rotation_hits_active_piece() -> bool:
-	var hitbox: Rect2 = _punch_hitbox_rect()
-	hitbox.position.y -= ROTATION_HEAD_REACH
-	hitbox.size.y += ROTATION_HEAD_REACH
-	return _active_piece_overlaps_rect(hitbox)
+	return _active_piece_overlaps_rect(_rotation_kick_hitbox_rect())
+
+
+func _rotation_hits_boss() -> bool:
+	return controller.boss_hitbox_overlaps(_rotation_kick_hitbox_rect())
 
 
 func _punch_hitbox_rect() -> Rect2:
@@ -815,7 +829,14 @@ func _punch_hitbox_rect() -> Rect2:
 	)
 
 
-## 상황: Stage 1-4 속박 판정이 현재 접촉 위치에서 허용되는지 조회할 때 호출한다.
+func _rotation_kick_hitbox_rect() -> Rect2:
+	var hitbox: Rect2 = _punch_hitbox_rect()
+	hitbox.position.y -= ROTATION_HEAD_REACH
+	hitbox.size.y += ROTATION_HEAD_REACH
+	return hitbox
+
+
+## 상황: 속박 판정이 현재 접촉 위치에서 허용되는지 조회할 때 호출한다.
 ## 순서: 활성 피스 접촉 차단 → 고정 블록/바닥 지지 또는 고정 body 매달림 확인.
 ## 결과: 활성 피스에 닿는 동안은 속박되지 않고, 고정 지지면·고정 블록·벽에서만 true다.
 func can_receive_binding() -> bool:
@@ -1171,13 +1192,13 @@ func take_damage(feedback_message: String = "압착 피해! 목숨 -1") -> void:
 	_lose_life_and_respawn(feedback_message)
 
 
-func take_thorn_damage() -> void:
+func take_thorn_damage(feedback_message: String = "가시 펀치 피해! 목숨 -1") -> void:
 	if _invulnerability_remaining > 0.0:
 		return
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
 	_play_sfx(SFX_HURT)
-	_set_feedback("가시 펀치 피해! 목숨 -1")
+	_set_feedback(feedback_message)
 	if lives <= 0:
 		controller.end_game()
 	stats_changed.emit()

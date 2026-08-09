@@ -237,6 +237,44 @@ func _run() -> void:
 			and screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT,
 		"완료 결과 확인이 스테이지 선택을 유지한다."
 	)
+	for stage_number: int in range(2, 5):
+		var unlock_result: Dictionary = screen.settings.complete_stage(stage_number, 3)
+		_expect(
+			bool(unlock_result.get("ok", false)),
+			"Stage %d 디버그 테스트를 위해 이전 스테이지를 해금한다." % stage_number
+		)
+	screen.start_game(5)
+	await process_frame
+	var boss_controller: MainGameController = screen._loaded_game_controller()
+	_expect(
+		boss_controller != null
+			and boss_controller.is_boss_stage()
+			and boss_controller.boss_health == MainGameController.BOSS_MAX_HEALTH,
+		"Stage 5 Enter 테스트에서 보스 체력 3으로 게임을 시작한다."
+	)
+	screen._input(debug_enter_event)
+	_expect(
+		boss_controller != null
+			and boss_controller.boss_health == 0
+			and boss_controller.state == MainGameController.GameState.BOSS_FALLING
+			and screen.current_screen == KungFuTetrisStartScreen.Screen.GAME
+			and screen._game_instance != null,
+		"Stage 5의 Enter는 즉시 결과 처리 대신 보스 체력을 0으로 만든다."
+	)
+	if boss_controller != null:
+		boss_controller._advance_boss_fall(
+			MainGameController.BOSS_DOWN_DURATION_SECONDS + 2.0
+		)
+		boss_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+	await process_frame
+	_expect(
+		screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT
+			and screen._game_instance == null
+			and result_overlay != null
+			and result_overlay.visible
+			and screen.settings.get_stage_best_stars(5) == 3,
+		"Stage 5 보스가 쓰러지면 3별 결과 화면으로 전환한다."
+	)
 
 	screen._select_sfx_player.stop()
 	screen._select_sfx_player.stream = null

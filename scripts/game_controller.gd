@@ -19,9 +19,11 @@ signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 res
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
 signal stage_cleared(cleared_lines: int)
+signal boss_attacked # 플레이어의 직접 공격에 보스가 가시로 반격할 때 알린다.
 
 enum GameState {
 	PLAYING,
+	BOSS_FALLING,
 	PAUSED,
 	GAME_OVER,
 }
@@ -41,15 +43,28 @@ const BINDING_CHECK_INTERVAL_SECONDS: float = 10.0
 const BINDING_PROBABILITY: float = 0.15
 const BINDING_PROBABILITY_STEP: float = 0.05
 const BINDING_DURATION_SECONDS: float = 2.0
+const BOSS_BINDING_DURATION_SECONDS: float = 3.0
+const BOSS_MAX_HEALTH: int = 3
+const BOSS_POSITION: Vector2 = Vector2(240.0, 84.0)
+const BOSS_DISPLAY_SIZE: Vector2 = Vector2(72.0, 192.0)
+const BOSS_ATTACK_HITBOX_SIZE: Vector2 = Vector2(54.0, 168.0)
+const BOSS_DOWN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 184.3125)
+const BOSS_DOWN_DURATION_SECONDS: float = 0.72
+const BOSS_FALL_SPEED: float = MainLayout.CELL_SIZE * 10.0
+const BOSS_FALLEN_HOLD_SECONDS: float = 0.5
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # action 등록 유틸리티.
 
-# 스테이지 기믹 규칙은 이 표에서만 선택한다. 1-5는 기존 보스 흐름을 위해 비활성이다.
+# 스테이지 기믹 규칙은 이 표에서만 선택한다.
 const STAGE_GIMMICKS: Dictionary = {
 	1: {"thorn_probability": 0.0, "binding_enabled": false},
-	2: {"thorn_probability": 0.20, "binding_enabled": false},
-	3: {"thorn_probability": 0.33, "binding_enabled": false},
-	4: {"thorn_probability": 0.33, "binding_enabled": true},
-	5: {"thorn_probability": 0.0, "binding_enabled": false},
+	2: {"thorn_probability": 0.15, "binding_enabled": false},
+	3: {"thorn_probability": 0.25, "binding_enabled": false},
+	4: {"thorn_probability": 0.25, "binding_enabled": true},
+	5: {
+		"thorn_probability": 0.33,
+		"binding_enabled": true,
+		"binding_duration": BOSS_BINDING_DURATION_SECONDS,
+	},
 }
 
 # SRS(Super Rotation System) wall-kick 표.
@@ -93,6 +108,17 @@ var thorn_phase_timer: float = 0.0 # 가시 ON/OFF phase accumulator.
 var total_lines: int = 0 # 제거한 누적 행 수.
 var stage_number: int = 1
 var stage_time_remaining: float = SURVIVAL_TIME_SECONDS
+var boss_health: int = 0 # Stage 5에서 줄 제거로만 감소하는 authoritative 체력.
+var boss_fall_position: Vector2 = Vector2(
+	BOSS_POSITION.x,
+	BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+)
+var boss_fall_target_y: float = boss_fall_position.y
+var boss_down_timer: float = 0.0
+var boss_fall_hold_timer: float = 0.0
+var boss_down: bool = false
+var boss_falling: bool = false
+var boss_fallen: bool = false
 
 # 현재 피스 하나에만 적용되는 내부 accumulator/counter.
 var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
@@ -101,7 +127,7 @@ var _lock_resets: int = 0 # 현재 피스의 이동/회전 lock delay 초기화 
 var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x 전용 난수 엔진.
 var _gimmick_random: RandomNumberGenerator = RandomNumberGenerator.new() # 기믹 전용 결정론 난수 엔진.
 var _gimmick_roll_overrides: Array[bool] = [] # 자동 테스트가 확률 결과만 주입하는 내부 훅.
-var binding_check_timer: float = 0.0 # Stage 1-4 10초 주기 accumulator.
+var binding_check_timer: float = 0.0 # 속박 적용 스테이지의 10초 주기 accumulator.
 var binding_pending: bool = false # 공중에서 성공한 속박의 단일 pending 상태.
 var binding_probability: float = BINDING_PROBABILITY # 다음 속박 판정에 사용할 누적 확률.
 var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
@@ -128,9 +154,12 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed(&"restart_game"):
 		reset_game()
 		return
-	if Input.is_action_just_pressed(&"pause_game"):
+	if Input.is_action_just_pressed(&"pause_game") and state != GameState.BOSS_FALLING:
 		toggle_pause()
 
+	if state == GameState.BOSS_FALLING:
+		_advance_boss_fall(delta)
+		return
 	if state != GameState.PLAYING:
 		return
 
@@ -190,6 +219,17 @@ func reset_game(seed_value: int = -1) -> void:
 		_spawn_random.randomize()
 		_gimmick_random.randomize()
 	total_lines = 0
+	boss_health = BOSS_MAX_HEALTH if is_boss_stage() else 0
+	boss_fall_position = Vector2(
+		BOSS_POSITION.x,
+		BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+	)
+	boss_fall_target_y = boss_fall_position.y
+	boss_down_timer = 0.0
+	boss_fall_hold_timer = 0.0
+	boss_down = false
+	boss_falling = false
+	boss_fallen = false
 	stage_time_remaining = SURVIVAL_TIME_SECONDS
 	_shown_stage_seconds = ceili(SURVIVAL_TIME_SECONDS)
 	state = GameState.PLAYING
@@ -207,6 +247,72 @@ func reset_game(seed_value: int = -1) -> void:
 
 func is_survival_stage() -> bool:
 	return stage_number < 5
+
+
+func is_boss_stage() -> bool:
+	return stage_number == 5
+
+
+func is_boss_alive() -> bool:
+	return is_boss_stage() and boss_health > 0
+
+
+func is_boss_down() -> bool:
+	return is_boss_stage() and boss_down
+
+
+func is_boss_falling() -> bool:
+	return is_boss_stage() and boss_falling
+
+
+func is_boss_fallen() -> bool:
+	return is_boss_stage() and boss_fallen
+
+
+func boss_hitbox() -> Rect2:
+	return Rect2(
+		BOSS_POSITION - BOSS_ATTACK_HITBOX_SIZE * 0.5,
+		BOSS_ATTACK_HITBOX_SIZE
+	)
+
+
+func get_boss_landing_y() -> float:
+	var boss_rect: Rect2 = Rect2(
+		BOSS_POSITION - BOSS_DISPLAY_SIZE * 0.5,
+		BOSS_DISPLAY_SIZE
+	)
+	var landing_surface_y: float = float(MainBoardModel.VISIBLE_HEIGHT) * MainLayout.CELL_SIZE
+	for y: int in range(MainBoardModel.HEIGHT):
+		var cell_top: float = float(y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+		if cell_top < boss_rect.end.y:
+			continue
+		for x: int in range(MainBoardModel.WIDTH):
+			if board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			var cell_left: float = float(x) * MainLayout.CELL_SIZE
+			var cell_right: float = cell_left + MainLayout.CELL_SIZE
+			if boss_rect.position.x < cell_right and boss_rect.end.x > cell_left:
+				landing_surface_y = minf(landing_surface_y, cell_top)
+	return landing_surface_y
+
+
+func boss_hitbox_overlaps(hitbox: Rect2) -> bool:
+	if state != GameState.PLAYING or not is_boss_alive():
+		return false
+	var target: Rect2 = boss_hitbox()
+	return (
+		hitbox.position.x < target.end.x
+		and hitbox.end.x > target.position.x
+		and hitbox.position.y < target.end.y
+		and hitbox.end.y > target.position.y
+	)
+
+
+func notify_boss_attacked() -> bool:
+	if state != GameState.PLAYING or not is_boss_alive():
+		return false
+	boss_attacked.emit()
+	return true
 
 
 func get_stage_gimmick_config() -> Dictionary:
@@ -282,7 +388,7 @@ func _attempt_binding_roll() -> void:
 	binding_probability = BINDING_PROBABILITY
 	if _character_has_surface_contact():
 		if is_instance_valid(character):
-			character.apply_binding(BINDING_DURATION_SECONDS)
+			character.apply_binding(get_binding_duration_seconds())
 	else:
 		binding_pending = true
 
@@ -300,7 +406,11 @@ func notify_binding_surface_contact(surface_contact: bool) -> void:
 	if not is_instance_valid(character):
 		return
 	binding_pending = false
-	character.apply_binding(BINDING_DURATION_SECONDS)
+	character.apply_binding(get_binding_duration_seconds())
+
+
+func get_binding_duration_seconds() -> float:
+	return float(get_stage_gimmick_config().get("binding_duration", BINDING_DURATION_SECONDS))
 
 
 func _character_has_surface_contact() -> bool:
@@ -498,6 +608,10 @@ func lock_active_piece() -> void:
 	if cleared > 0:
 		total_lines += cleared
 		lines_cleared.emit()
+		if is_boss_stage():
+			damage_boss(cleared)
+			if state != GameState.PLAYING:
+				return
 
 	if board.has_blocks_in_hidden_rows():
 		end_game()
@@ -505,11 +619,70 @@ func lock_active_piece() -> void:
 	spawn_next_piece()
 
 
+func damage_boss(cleared_lines: int) -> void:
+	if not is_boss_stage() or boss_health <= 0 or cleared_lines <= 0:
+		return
+	boss_health = maxi(0, boss_health - cleared_lines)
+	if boss_health > 0:
+		game_changed.emit()
+		return
+	meditation_active = false
+	_reset_active_piece_gimmick()
+	binding_check_timer = 0.0
+	binding_pending = false
+	binding_probability = BINDING_PROBABILITY
+	boss_fall_position = Vector2(
+		BOSS_POSITION.x,
+		BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+	)
+	boss_fall_target_y = get_boss_landing_y()
+	boss_down_timer = 0.0
+	boss_fall_hold_timer = 0.0
+	boss_down = true
+	boss_falling = false
+	boss_fallen = false
+	state = GameState.BOSS_FALLING
+	game_changed.emit()
+
+
+func _advance_boss_fall(delta: float) -> void:
+	if boss_fallen:
+		boss_fall_hold_timer += maxf(delta, 0.0)
+		if boss_fall_hold_timer < BOSS_FALLEN_HOLD_SECONDS:
+			return
+		state = GameState.PAUSED
+		game_changed.emit()
+		stage_cleared.emit(total_lines)
+		return
+	var remaining_delta: float = maxf(delta, 0.0)
+	if boss_down:
+		boss_down_timer += remaining_delta
+		if boss_down_timer < BOSS_DOWN_DURATION_SECONDS:
+			game_changed.emit()
+			return
+		remaining_delta = boss_down_timer - BOSS_DOWN_DURATION_SECONDS
+		boss_down_timer = 0.0
+		boss_down = false
+		boss_falling = true
+	if not boss_falling:
+		return
+	boss_fall_position.y = minf(
+		boss_fall_position.y + BOSS_FALL_SPEED * remaining_delta,
+		boss_fall_target_y
+	)
+	if boss_fall_position.y >= boss_fall_target_y:
+		boss_fall_position.y = boss_fall_target_y
+		boss_falling = false
+		boss_fallen = true
+		boss_fall_hold_timer = 0.0
+	game_changed.emit()
+
+
 ## 상황: P/Esc 입력 또는 테스트가 일시정지 상태를 전환할 때 호출한다.
 ## 순서: GAME_OVER면 무시 → PLAYING/PAUSED 토글 → 비PLAYING이면 명상 해제 → emit.
 ## 결과: 다음 `_process()`의 시간 진행 여부와 화면 overlay가 바뀐다.
 func toggle_pause() -> void:
-	if state == GameState.GAME_OVER:
+	if state == GameState.GAME_OVER or state == GameState.BOSS_FALLING or boss_fallen:
 		return
 	state = GameState.PAUSED if state == GameState.PLAYING else GameState.PLAYING
 	if state != GameState.PLAYING:

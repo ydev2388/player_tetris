@@ -17,14 +17,6 @@
 2. 유지 중 `05b_meditation_loop.wav`를 반복합니다.
 3. 종료 시 루프를 멈추고 `05c_meditation_end.wav`를 재생합니다.
 
-## 차지 공격
-
-1. 버튼을 0.4초 유지하면 `06a_charge_start.wav`를 재생합니다.
-2. 차지 중에는 `06b_charge_loop.wav`를 반복합니다.
-3. 전방 블록을 2칸 밀면 `06c_charge_tier1.wav`를 한 번 재생합니다.
-4. 전방 블록을 3칸 밀면 `06d_charge_ready.wav`를 한 번 재생합니다.
-5. 차지 루프가 시작된 뒤 버튼을 놓거나 취소하면 루프를 멈추고 `06e_charge_release.wav`를 재생합니다.
-
 ## Godot 권장 설정
 
 - 짧은 원샷은 `AudioStreamPlayer`로 재생합니다.

@@ -18,12 +18,12 @@ const ATTACK: String = "attack" # 펀치 일회성 동작 key.
 const JUMP: String = "jump" # 공중 이동 상태 key.
 const ROTATION_KICK: String = "rotation_kick" # S 블록 플립 전용 1회전 상태 key.
 
-const IDLE_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # idle frame 시트.
-const HANG_TEXTURE: Texture2D = preload("res://assets/sprites/player_hang_animations.png") # hang frame 시트.
-const ATTACK_TEXTURE: Texture2D = preload("res://assets/sprites/player_attack_animations.png") # punch 시트.
-const JUMP_TEXTURE: Texture2D = preload("res://assets/sprites/player_jump_animations.png") # jump frame 시트.
+const IDLE_TEXTURE: Texture2D = preload("res://assets/sprites/player/normal/player_animations.png") # idle frame 시트.
+const HANG_TEXTURE: Texture2D = preload("res://assets/sprites/player/normal/player_hang_animations.png") # hang frame 시트.
+const ATTACK_TEXTURE: Texture2D = preload("res://assets/sprites/player/normal/player_attack_animations.png") # punch 시트.
+const JUMP_TEXTURE: Texture2D = preload("res://assets/sprites/player/normal/player_jump_animations.png") # jump frame 시트.
 const ROTATION_KICK_TEXTURE: Texture2D = preload(
-	"res://assets/sprites/player_rotation_kick_animations.png"
+	"res://assets/sprites/player/normal/player_rotation_kick_animations.png"
 ) # 기존 jump 픽셀을 동일한 중심축에 재배치한 회전 킥 시트.
 
 # 상태별 sprite-sheet source frame 목록.

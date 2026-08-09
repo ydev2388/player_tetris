@@ -135,6 +135,7 @@ func _run() -> void:
 	await _test_fixed_support_grab()
 	await _test_hang_face_bounds()
 	await _test_stage_gimmicks()
+	await _test_stage5_boss()
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -470,8 +471,8 @@ func _test_stage_gimmicks() -> void:
 	controller.stage_number = 2
 	controller.reset_game(20260801)
 	_expect(
-		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.20),
-		"Stage 1-2 가시 확률은 20%다."
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.15),
+		"Stage 1-2 가시 확률은 15%다."
 	)
 	controller.active_piece_has_thorns = true
 	controller.thorn_visible = true
@@ -500,12 +501,17 @@ func _test_stage_gimmicks() -> void:
 	controller.stage_number = 3
 	controller.reset_game(20260801)
 	_expect(
-		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.33),
-		"Stage 1-3 가시 확률은 33%다."
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.25),
+		"Stage 1-3 가시 확률은 25%다."
 	)
 	controller.stage_number = 5
 	controller.reset_game(20260801)
-	_expect(not controller.active_piece_has_thorns, "Stage 1-5에는 새 가시 기믹이 적용되지 않는다.")
+	_expect(
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.33)
+			and controller.get_stage_gimmick_config()["binding_enabled"]
+			and is_equal_approx(controller.get_binding_duration_seconds(), 3.0),
+		"Stage 1-5는 33% 가시와 3초 속박 기믹을 사용한다."
+	)
 	controller.free()
 
 	var scene: MainGameView = GAME_SCENE.instantiate()
@@ -600,9 +606,10 @@ func _test_stage_gimmicks() -> void:
 	await physics_frame
 	var active_body: StaticBody2D = scene.get_node("BoardPhysics/ActivePiece") as StaticBody2D
 	_expect(
-		is_equal_approx(float(scene_controller.get_stage_gimmick_config()["thorn_probability"]), 0.33)
-			and scene_controller.get_stage_gimmick_config()["binding_enabled"],
-		"Stage 1-4는 33% 가시와 속박 기믹을 함께 사용한다."
+		is_equal_approx(float(scene_controller.get_stage_gimmick_config()["thorn_probability"]), 0.25)
+			and scene_controller.get_stage_gimmick_config()["binding_enabled"]
+			and is_equal_approx(scene_controller.get_binding_duration_seconds(), 2.0),
+		"Stage 1-4는 25% 가시와 2초 속박 기믹을 함께 사용한다."
 	)
 	_expect(
 		is_equal_approx(scene_controller.binding_probability, MainGameController.BINDING_PROBABILITY),
@@ -715,6 +722,334 @@ func _test_stage_gimmicks() -> void:
 	character._meditation_loop_player.stream = null
 	scene.free()
 	await process_frame
+
+
+func _test_stage5_boss() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	var stage_clear_count: Array[int] = [0]
+	controller.stage_number = 5
+	controller.stage_cleared.connect(func(_cleared_lines: int) -> void:
+		stage_clear_count[0] += 1
+	)
+	controller.reset_game(20260809)
+	_expect(
+		controller.is_boss_stage()
+			and controller.boss_health == MainGameController.BOSS_MAX_HEALTH
+			and controller.is_boss_alive(),
+		"Stage 1-5 보스는 reset 시 체력 3으로 살아 있다."
+	)
+	_expect(
+		is_equal_approx(float(controller.get_stage_gimmick_config()["thorn_probability"]), 0.33)
+			and controller.get_stage_gimmick_config()["binding_enabled"],
+		"Stage 1-5 보스는 33% 가시 피스와 속박을 사용한다."
+	)
+	_expect(
+		is_equal_approx(controller.get_binding_duration_seconds(), 3.0),
+		"Stage 1-5 보스 속박은 3초 동안 지속된다."
+	)
+	var boss_attack_hitbox: Rect2 = controller.boss_hitbox()
+	_expect(
+		boss_attack_hitbox.size == MainGameController.BOSS_ATTACK_HITBOX_SIZE
+			and boss_attack_hitbox.end.y
+			< MainGameController.BOSS_POSITION.y + 106.0 - MainGameView.HEART_DISPLAY_SIZE.y * 0.5,
+		"보스 직접 공격 판정은 하트를 제외한 중앙 스프라이트 범위만 사용한다."
+	)
+	_expect(
+		is_equal_approx(controller.get_boss_landing_y(), 960.0),
+		"보스 아래에 비활성 블록이 없으면 게임판 바닥까지 떨어질 위치를 계산한다."
+	)
+	controller.board.cells[4][0] = MainTetrominoData.Type.J
+	_expect(
+		is_equal_approx(controller.get_boss_landing_y(), 960.0),
+		"보스 수평 범위 밖의 비활성 블록은 착지면으로 선택하지 않는다."
+	)
+	controller.board.cells[4][0] = MainBoardModel.EMPTY
+	controller.board.cells[10][4] = MainTetrominoData.Type.J
+	_expect(
+		is_equal_approx(controller.get_boss_landing_y(), 384.0),
+		"보스 아래 수평 범위의 비활성 블록 상단을 가까운 바닥으로 계산한다."
+	)
+	controller.reset_game(20260809)
+	_prepare_boss_line_clear(controller, 1)
+	controller.lock_active_piece()
+	_expect(
+		controller.boss_health == 2
+			and controller.total_lines == 1
+			and controller.state == MainGameController.GameState.PLAYING,
+		"보스는 한 줄 제거 시 체력이 1 감소한다."
+	)
+	_prepare_boss_line_clear(controller, 2)
+	controller.lock_active_piece()
+	_expect(
+		controller.boss_health == 0
+			and controller.total_lines == 3
+			and controller.state == MainGameController.GameState.BOSS_FALLING
+			and controller.is_boss_down()
+			and not controller.is_boss_falling()
+			and stage_clear_count[0] == 0
+			and controller.active_type == MainTetrominoData.Type.O,
+		"보스는 2줄 제거로 남은 체력을 잃고 down 연출을 시작하며 다음 피스를 만들지 않는다."
+	)
+	controller._advance_boss_fall(MainGameController.BOSS_DOWN_DURATION_SECONDS)
+	_expect(
+		controller.is_boss_falling()
+			and not controller.is_boss_down()
+			and controller.state == MainGameController.GameState.BOSS_FALLING,
+		"보스 down 연출이 끝나면 falling 단계로 전환한다."
+	)
+	controller._advance_boss_fall(2.0)
+	_expect(
+		controller.is_boss_fallen()
+			and is_equal_approx(controller.boss_fall_position.y, 960.0)
+			and controller.state == MainGameController.GameState.BOSS_FALLING
+			and stage_clear_count[0] == 0,
+		"보스는 게임판 바닥에 착지한 뒤에도 fallen 유지 시간 동안 클리어하지 않는다."
+	)
+	controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+	_expect(
+		controller.state == MainGameController.GameState.PAUSED
+			and stage_clear_count[0] == 1,
+		"보스 fallen 유지가 끝나면 PAUSED와 stage_cleared를 발생시킨다."
+	)
+	controller.free()
+
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	var scene_controller: MainGameController = scene.get_node("GameController")
+	var scene_stage_clear_count: Array[int] = [0]
+	scene_controller.stage_cleared.connect(func(_cleared_lines: int) -> void:
+		scene_stage_clear_count[0] += 1
+	)
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	var boss_sprite: Sprite2D = scene.get_node("BoardPhysics/BossSprite")
+	var boss_thorn_sprite: Sprite2D = scene.get_node("BoardPhysics/BossThornSprite")
+	var heart_one: Sprite2D = scene.get_node("BoardPhysics/BossHeart1")
+	var heart_two: Sprite2D = scene.get_node("BoardPhysics/BossHeart2")
+	var heart_three: Sprite2D = scene.get_node("BoardPhysics/BossHeart3")
+	_expect(
+		not boss_sprite.visible
+			and not heart_one.visible
+			and scene.get_node_or_null("BoardPhysics/BossSprite/CollisionShape2D") == null,
+		"Stage 1-1에는 보스 표시나 보스 물리 충돌체가 없다."
+	)
+
+	scene_controller.stage_number = 5
+	scene_controller.reset_game(20260809)
+	await process_frame
+	_expect(
+		boss_sprite.visible
+			and boss_sprite.position == MainGameController.BOSS_POSITION
+			and boss_sprite.region_rect.size == MainGameView.BOSS_SOURCE_FRAME_SIZE
+			and boss_sprite.scale == MainGameController.BOSS_DISPLAY_SIZE / MainGameView.BOSS_SOURCE_FRAME_SIZE
+			and heart_one.visible
+			and heart_two.visible
+			and heart_three.visible,
+		"Stage 1-5는 보스와 체력 3개 하트를 상단 중앙에 표시한다."
+	)
+	scene_controller.damage_boss(1)
+	_expect(
+		heart_one.visible and heart_two.visible and not heart_three.visible,
+		"보스 체력 2에서는 하트 2개만 표시한다."
+	)
+	scene_controller.damage_boss(1)
+	_expect(
+		heart_one.visible and not heart_two.visible and not heart_three.visible,
+		"보스 체력 1에서는 하트 1개만 표시한다."
+	)
+	scene_controller.reset_game(20260809)
+	var normal_frames: Array[int] = []
+	scene._boss_frame = 0
+	scene._boss_frame_timer = 0.0
+	scene._apply_boss_frame()
+	for _frame: int in range(MainGameView.BOSS_FRAME_COUNT):
+		normal_frames.append(
+			int(boss_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x)
+		)
+		scene._advance_boss_animation(MainGameView.BOSS_FRAME_INTERVAL)
+	_expect(
+		normal_frames == [0, 1, 2, 3]
+			and int(boss_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x) == 0,
+		"보스 normal/bind idle은 0-1-2-3-0 순서로 0.18초마다 반복한다."
+	)
+	character.apply_binding()
+	_expect(
+		boss_sprite.texture == MainGameView.BOSS_BIND_TEXTURE,
+		"플레이어 속박 시작 시 보스 텍스처가 bind 시트로 바뀐다."
+	)
+	character._end_binding()
+	_expect(
+		boss_sprite.texture == MainGameView.BOSS_NORMAL_TEXTURE,
+		"플레이어 속박 종료 시 보스 텍스처가 normal 시트로 돌아온다."
+	)
+
+	scene.process_mode = Node.PROCESS_MODE_DISABLED
+	scene_controller.active_type = MainTetrominoData.Type.O
+	scene_controller.active_origin = Vector2i(6, 15)
+	character.position = Vector2(210.0, 48.0)
+	character.facing = 1
+	character.lives = MainCharacterController.MAX_LIVES
+	character._attack_cooldown_remaining = 0.0
+	character._invulnerability_remaining = 0.0
+	var active_origin_before_punch: Vector2i = scene_controller.active_origin
+	var boss_attack_count: Array[int] = [0]
+	scene_controller.boss_attacked.connect(func() -> void:
+		boss_attack_count[0] += 1
+	)
+	character._attempt_punch()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1
+			and scene_controller.active_origin == active_origin_before_punch
+			and character.feedback_text == "보스 가시 피해! 목숨 -1"
+			and boss_attack_count[0] == 1
+			and boss_thorn_sprite.visible,
+		"X 펀치가 보스를 맞히면 블록 없이 목숨 1개를 잃고 보스가 반격한다."
+	)
+	character._attack_cooldown_remaining = 0.0
+	character._attempt_punch()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1,
+		"X 보스 공격은 기존 무적시간 중 목숨을 연속 차감하지 않는다."
+	)
+	character.rotation_cooldown_remaining = 0.0
+	character._spin_remaining = 0.0
+	character._attempt_rotation_kick()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1,
+		"S 보스 공격도 기존 무적시간 중 목숨을 연속 차감하지 않는다."
+	)
+	character._invulnerability_remaining = 0.0
+	character.lives = MainCharacterController.MAX_LIVES
+	character.rotation_cooldown_remaining = 0.0
+	character._spin_remaining = 0.0
+	var active_rotation_before_kick: int = scene_controller.active_rotation
+	character._attempt_rotation_kick()
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES - 1
+			and scene_controller.active_rotation == active_rotation_before_kick
+			and character.rotation_cooldown_remaining == MainCharacterController.ROTATION_FAILED_COOLDOWN
+			and character.feedback_text == "보스 가시 피해! 목숨 -1"
+			and boss_attack_count[0] == 4,
+		"S 회전 킥이 보스를 맞히면 블록 회전 없이 1초 실패 쿨타임으로 반격을 받는다."
+	)
+	var thorn_frames: Array[int] = []
+	scene._boss_thorn_frame_index = 0
+	scene._boss_thorn_frame_timer = 0.0
+	scene._apply_boss_thorn_frame()
+	for _frame: int in range(MainGameView.BOSS_THORN_FRAME_SEQUENCE.size()):
+		thorn_frames.append(
+			int(boss_thorn_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x)
+		)
+		scene._advance_boss_animation(MainGameView.BOSS_THORN_FRAME_INTERVAL)
+	_expect(
+		thorn_frames == MainGameView.BOSS_THORN_FRAME_SEQUENCE
+			and not boss_thorn_sprite.visible,
+		"보스 가시 반격은 0-1-2-3-3-2-1-0 순서로 8프레임 재생 후 숨는다."
+	)
+	scene_controller.damage_boss(MainGameController.BOSS_MAX_HEALTH)
+	_expect(
+		boss_sprite.visible
+			and boss_sprite.texture == MainGameView.BOSS_DOWN_TEXTURE
+			and boss_sprite.position == MainGameController.BOSS_POSITION
+			and not heart_one.visible
+			and not heart_two.visible
+			and not heart_three.visible
+			and scene_controller.state == MainGameController.GameState.BOSS_FALLING
+			and scene_controller.is_boss_down()
+			and not scene_controller.is_boss_falling()
+			and scene_stage_clear_count[0] == 0
+			and not scene._status_label.visible,
+		"보스 체력이 0이면 하트가 숨고 down 스프라이트부터 표시한다."
+	)
+	var down_frames: Array[int] = []
+	scene._boss_down_frame = 0
+	scene._boss_down_frame_timer = 0.0
+	scene._apply_boss_down_frame()
+	for _frame: int in range(MainGameView.BOSS_FRAME_COUNT):
+		down_frames.append(
+			int(boss_sprite.region_rect.position.x / MainGameView.BOSS_DOWN_SOURCE_FRAME_SIZE.x)
+		)
+		scene._advance_boss_animation(MainGameView.BOSS_FRAME_INTERVAL)
+	_expect(
+		down_frames == [0, 1, 2, 3]
+			and int(boss_sprite.region_rect.position.x / MainGameView.BOSS_DOWN_SOURCE_FRAME_SIZE.x) == 3,
+		"보스 down은 0-1-2-3 순서로 한 번 재생한 뒤 마지막 프레임을 유지한다."
+	)
+	scene_controller._advance_boss_fall(MainGameController.BOSS_DOWN_DURATION_SECONDS)
+	_expect(
+		boss_sprite.texture == MainGameView.BOSS_FALLING_TEXTURE
+			and scene_controller.is_boss_falling(),
+		"보스 down이 끝나면 falling 스프라이트로 바뀐다."
+	)
+	var falling_frames: Array[int] = []
+	scene._boss_falling_frame = 0
+	scene._boss_falling_frame_timer = 0.0
+	scene._apply_boss_falling_frame()
+	for _frame: int in range(MainGameView.BOSS_FRAME_COUNT):
+		falling_frames.append(
+			int(boss_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x)
+		)
+		scene._advance_boss_animation(MainGameView.BOSS_FRAME_INTERVAL)
+	_expect(
+		falling_frames == [0, 1, 2, 3]
+			and int(boss_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x) == 0,
+		"보스 falling은 0-1-2-3-0 순서로 반복한다."
+	)
+	scene_controller._advance_boss_fall(2.0)
+	_expect(
+		boss_sprite.visible
+			and boss_sprite.texture == MainGameView.BOSS_FALLEN_TEXTURE
+			and is_equal_approx(
+				boss_sprite.position.y,
+				960.0 - MainGameView.BOSS_FALLEN_DISPLAY_SIZE.y * 0.5
+			)
+			and scene_controller.is_boss_fallen()
+			and scene_controller.state == MainGameController.GameState.BOSS_FALLING
+			and scene_stage_clear_count[0] == 0,
+		"보스는 바닥에 착지하면 fallen 스프라이트로 전환하고 잠시 유지한다."
+	)
+	var fallen_frames: Array[int] = []
+	scene._boss_fallen_frame = 0
+	scene._boss_fallen_frame_timer = 0.0
+	scene._apply_boss_fallen_frame()
+	for _frame: int in range(MainGameView.BOSS_FRAME_COUNT + 1):
+		fallen_frames.append(
+			int(boss_sprite.region_rect.position.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x)
+		)
+		scene._advance_boss_animation(MainGameView.BOSS_FRAME_INTERVAL)
+	_expect(
+		fallen_frames == [0, 1, 2, 3, 0],
+		"보스 fallen은 0-1-2-3-0 순서로 반복한다."
+	)
+	scene_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+	_expect(
+		scene_controller.state == MainGameController.GameState.PAUSED
+			and scene_stage_clear_count[0] == 1
+			and boss_sprite.visible,
+		"보스 fallen 유지가 끝나면 stage_cleared를 발생시키고 화면 전환 전까지 표시한다."
+	)
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	scene.free()
+	await process_frame
+
+
+func _prepare_boss_line_clear(controller: MainGameController, rows: int) -> void:
+	controller.board.reset()
+	controller.state = MainGameController.GameState.PLAYING
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(4, MainBoardModel.HEIGHT - 2)
+	controller.next_type = MainTetrominoData.Type.Z
+	for y: int in range(MainBoardModel.HEIGHT - rows, MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if x != 5 and x != 6:
+				controller.board.cells[y][x] = MainTetrominoData.Type.J
 
 
 func _prepare_hang_fixture(

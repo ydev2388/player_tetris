@@ -103,7 +103,7 @@ const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # charge 단계별 hold 
 const PUNCH_TOTAL_COSTS: Array[float] = [0.0, 8.0, 18.0] # 단계별 누적 비용 조회표.
 const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상한(초).
 const PUNCH_HITBOX_WIDTH: float = 27.2 # 주먹 스프라이트 끝에서 5px 더 넓힌 전방 판정 길이(px).
-const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
+const FRAME_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 표시 실루엣의 반투명 외곽 제외 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
 	28.0 * MainLayout.DISPLAY_SCALE,
 	64.0 * MainLayout.DISPLAY_SCALE
@@ -184,8 +184,8 @@ var _respawn_airborne_pending: bool = false # 순간이동 직후 이전 바닥 
 var _was_grounded_for_stamina: bool = true # 비접지→접지 전환에서만 stamina를 완충하기 위한 이전 상태.
 var _self_respawn_hold_time: float = 0.0 # Q 또는 사용자 지정 키를 연속으로 누른 시간.
 var _self_respawn_requires_release: bool = false # 발동 뒤 같은 hold의 연속 생명 차감을 막는다.
-var _crush_mask_cache: Dictionary = {} # 상태/프레임별 화면 픽셀 몸통 마스크.
-var _animation_image_cache: Dictionary = {} # texture path별 CPU alpha 판정용 Image.
+var _frame_alpha_bounds_cache: Dictionary = {} # 캐릭터/프레임별 불투명 영역.
+var _animation_image_cache: Dictionary = {} # texture path별 표시 영역 검색용 Image.
 var _respawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # 캐릭터 X 전용 난수열.
 
 
@@ -218,7 +218,7 @@ func set_character_id(value: String) -> bool:
 	if character_id == value:
 		return true
 	character_id = value
-	_crush_mask_cache.clear()
+	_frame_alpha_bounds_cache.clear()
 	_animation_image_cache.clear()
 	_animation_state = ANIMATION_DATA.IDLE
 	_animation_time = 0.0
@@ -1344,9 +1344,9 @@ func handle_active_piece_descended(
 		take_damage()
 
 
-## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸통 픽셀에 닿는지 판정한다.
-## 순서: 현재 프레임의 캐시된 불투명 픽셀 → flip/rotation 변환 → 네 셀 Rect 포함 검사.
-## 결과: 알파 128 이상이면서 중앙 28×64px 안인 실제 표시 픽셀이 닿을 때만 true다.
+## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸 충돌체에 닿는지 판정한다.
+## 순서: 고정 CharacterBody2D Rect와 네 셀 Rect의 실제 면적 교차를 검사한다.
+## 결과: 캐릭터 종류, 애니메이션 프레임, 투명 여백과 무관한 동일 판정을 반환한다.
 func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
 	var collider_rect: Rect2 = _character_collider_rect()
 	for local_cell: Vector2i in controller.active_local_cells():
@@ -1356,64 +1356,6 @@ func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
 		):
 			return true
 	return false
-
-
-## 상황: 현재 애니메이션 프레임의 압사 몸통 마스크가 필요할 때 호출한다.
-## 순서: 상태/region key 캐시 조회 → 화면 중앙 28×64 각 픽셀을 source region으로 역매핑
-##       → 원본 alpha가 128 이상인 화면 픽셀 중심만 저장.
-## 결과: 투명 여백과 뻗은 팔다리가 빠진 정확한 화면 픽셀 좌표 목록을 반환한다.
-func _current_crush_mask_points() -> Array[Vector2]:
-	var region: Rect2 = ANIMATION_DATA.region_for(
-		_animation_state,
-		_animation_time,
-		character_id
-	)
-	var cache_key: String = "%s:%s:%d:%d:%d:%d" % [
-		character_id,
-		_animation_state,
-		int(region.position.x),
-		int(region.position.y),
-		int(region.size.x),
-		int(region.size.y),
-	]
-	if _crush_mask_cache.has(cache_key):
-		return _crush_mask_cache[cache_key] as Array[Vector2]
-
-	var texture: Texture2D = ANIMATION_DATA.texture_for(_animation_state, character_id)
-	var image_key: String = texture.resource_path
-	var image: Image
-	if _animation_image_cache.has(image_key):
-		image = _animation_image_cache[image_key] as Image
-	else:
-		image = texture.get_image()
-		_animation_image_cache[image_key] = image
-
-	var target_size: Vector2 = _animation_target_size(_animation_state)
-	var points: Array[Vector2] = []
-	var half_core: Vector2 = CRUSH_CORE_SIZE * 0.5
-	for pixel_y: int in range(int(-half_core.y), int(half_core.y)):
-		for pixel_x: int in range(int(-half_core.x), int(half_core.x)):
-			var display_point: Vector2 = Vector2(
-				float(pixel_x) + 0.5,
-				float(pixel_y) + 0.5
-			)
-			var normalized: Vector2 = (display_point + target_size * 0.5) / target_size
-			if (
-				normalized.x < 0.0
-				or normalized.x >= 1.0
-				or normalized.y < 0.0
-				or normalized.y >= 1.0
-			):
-				continue
-			var source_pixel: Vector2i = Vector2i(
-				int(floor(region.position.x + normalized.x * region.size.x)),
-				int(floor(region.position.y + normalized.y * region.size.y))
-			)
-			if image.get_pixelv(source_pixel).a >= CRUSH_ALPHA_THRESHOLD:
-				points.append(display_point)
-
-	_crush_mask_cache[cache_key] = points
-	return points
 
 
 ## 상황: 낙하 블록과 겹친 순간 캐릭터가 아래 고정 지지면에 직접 붙어 있는지 검사한다.
@@ -2064,9 +2006,9 @@ func _get_animation_state() -> String:
 
 
 ## 상황: animation 시간/state가 정해진 뒤 실제 Sprite2D frame을 적용할 때 호출한다.
-## 순서: sprite 유효성 → region 조회 → 기본 target size → attack 너비 확대
-##       → texture/region/scale/position 대입.
-## 결과: 원본 frame 크기가 달라도 게임 안에서는 일정한 캐릭터 높이로 보인다.
+## 순서: region의 불투명 경계 조회 → 상태별 실루엣 높이에 균일 배율 적용
+##       → 불투명 중심 X와 고정 충돌체 발선을 공통 표시 기준점으로 정렬.
+## 결과: 원본 투명 여백이 달라도 프레임 전환 시 몸 크기와 발 위치가 흔들리지 않는다.
 func _apply_animation_frame() -> void:
 	if not is_instance_valid(sprite):
 		return
@@ -2075,21 +2017,78 @@ func _apply_animation_frame() -> void:
 		_animation_time,
 		character_id
 	) # source frame.
-	var target_size: Vector2 = _animation_target_size(_animation_state) # 목표 화면 크기.
+	var alpha_bounds: Rect2 = _frame_alpha_bounds(region)
+	var visible_height: float = ANIMATION_DATA.visible_height_for(
+		_animation_state,
+		character_id
+	)
+	var uniform_scale: float = visible_height / maxf(alpha_bounds.size.y, 1.0)
+	var source_center: Vector2 = region.size * 0.5
+	var visible_center_x: float = alpha_bounds.position.x + alpha_bounds.size.x * 0.5
+	var visible_bottom: float = alpha_bounds.end.y
+	var ground_anchor_y: float = (
+		CHARACTER_COLLIDER_OFFSET_Y + CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
 	sprite.texture = ANIMATION_DATA.texture_for(_animation_state, character_id)
 	sprite.region_enabled = true
 	sprite.region_rect = region
-	sprite.scale = target_size / region.size
+	sprite.scale = Vector2.ONE * uniform_scale
 	sprite.position = (
 		ANIMATION_DATA.display_offset_for(character_id)
 		+ MainLayout.BOARD_VISUAL_OFFSET
+		+ Vector2(
+			-(visible_center_x - source_center.x) * uniform_scale,
+			ground_anchor_y - (visible_bottom - source_center.y) * uniform_scale
+		)
 	)
 
 
-## 상황: sprite 표시와 픽셀 마스크 역매핑이 같은 화면 크기를 사용해야 할 때 호출한다.
-## 결과: 블록 플립은 96×96px, 공격은 86.4×96px, 그 외 상태는 60×96px다.
-func _animation_target_size(_animation_state_value: String) -> Vector2:
-	return ANIMATION_DATA.display_size_for(character_id)
+## 상황: 현재 atlas frame 안에서 실제로 보이는 픽셀 영역이 필요할 때 호출한다.
+## 순서: 캐시 확인 → atlas Image 재사용 → alpha 경계값 이상인 픽셀의 최소 Rect 계산.
+## 결과: 투명 공백을 제외한 source-local 경계를 반환하고 같은 frame은 다시 검색하지 않는다.
+func _frame_alpha_bounds(region: Rect2) -> Rect2:
+	var cache_key: String = "%s:%d:%d:%d:%d" % [
+		character_id,
+		int(region.position.x),
+		int(region.position.y),
+		int(region.size.x),
+		int(region.size.y),
+	]
+	if _frame_alpha_bounds_cache.has(cache_key):
+		return _frame_alpha_bounds_cache[cache_key] as Rect2
+
+	var texture: Texture2D = ANIMATION_DATA.texture_for(_animation_state, character_id)
+	var image_key: String = texture.resource_path
+	var image: Image
+	if _animation_image_cache.has(image_key):
+		image = _animation_image_cache[image_key] as Image
+	else:
+		image = texture.get_image()
+		_animation_image_cache[image_key] = image
+
+	var min_x: int = int(region.size.x)
+	var min_y: int = int(region.size.y)
+	var max_x: int = -1
+	var max_y: int = -1
+	var source_left: int = int(region.position.x)
+	var source_top: int = int(region.position.y)
+	for pixel_y: int in range(int(region.size.y)):
+		for pixel_x: int in range(int(region.size.x)):
+			if image.get_pixel(source_left + pixel_x, source_top + pixel_y).a < FRAME_ALPHA_THRESHOLD:
+				continue
+			min_x = mini(min_x, pixel_x)
+			min_y = mini(min_y, pixel_y)
+			max_x = maxi(max_x, pixel_x)
+			max_y = maxi(max_y, pixel_y)
+
+	var bounds: Rect2 = Rect2(Vector2.ZERO, region.size)
+	if max_x >= min_x and max_y >= min_y:
+		bounds = Rect2(
+			Vector2(float(min_x), float(min_y)),
+			Vector2(float(max_x - min_x + 1), float(max_y - min_y + 1))
+		)
+	_frame_alpha_bounds_cache[cache_key] = bounds
+	return bounds
 
 
 ## 상황: 행동 성공/실패를 사용자에게 짧게 알려야 할 때 호출한다.

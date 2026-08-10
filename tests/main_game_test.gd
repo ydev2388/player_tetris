@@ -324,23 +324,22 @@ func _test_release_punch() -> void:
 
 	var controller: MainGameController = scene.get_node("GameController") # 논리 피스 상태 관찰 대상.
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character") # 입력·hitbox 실행 대상.
+	_test_character_frame_normalization(controller, character)
 	_expect(
 		character.character_id == "normal"
 			and not character.set_character_id("missing_character"),
 		"알 수 없는 캐릭터 ID는 기본 profile을 바꾸지 않는다."
 	)
-	character._crush_mask_cache["stale"] = [Vector2.ZERO]
 	character._animation_image_cache["stale"] = Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	_expect(
 		character.set_character_id("boxer")
 			and character.character_id == "boxer"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
-			and character._crush_mask_cache.is_empty()
-			and character._animation_image_cache.is_empty(),
-		"복서 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character._animation_image_cache.size() == 1
+			and character._frame_alpha_bounds_cache.size() == 1,
+		"복서 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
 	)
-	character._crush_mask_cache["boxer_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["boxer_stale"] = Image.create(
 		1,
 		1,
@@ -352,11 +351,10 @@ func _test_release_punch() -> void:
 			and character.character_id == "shield_guard"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "shield_guard")
-			and character._crush_mask_cache.is_empty()
-			and character._animation_image_cache.is_empty(),
-		"방패병 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character._animation_image_cache.size() == 1
+			and character._frame_alpha_bounds_cache.size() == 1,
+		"방패병 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
 	)
-	character._crush_mask_cache["shield_guard_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["shield_guard_stale"] = Image.create(
 		1,
 		1,
@@ -368,11 +366,10 @@ func _test_release_punch() -> void:
 			and character.character_id == "firefighter"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "firefighter")
-			and character._crush_mask_cache.is_empty()
-			and character._animation_image_cache.is_empty(),
-		"소방관 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character._animation_image_cache.size() == 1
+			and character._frame_alpha_bounds_cache.size() == 1,
+		"소방관 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
 	)
-	character._crush_mask_cache["firefighter_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["firefighter_stale"] = Image.create(
 		1,
 		1,
@@ -384,11 +381,10 @@ func _test_release_punch() -> void:
 			and character.character_id == "cleaner"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "cleaner")
-			and character._crush_mask_cache.is_empty()
-			and character._animation_image_cache.is_empty(),
-		"청소부 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character._animation_image_cache.size() == 1
+			and character._frame_alpha_bounds_cache.size() == 1,
+		"청소부 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
 	)
-	character._crush_mask_cache["cleaner_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["cleaner_stale"] = Image.create(
 		1,
 		1,
@@ -400,9 +396,9 @@ func _test_release_punch() -> void:
 			and character.character_id == "chef"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
-			and character._crush_mask_cache.is_empty()
-			and character._animation_image_cache.is_empty(),
-		"요리사 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character._animation_image_cache.size() == 1
+			and character._frame_alpha_bounds_cache.size() == 1,
+		"요리사 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
 	)
 	var crush_results: Array[bool] = []
 	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
@@ -1026,6 +1022,89 @@ func _prepare_hang_fixture(
 ## 상황: 여러 펀치 사례가 동일한 보드·캐릭터 초기조건을 재사용할 때 호출된다.
 ## 순서: 빈 보드/활성 T 설정 → piece timer reset → 캐릭터 위치·방향·stamina·private flag 초기화.
 ## 결과: 이전 사례의 cooldown/예약 판정이 다음 사례에 섞이지 않는 test fixture가 된다.
+func _test_character_frame_normalization(
+	controller: MainGameController,
+	character: MainCharacterController
+) -> void:
+	var states: Array[String] = [
+		ANIMATION_DATA.IDLE,
+		ANIMATION_DATA.ATTACK,
+		ANIMATION_DATA.HANG,
+		ANIMATION_DATA.JUMP,
+		ANIMATION_DATA.ROTATION_KICK,
+		ANIMATION_DATA.SPECIAL,
+	]
+	var transforms_are_stable: bool = true
+	var collision_is_frame_independent: bool = true
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_cell_indices = [0, 1, 2, 3]
+	character.position = Vector2(240.0, 912.0)
+	character.sprite.flip_h = false
+	character.sprite.rotation = 0.0
+
+	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
+		character.set_character_id(profile_id)
+		for state: String in states:
+			var frames: Array = ANIMATION_DATA.REGIONS[state]
+			for frame_index: int in range(frames.size()):
+				character._animation_state = state
+				character._animation_time = (
+					float(frame_index) * float(ANIMATION_DATA.FRAME_DURATIONS[state])
+					+ 0.001
+				)
+				character._apply_animation_frame()
+				var region: Rect2 = character.sprite.region_rect
+				var bounds: Rect2 = character._frame_alpha_bounds(region)
+				var displayed_height: float = bounds.size.y * character.sprite.scale.y
+				var displayed_center_x: float = (
+					character.sprite.position.x
+					+ (bounds.position.x + bounds.size.x * 0.5 - region.size.x * 0.5)
+					* character.sprite.scale.x
+				)
+				var displayed_bottom: float = (
+					character.sprite.position.y
+					+ (bounds.end.y - region.size.y * 0.5) * character.sprite.scale.y
+				)
+				var expected_offset: Vector2 = (
+					ANIMATION_DATA.display_offset_for(profile_id)
+					+ MainLayout.BOARD_VISUAL_OFFSET
+				)
+				var expected_bottom: float = (
+					expected_offset.y
+					+ MainCharacterController.CHARACTER_COLLIDER_OFFSET_Y
+					+ MainCharacterController.CHARACTER_COLLIDER_HEIGHT * 0.5
+				)
+				if (
+					not is_equal_approx(
+						displayed_height,
+						ANIMATION_DATA.visible_height_for(state, profile_id)
+					)
+					or not is_equal_approx(displayed_center_x, expected_offset.x)
+					or not is_equal_approx(displayed_bottom, expected_bottom)
+					or not is_equal_approx(character.sprite.scale.x, character.sprite.scale.y)
+				):
+					transforms_are_stable = false
+				if (
+					not character._crush_mask_overlaps_active_piece(Vector2i(3, 19))
+					or character._crush_mask_overlaps_active_piece(Vector2i(7, 1))
+				):
+					collision_is_frame_independent = false
+
+	_expect(
+		transforms_are_stable,
+		"모든 캐릭터·동작 frame이 같은 실루엣 높이와 발 기준선을 유지한다."
+	)
+	_expect(
+		collision_is_frame_independent,
+		"압사 판정은 캐릭터 sprite의 투명 공백과 animation frame에 영향받지 않는다."
+	)
+	character.set_character_id(ANIMATION_DATA.DEFAULT_CHARACTER_ID)
+	character._animation_state = ANIMATION_DATA.IDLE
+	character._animation_time = 0.0
+	character._apply_animation_frame()
+
+
 func _prepare_punch(
 	controller: MainGameController,
 	character: MainCharacterController,

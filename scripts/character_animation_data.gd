@@ -15,6 +15,14 @@ const SPECIAL: String = "special"
 const DEFAULT_CHARACTER_ID: String = "normal"
 const FRAME_SIZE: float = 128.0
 const FRAME_DISPLAY_SIZE: Vector2 = Vector2(FRAME_SIZE, FRAME_SIZE)
+const VISIBLE_HEIGHTS: Dictionary = {
+	IDLE: 96.0,
+	ATTACK: 96.0,
+	HANG: 96.0,
+	JUMP: 96.0,
+	ROTATION_KICK: 96.0,
+	SPECIAL: 96.0,
+}
 const NORMAL_ATLAS: Texture2D = preload(
 	"res://assets/sprites/characters/normal/normal_atlas.png"
 )
@@ -180,6 +188,15 @@ static func display_offset_for(character_id: String = DEFAULT_CHARACTER_ID) -> V
 
 static func display_size_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vector2:
 	return profile_for(character_id)["display_size"] as Vector2
+
+
+static func visible_height_for(
+	state: String,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> float:
+	var resolved_state: String = state if VISIBLE_HEIGHTS.has(state) else IDLE
+	var profile_scale: float = display_size_for(character_id).y / FRAME_SIZE
+	return float(VISIBLE_HEIGHTS[resolved_state]) * profile_scale
 
 
 static func texture_for(

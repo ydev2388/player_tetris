@@ -102,7 +102,8 @@ const SFX_WALL_CLIMB: AudioStream = preload("res://assets/sfx/09_wall_climb.wav"
 const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # charge 단계별 hold 임계 초.
 const PUNCH_TOTAL_COSTS: Array[float] = [0.0, 8.0, 18.0] # 단계별 누적 비용 조회표.
 const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상한(초).
-const PUNCH_HITBOX_WIDTH: float = 27.2 # 주먹 스프라이트 끝에서 5px 더 넓힌 전방 판정 길이(px).
+const BASIC_ATTACK_FORWARD_REACH: float = CELL_SIZE # 무기 외형과 무관한 전방 한 블록 판정 길이.
+const ROTATION_KICK_BOSS_REACH: float = 27.2 # 기본 공격 확장의 영향을 받지 않는 기존 발차기 보스 판정.
 const FRAME_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 표시 실루엣의 반투명 외곽 제외 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
 	28.0 * MainLayout.DISPLAY_SCALE,
@@ -985,15 +986,20 @@ func _resolve_pending_punch(delta: float) -> void:
 	if _pending_punch_stage == 0:
 		return
 
-	var target_stage: int = _pending_punch_stage # 호환용 값. 기본 공격은 항상 1칸이다.
 	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
 		_pending_punch_stage = 0
 		_pending_punch_hit_remaining = 0.0
 		controller.notify_boss_attacked()
 		take_thorn_damage("보스 가시 피해! 목숨 -1")
 		return
-	var hits_active_piece: bool = _punch_hits_active_piece()
-	var moved: int = controller.push_front_target(_front_board_cell(), facing, 1)
+	var target_cell: Variant = _basic_attack_target_cell()
+	var hits_active_piece: bool = (
+		target_cell != null
+		and (target_cell as Vector2i) in controller.active_board_cells()
+	)
+	var moved: int = 0
+	if target_cell != null:
+		moved = controller.push_front_target(target_cell as Vector2i, facing, 1)
 	if hits_active_piece and controller.active_piece_has_visible_thorns():
 		take_thorn_damage()
 	if moved > 0:
@@ -1072,7 +1078,7 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	_start_rotation_spin()
-	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
+	if controller.boss_hitbox_overlaps(_forward_attack_rect(ROTATION_KICK_BOSS_REACH)):
 		controller.notify_boss_attacked()
 		take_thorn_damage("보스 가시 피해! 목숨 -1")
 		rotation_cooldown_remaining = current_rotation_cooldown()
@@ -1606,22 +1612,50 @@ static func push_distance_for_charge(seconds: float) -> int:
 	return PUNCH_STAGE_TIMES.size()
 
 
-## 상황: 펀치가 활성 블록을 실제로 때렸는지 확인할 때 호출한다.
-## 순서: 몸 바로 앞의 좁은 주먹 Rect를 만들고 활성 피스 셀과 양의 면적 교차를 검사한다.
-## 결과: 블록이 멀리 있으면 false이며, 몸에 닿은 전방 블록만 true다.
-func _punch_hits_active_piece() -> bool:
-	return _active_piece_overlaps_rect(_punch_hitbox_rect())
-
-
+## 기본 공격 전용으로 무기 그림과 무관한 전방 한 칸·몸 전체 높이 판정 영역을 반환한다.
 func _punch_hitbox_rect() -> Rect2:
+	return _forward_attack_rect(BASIC_ATTACK_FORWARD_REACH)
+
+
+func _forward_attack_rect(forward_reach: float) -> Rect2:
 	var body_rect: Rect2 = _character_collider_rect()
 	var fist_x: float = (
-		body_rect.end.x if facing > 0 else body_rect.position.x - PUNCH_HITBOX_WIDTH
+		body_rect.end.x if facing > 0 else body_rect.position.x - forward_reach
 	)
 	return Rect2(
 		Vector2(fist_x, body_rect.position.y),
-		Vector2(PUNCH_HITBOX_WIDTH, body_rect.size.y)
+		Vector2(forward_reach, body_rect.size.y)
 	)
+
+
+## 기본 공격 영역과 겹치는 활성/고정 블록 중 수평으로 가장 가깝고 몸 중심에 가까운 셀을 고른다.
+func _basic_attack_target_cell() -> Variant:
+	var attack_rect: Rect2 = _punch_hitbox_rect()
+	var active_cells: Array[Vector2i] = controller.active_board_cells()
+	var best_cell: Variant = null
+	var best_horizontal_distance: float = INF
+	var best_vertical_distance: float = INF
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			var cell := Vector2i(x, y)
+			if cell not in active_cells and controller.board.get_cell(cell) == MainBoardModel.EMPTY:
+				continue
+			var cell_rect: Rect2 = _board_cell_rect(cell)
+			if not _rects_overlap_with_area(attack_rect, cell_rect):
+				continue
+			var horizontal_distance: float = absf(cell_rect.get_center().x - position.x)
+			var vertical_distance: float = absf(cell_rect.get_center().y - position.y)
+			if (
+				horizontal_distance < best_horizontal_distance
+				or (
+					is_equal_approx(horizontal_distance, best_horizontal_distance)
+					and vertical_distance < best_vertical_distance
+				)
+			):
+				best_cell = cell
+				best_horizontal_distance = horizontal_distance
+				best_vertical_distance = vertical_distance
+	return best_cell
 
 
 ## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.

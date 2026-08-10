@@ -52,7 +52,8 @@ const BOSS_BINDING_DURATION_SECONDS: float = 3.0
 const BOSS_MAX_HEALTH: int = 3
 const BOSS_POSITION: Vector2 = Vector2(240.0, 84.0)
 const BOSS_DISPLAY_SIZE: Vector2 = Vector2(72.0, 192.0)
-const BOSS_ATTACK_HITBOX_SIZE: Vector2 = Vector2(54.0, 168.0)
+const BOSS_ATTACK_HITBOX_SIZE: Vector2 = Vector2(54.0, 132.0)
+const BOSS_ATTACK_HITBOX_OFFSET: Vector2 = Vector2(0.0, -16.0)
 const BOSS_DOWN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 184.3125)
 const BOSS_DOWN_DURATION_SECONDS: float = 0.72
 const BOSS_FALL_SPEED: float = MainLayout.CELL_SIZE * 10.0
@@ -289,7 +290,7 @@ func is_boss_fallen() -> bool:
 
 func boss_hitbox() -> Rect2:
 	return Rect2(
-		BOSS_POSITION - BOSS_ATTACK_HITBOX_SIZE * 0.5,
+		BOSS_POSITION + BOSS_ATTACK_HITBOX_OFFSET - BOSS_ATTACK_HITBOX_SIZE * 0.5,
 		BOSS_ATTACK_HITBOX_SIZE
 	)
 

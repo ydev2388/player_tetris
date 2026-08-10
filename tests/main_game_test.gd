@@ -23,6 +23,12 @@ const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cle
 const PAN_TOSS_UP_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_up.png")
 const PAN_TOSS_DOWN_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_down.png")
 const PAN_TOSS_FAILURE_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_failure.png")
+const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
+const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
+const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
+const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
+const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
+const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
 
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
@@ -410,6 +416,104 @@ func _test_sprite_atlas_contracts() -> void:
 		"모든 캐릭터 특수효과 시트의 크기·행·열과 불투명 픽셀이 사용 규격과 일치한다."
 	)
 
+	var board_sprites_valid: bool = true
+	var block_image: Image = MainGameView.BLOCK_TEXTURE.get_image()
+	var block_texture_rect := Rect2(
+		Vector2.ZERO,
+		Vector2(MainGameView.BLOCK_TEXTURE.get_width(), MainGameView.BLOCK_TEXTURE.get_height())
+	)
+	for source_region: Rect2 in MainGameView.BLOCK_SPRITE_REGIONS.values():
+		board_sprites_valid = (
+			board_sprites_valid
+			and block_texture_rect.encloses(source_region)
+			and _image_region_has_alpha(block_image, source_region)
+		)
+	var thorn_image: Image = MainGameView.THORN_TEXTURE.get_image()
+	var thorn_texture_rect := Rect2(
+		Vector2.ZERO,
+		Vector2(MainGameView.THORN_TEXTURE.get_width(), MainGameView.THORN_TEXTURE.get_height())
+	)
+	board_sprites_valid = (
+		board_sprites_valid
+		and thorn_texture_rect.encloses(MainGameView.THORN_SOURCE_REGION)
+		and _image_region_has_alpha(thorn_image, MainGameView.THORN_SOURCE_REGION)
+	)
+	_expect(
+		board_sprites_valid,
+		"모든 블록·가시 source 영역이 atlas 안에 있고 실제 불투명 픽셀을 가진다."
+	)
+
+	var boss_specs: Array = [
+		[BOSS_NORMAL_TEXTURE, Vector2i(384, 1024)],
+		[BOSS_BIND_TEXTURE, Vector2i(384, 1024)],
+		[BOSS_THORN_TEXTURE, Vector2i(384, 1024)],
+		[BOSS_DOWN_TEXTURE, Vector2i(384, 983)],
+		[BOSS_FALLING_TEXTURE, Vector2i(384, 1024)],
+		[BOSS_FALLEN_TEXTURE, Vector2i(384, 234)],
+	]
+	var boss_sheets_valid: bool = true
+	for spec: Array in boss_specs:
+		var texture: Texture2D = spec[0] as Texture2D
+		var frame_size: Vector2i = spec[1] as Vector2i
+		var image: Image = texture.get_image()
+		boss_sheets_valid = (
+			boss_sheets_valid
+			and texture.get_width() == frame_size.x * MainGameView.BOSS_FRAME_COUNT
+			and texture.get_height() == frame_size.y
+		)
+		for frame: int in range(MainGameView.BOSS_FRAME_COUNT):
+			boss_sheets_valid = (
+				boss_sheets_valid
+				and _image_region_has_alpha(
+					image,
+					Rect2(frame * frame_size.x, 0, frame_size.x, frame_size.y)
+				)
+			)
+	_expect(
+		boss_sheets_valid,
+		"보스의 일반·속박·가시·다운·낙하 시트가 모두 4 frame 규격을 지킨다."
+	)
+
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	var boss_hitbox: Rect2 = controller.boss_hitbox()
+	controller.free()
+	var boss_scale: float = (
+		MainGameController.BOSS_DISPLAY_SIZE.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x
+	)
+	var boss_display_rect: Rect2 = Rect2(
+		MainGameController.BOSS_POSITION - MainGameController.BOSS_DISPLAY_SIZE * 0.5,
+		MainGameController.BOSS_DISPLAY_SIZE
+	)
+	var source_hitbox: Rect2 = Rect2(
+		(boss_hitbox.position - boss_display_rect.position) / boss_scale,
+		boss_hitbox.size / boss_scale
+	)
+	var boss_hitbox_excludes_padding: bool = true
+	for texture: Texture2D in [BOSS_NORMAL_TEXTURE, BOSS_BIND_TEXTURE]:
+		for frame: int in range(MainGameView.BOSS_FRAME_COUNT):
+			var frame_source := Rect2(
+				frame * MainGameView.BOSS_SOURCE_FRAME_SIZE.x,
+				0.0,
+				MainGameView.BOSS_SOURCE_FRAME_SIZE.x,
+				MainGameView.BOSS_SOURCE_FRAME_SIZE.y
+			)
+			var opaque_region: Rect2 = ANIMATION_DATA.opaque_region_for(texture, frame_source)
+			var local_opaque_region := Rect2(
+				Vector2(
+					opaque_region.position.x - frame_source.position.x,
+					opaque_region.position.y
+				),
+				opaque_region.size
+			)
+			boss_hitbox_excludes_padding = (
+				boss_hitbox_excludes_padding
+				and local_opaque_region.encloses(source_hitbox)
+			)
+	_expect(
+		boss_hitbox_excludes_padding,
+		"보스 공격 판정은 일반·속박 모든 frame의 투명 바깥 여백 안으로 들어오지 않는다."
+	)
+
 
 func _image_region_has_alpha(image: Image, region: Rect2) -> bool:
 	for pixel_y: int in range(int(region.position.y), int(region.end.y)):
@@ -527,6 +631,43 @@ func _test_release_punch() -> void:
 		"특수 스킬 호출은 8 frame SPECIAL 상태를 시작한다."
 	)
 	character._special_animation_remaining = 0.0
+	character.position = Vector2(240.0, 912.0)
+	character.facing = 1
+	var body_rect: Rect2 = character._character_collider_rect()
+	var right_attack_rect: Rect2 = character._punch_hitbox_rect()
+	character.facing = -1
+	var left_attack_rect: Rect2 = character._punch_hitbox_rect()
+	_expect(
+		is_equal_approx(right_attack_rect.size.x, MainCharacterController.CELL_SIZE)
+			and is_equal_approx(right_attack_rect.size.y, body_rect.size.y)
+			and is_equal_approx(right_attack_rect.position.x, body_rect.end.x)
+			and is_equal_approx(left_attack_rect.end.x, body_rect.position.x)
+			and left_attack_rect.size.is_equal_approx(right_attack_rect.size),
+		"기본 공격은 무기 sprite와 무관하게 좌우 전방 한 칸·캐릭터 전체 높이를 판정한다."
+	)
+	character.facing = 1
+	controller.state = MainGameController.GameState.PLAYING
+	controller.active_cell_indices.clear()
+	controller.board.reset()
+	controller.board.cells[20][6] = MainTetrominoData.Type.J
+	var upper_target: Variant = character._basic_attack_target_cell()
+	controller.board.reset()
+	controller.board.cells[21][6] = MainTetrominoData.Type.J
+	var lower_target: Variant = character._basic_attack_target_cell()
+	controller.board.reset()
+	controller.board.cells[19][6] = MainTetrominoData.Type.J
+	var outside_target: Variant = character._basic_attack_target_cell()
+	_expect(
+		upper_target != null
+			and (upper_target as Vector2i) == Vector2i(6, 20)
+			and lower_target != null
+			and (lower_target as Vector2i) == Vector2i(6, 21),
+		"기본 공격은 캐릭터 높이에 걸친 위·아래 전방 블록을 모두 대상으로 찾는다."
+	)
+	_expect(
+		outside_target == null,
+		"기본 공격은 캐릭터 고정 높이 밖의 블록까지 판정을 넓히지 않는다."
+	)
 	_prepare_punch(controller, character, Vector2i(4, 19), Vector2(165.0, 912.0))
 	var start_origin: Vector2i = controller.active_origin # release 전후를 비교할 immutable 기준값.
 	Input.action_release(&"character_punch")
@@ -1256,6 +1397,7 @@ func _prepare_punch(
 	controller.active_type = MainTetrominoData.Type.T
 	controller.active_rotation = 0
 	controller.active_origin = origin
+	controller.active_cell_indices = [0, 1, 2, 3]
 	controller._reset_piece_timers()
 	character.position = character_position
 	character.velocity = Vector2.ZERO

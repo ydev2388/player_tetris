@@ -430,6 +430,7 @@ func _test_release_punch() -> void:
 	var controller: MainGameController = scene.get_node("GameController") # 논리 피스 상태 관찰 대상.
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character") # 입력·hitbox 실행 대상.
 	_test_character_frame_normalization(controller, character)
+	_test_binding_overlay_alignment(scene, character)
 	_expect(
 		character.character_id == "normal"
 			and not character.set_character_id("missing_character"),
@@ -1141,6 +1142,7 @@ func _test_character_frame_normalization(
 	]
 	var transforms_are_stable: bool = true
 	var collision_is_frame_independent: bool = true
+	var transparent_padding_is_excluded: bool = true
 	controller.active_type = MainTetrominoData.Type.O
 	controller.active_rotation = 0
 	controller.active_cell_indices = [0, 1, 2, 3]
@@ -1150,6 +1152,22 @@ func _test_character_frame_normalization(
 
 	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		character.set_character_id(profile_id)
+		character._animation_state = ANIMATION_DATA.IDLE
+		character._animation_time = 0.0
+		character._apply_animation_frame()
+		var expected_scale: Vector2 = character.sprite.scale
+		var expected_position: Vector2 = character.sprite.position
+		var reference_region: Rect2 = character.sprite.region_rect
+		var reference_bounds: Rect2 = character._frame_alpha_bounds(reference_region)
+		transparent_padding_is_excluded = (
+			transparent_padding_is_excluded
+			and reference_bounds.size.x < reference_region.size.x
+			and reference_bounds.size.y < reference_region.size.y
+			and is_equal_approx(
+				reference_bounds.size.y * expected_scale.y,
+				ANIMATION_DATA.visible_height_for(ANIMATION_DATA.IDLE, profile_id)
+			)
+		)
 		for state: String in states:
 			var frames: Array = ANIMATION_DATA.REGIONS[state]
 			for frame_index: int in range(frames.size()):
@@ -1159,34 +1177,9 @@ func _test_character_frame_normalization(
 					+ 0.001
 				)
 				character._apply_animation_frame()
-				var region: Rect2 = character.sprite.region_rect
-				var bounds: Rect2 = character._frame_alpha_bounds(region)
-				var displayed_height: float = bounds.size.y * character.sprite.scale.y
-				var displayed_center_x: float = (
-					character.sprite.position.x
-					+ (bounds.position.x + bounds.size.x * 0.5 - region.size.x * 0.5)
-					* character.sprite.scale.x
-				)
-				var displayed_bottom: float = (
-					character.sprite.position.y
-					+ (bounds.end.y - region.size.y * 0.5) * character.sprite.scale.y
-				)
-				var expected_offset: Vector2 = (
-					ANIMATION_DATA.display_offset_for(profile_id)
-					+ MainLayout.BOARD_VISUAL_OFFSET
-				)
-				var expected_bottom: float = (
-					expected_offset.y
-					+ MainCharacterController.CHARACTER_COLLIDER_OFFSET_Y
-					+ MainCharacterController.CHARACTER_COLLIDER_HEIGHT * 0.5
-				)
 				if (
-					not is_equal_approx(
-						displayed_height,
-						ANIMATION_DATA.visible_height_for(state, profile_id)
-					)
-					or not is_equal_approx(displayed_center_x, expected_offset.x)
-					or not is_equal_approx(displayed_bottom, expected_bottom)
+					not character.sprite.scale.is_equal_approx(expected_scale)
+					or not character.sprite.position.is_equal_approx(expected_position)
 					or not is_equal_approx(character.sprite.scale.x, character.sprite.scale.y)
 				):
 					transforms_are_stable = false
@@ -1198,7 +1191,11 @@ func _test_character_frame_normalization(
 
 	_expect(
 		transforms_are_stable,
-		"모든 캐릭터·동작 frame이 같은 실루엣 높이와 발 기준선을 유지한다."
+		"모든 캐릭터는 모션이 바뀌어도 동일한 스케일과 기준 위치를 유지한다."
+	)
+	_expect(
+		transparent_padding_is_excluded,
+		"모든 캐릭터의 기준 크기는 128px 투명 여백을 제외한 실제 픽셀로 계산한다."
 	)
 	_expect(
 		collision_is_frame_independent,
@@ -1208,6 +1205,44 @@ func _test_character_frame_normalization(
 	character._animation_state = ANIMATION_DATA.IDLE
 	character._animation_time = 0.0
 	character._apply_animation_frame()
+
+
+func _test_binding_overlay_alignment(
+	scene: MainGameView,
+	character: MainCharacterController
+) -> void:
+	var overlay_is_aligned: bool = true
+	var binding_sprite: Sprite2D = scene._binding_sprite
+	var visible_bind_region: Rect2 = ANIMATION_DATA.opaque_region_for(
+		MainGameView.BIND_TEXTURE,
+		MainGameView.BIND_SOURCE_REGION
+	)
+	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
+		character.set_character_id(profile_id)
+		scene._sync_binding_overlay_transform()
+		var expected_height: float = (
+			ANIMATION_DATA.visible_height_for(ANIMATION_DATA.IDLE, profile_id)
+			+ MainGameView.BIND_HEIGHT_MARGIN
+		)
+		overlay_is_aligned = (
+			overlay_is_aligned
+			and binding_sprite.region_rect == visible_bind_region
+			and binding_sprite.position.is_equal_approx(character.sprite.position)
+			and is_equal_approx(binding_sprite.scale.x, binding_sprite.scale.y)
+			and is_equal_approx(
+				binding_sprite.region_rect.size.y * binding_sprite.scale.y,
+				expected_height
+			)
+		)
+	_expect(
+		overlay_is_aligned,
+		"stage-system 덩쿨 속박은 모든 캐릭터의 실제 표시 위치·높이에 균일 비율로 맞는다."
+	)
+	_expect(
+		binding_sprite.get_parent() == character and binding_sprite.get_child_count() == 0,
+		"덩쿨 속박의 투명 영역은 시각 overlay일 뿐 캐릭터 판정에 추가되지 않는다."
+	)
+	character.set_character_id(ANIMATION_DATA.DEFAULT_CHARACTER_ID)
 
 
 func _prepare_punch(

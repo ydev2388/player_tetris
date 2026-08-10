@@ -73,7 +73,7 @@ const THORN_DEPTH: float = 18.0
 const THORN_EDGE_OVERLAP: float = 6.0
 const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/bind_sprite.png")
 const BIND_SOURCE_REGION: Rect2 = Rect2(337.0, 65.0, 277.0, 364.0)
-const BIND_DISPLAY_SIZE: Vector2 = Vector2(78.0, 108.0)
+const BIND_HEIGHT_MARGIN: float = 12.0
 const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
 const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
 const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
@@ -849,6 +849,7 @@ func _draw_thorns() -> void:
 func _draw_binding() -> void:
 	if _binding_sprite == null:
 		return
+	_sync_binding_overlay_transform()
 	_binding_sprite.visible = character.is_bound
 
 
@@ -857,12 +858,30 @@ func _create_binding_overlay() -> void:
 	_binding_sprite.name = "BindingSprite"
 	_binding_sprite.texture = BIND_TEXTURE
 	_binding_sprite.region_enabled = true
-	_binding_sprite.region_rect = BIND_SOURCE_REGION
-	_binding_sprite.scale = BIND_DISPLAY_SIZE / BIND_SOURCE_REGION.size
+	_binding_sprite.region_rect = MainCharacterAnimationData.opaque_region_for(
+		BIND_TEXTURE,
+		BIND_SOURCE_REGION
+	)
 	_binding_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_binding_sprite.z_index = 1
 	_binding_sprite.visible = false
 	character.add_child(_binding_sprite)
+	_sync_binding_overlay_transform()
+
+
+func _sync_binding_overlay_transform() -> void:
+	if _binding_sprite == null or not is_instance_valid(character.sprite):
+		return
+	var bind_height: float = (
+		MainCharacterAnimationData.visible_height_for(
+			MainCharacterAnimationData.IDLE,
+			character.character_id
+		)
+		+ BIND_HEIGHT_MARGIN
+	)
+	var uniform_scale: float = bind_height / maxf(_binding_sprite.region_rect.size.y, 1.0)
+	_binding_sprite.scale = Vector2.ONE * uniform_scale
+	_binding_sprite.position = character.sprite.position
 
 
 func _create_boss_display() -> void:

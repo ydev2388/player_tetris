@@ -2017,15 +2017,20 @@ func _apply_animation_frame() -> void:
 		_animation_time,
 		character_id
 	) # source frame.
-	var alpha_bounds: Rect2 = _frame_alpha_bounds(region)
-	var visible_height: float = ANIMATION_DATA.visible_height_for(
-		_animation_state,
+	var reference_region: Rect2 = ANIMATION_DATA.region_for(
+		ANIMATION_DATA.IDLE,
+		0.0,
 		character_id
 	)
-	var uniform_scale: float = visible_height / maxf(alpha_bounds.size.y, 1.0)
+	var reference_bounds: Rect2 = _frame_alpha_bounds(reference_region)
+	var visible_height: float = ANIMATION_DATA.visible_height_for(
+		ANIMATION_DATA.IDLE,
+		character_id
+	)
+	var uniform_scale: float = visible_height / maxf(reference_bounds.size.y, 1.0)
 	var source_center: Vector2 = region.size * 0.5
-	var visible_center_x: float = alpha_bounds.position.x + alpha_bounds.size.x * 0.5
-	var visible_bottom: float = alpha_bounds.end.y
+	var visible_center_x: float = reference_bounds.position.x + reference_bounds.size.x * 0.5
+	var visible_bottom: float = reference_bounds.end.y
 	var ground_anchor_y: float = (
 		CHARACTER_COLLIDER_OFFSET_Y + CHARACTER_COLLIDER_HEIGHT * 0.5
 	)

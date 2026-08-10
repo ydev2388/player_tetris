@@ -230,26 +230,30 @@ static func visible_region_for(
 ) -> Rect2:
 	var frame_region: Rect2 = region_for(state, elapsed, character_id)
 	var texture: Texture2D = texture_for(state, character_id)
+	return opaque_region_for(texture, frame_region)
+
+
+static func opaque_region_for(texture: Texture2D, source_region: Rect2) -> Rect2:
 	var cache_key: String = "%s:%d:%d:%d:%d" % [
 		texture.resource_path,
-		int(frame_region.position.x),
-		int(frame_region.position.y),
-		int(frame_region.size.x),
-		int(frame_region.size.y),
+		int(source_region.position.x),
+		int(source_region.position.y),
+		int(source_region.size.x),
+		int(source_region.size.y),
 	]
 	if _visible_region_cache.has(cache_key):
 		return _visible_region_cache[cache_key] as Rect2
 
 	var image: Image = texture.get_image()
 
-	var min_x: int = int(frame_region.size.x)
-	var min_y: int = int(frame_region.size.y)
+	var min_x: int = int(source_region.size.x)
+	var min_y: int = int(source_region.size.y)
 	var max_x: int = -1
 	var max_y: int = -1
-	var source_left: int = int(frame_region.position.x)
-	var source_top: int = int(frame_region.position.y)
-	for pixel_y: int in range(int(frame_region.size.y)):
-		for pixel_x: int in range(int(frame_region.size.x)):
+	var source_left: int = int(source_region.position.x)
+	var source_top: int = int(source_region.position.y)
+	for pixel_y: int in range(int(source_region.size.y)):
+		for pixel_x: int in range(int(source_region.size.x)):
 			if image.get_pixel(source_left + pixel_x, source_top + pixel_y).a < FRAME_ALPHA_THRESHOLD:
 				continue
 			min_x = mini(min_x, pixel_x)
@@ -257,10 +261,10 @@ static func visible_region_for(
 			max_x = maxi(max_x, pixel_x)
 			max_y = maxi(max_y, pixel_y)
 
-	var visible_region: Rect2 = frame_region
+	var visible_region: Rect2 = source_region
 	if max_x >= min_x and max_y >= min_y:
 		visible_region = Rect2(
-			frame_region.position + Vector2(float(min_x), float(min_y)),
+			source_region.position + Vector2(float(min_x), float(min_y)),
 			Vector2(float(max_x - min_x + 1), float(max_y - min_y + 1))
 		)
 	_visible_region_cache[cache_key] = visible_region

@@ -40,8 +40,14 @@ const DEFINITIONS: Array[Dictionary] = [
 	},
 	{
 		"action": &"character_punch",
-		"label": "차지 펀치",
+		"label": "기본 밀치기",
 		"defaults": [KEY_X],
+		"slots": 1,
+	},
+	{
+		"action": &"character_special",
+		"label": "특수 스킬",
+		"defaults": [KEY_V],
 		"slots": 1,
 	},
 	{

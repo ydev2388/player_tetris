@@ -21,7 +21,7 @@ const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
 const BOARD_SIZE: Vector2 = MainLayout.BOARD_SIZE
 const PANEL_RECT: Rect2 = MainLayout.HUD_RECT
 const STAMINA_BAR_RECT: Rect2 = Rect2(584.0, 878.0, 352.0, 14.0)
-const PUNCH_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
+const SPECIAL_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
 const ROTATION_BAR_RECT: Rect2 = Rect2(584.0, 998.0, 352.0, 14.0)
 const SELF_RESPAWN_BAR_RECT: Rect2 = Rect2(
 	MainLayout.BOARD_ORIGIN + Vector2(84.0, MainLayout.BOARD_SIZE.y - 78.0),
@@ -44,6 +44,19 @@ const ORANGE: Color = Color("#e47719") # charge/feedback 강조색.
 
 # sprite atlas와 piece 이름 -> atlas source Rect 매핑.
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
+const SPRINT_VFX: Texture2D = preload("res://assets/sprites/effects/normal/sprint_vfx.png")
+const GUARD_BREAK_VFX: Texture2D = preload("res://assets/sprites/effects/boxer/guard_break_impact.png")
+const SHIELD_BARRIER_VFX: Texture2D = preload("res://assets/sprites/effects/shield_guard/shield_barrier.png")
+const HOSE_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/hose_overlay.png")
+const WATER_PATH_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/water_path.png")
+const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cleanup_dust.png")
+const PAN_TOSS_UP_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_up.png")
+const PAN_TOSS_DOWN_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_down.png")
+const PAN_TOSS_FAILURE_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_failure.png")
+const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_wave.png")
+const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
+const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
+const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
 const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"I": Rect2(80, 255, 210, 215),
 	"O": Rect2(360, 255, 210, 215),
@@ -53,8 +66,7 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
-const CHARACTER_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # HUD 초상화 시트.
-const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 원본 영역.
+const CHARACTER_SOURCE_RECT: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0) # idle 0 frame.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
@@ -67,7 +79,7 @@ var _stats_label: Label # score/level/line 수치.
 var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
 var _stamina_label: Label # 스태미나 숫자.
 var _punch_label: Label # 보조 정보인 펀치 단계.
-var _rotation_label: Label # 회전 킥 준비/남은 초.
+var _rotation_label: Label # 블록 플립 준비/남은 초.
 var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
 var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
@@ -97,6 +109,7 @@ func _draw() -> void:
 	_draw_panel(Rect2(BOARD_ORIGIN - Vector2(12.0, 12.0), BOARD_SIZE + Vector2(24.0, 24.0)))
 	_draw_panel(PANEL_RECT)
 	_draw_board()
+	_draw_character_skill_effects()
 	_draw_meditation_effect()
 	_draw_hud_sections()
 	_draw_next_piece()
@@ -295,18 +308,12 @@ func _draw_board() -> void:
 		return
 
 	var ghost_position: Vector2i = controller.ghost_origin() # 활성 피스의 예상 착지 원점.
-	for local_cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
+	for local_cell: Vector2i in controller.active_local_cells():
 		var ghost_cell: Vector2i = ghost_position + local_cell # 고스트의 절대 보드 셀.
 		if ghost_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_ghost(_cell_rect(ghost_cell), controller.active_type)
 
-	for local_cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
+	for local_cell: Vector2i in controller.active_local_cells():
 		var active_cell: Vector2i = controller.active_origin + local_cell # 활성 절대 보드 셀.
 		if active_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_block(
@@ -321,6 +328,251 @@ func _draw_board() -> void:
 	for y: int in range(MainBoardModel.VISIBLE_HEIGHT + 1):
 		var line_y: float = BOARD_ORIGIN.y + float(y) * CELL_SIZE
 		draw_line(Vector2(BOARD_ORIGIN.x, line_y), Vector2(BOARD_ORIGIN.x + BOARD_SIZE.x, line_y), GRID_COLOR)
+
+
+func _draw_character_skill_effects() -> void:
+	var animated_frame: int = int(Time.get_ticks_msec() / 120)
+	if controller.fall_freeze_remaining > 0.0:
+		_draw_clock_freeze_effect(animated_frame)
+	if not controller.water_path_cells.is_empty():
+		var water_frame: int = animated_frame % 4
+		for cell: Vector2i in controller.water_path_cells:
+			if cell.y < MainBoardModel.HIDDEN_ROWS:
+				continue
+			draw_texture_rect_region(
+				WATER_PATH_VFX,
+				_cell_rect(cell),
+				Rect2(water_frame * 48.0, 0.0, 48.0, 48.0)
+			)
+
+	if character.barrier_remaining() > 0.0 and not controller.transient_blocker_cells.is_empty():
+		var top_cell: Vector2i = controller.transient_blocker_cells[0]
+		for cell: Vector2i in controller.transient_blocker_cells:
+			if cell.y < top_cell.y:
+				top_cell = cell
+		var remaining: float = character.barrier_remaining()
+		var barrier_frame: int
+		if remaining > 1.8:
+			barrier_frame = 0
+		elif remaining > 1.6:
+			barrier_frame = 1
+		elif remaining < 0.15:
+			barrier_frame = 5
+		elif remaining < 0.3:
+			barrier_frame = 4
+		else:
+			barrier_frame = 2 + animated_frame % 2
+		draw_texture_rect_region(
+			SHIELD_BARRIER_VFX,
+			Rect2(_cell_rect(top_cell).position, Vector2(48.0, 144.0)),
+			Rect2(barrier_frame * 48.0, 0.0, 48.0, 144.0)
+		)
+
+	var character_center: Vector2 = BOARD_ORIGIN + character.position
+	if character.sprint_remaining() > 0.0:
+		var sprint_frame: int = animated_frame % 8
+		draw_texture_rect_region(
+			SPRINT_VFX,
+			Rect2(character_center - Vector2(64.0, 64.0), Vector2(128.0, 128.0)),
+			Rect2(sprint_frame * 128.0, 0.0, 128.0, 128.0)
+		)
+
+	if not character.is_special_animating():
+		return
+	var local_facing: float = float(character.facing)
+	draw_set_transform(character_center, 0.0, Vector2(local_facing, 1.0))
+	match character.character_id:
+		"clockmaker":
+			_draw_clockmaker_cast_effect()
+		"ninja":
+			_draw_ninja_shuriken_effect()
+		"boxer":
+			var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+			draw_texture_rect_region(
+				GUARD_BREAK_VFX,
+				Rect2(Vector2(34.0, -40.0), Vector2(64.0, 64.0)),
+				Rect2(frame * 64.0, 0.0, 64.0, 64.0)
+			)
+		"firefighter":
+			var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+			draw_texture_rect_region(
+				HOSE_VFX,
+				Rect2(Vector2(0.0, -34.0), Vector2(192.0, 64.0)),
+				Rect2(frame * 192.0, 0.0, 192.0, 64.0)
+			)
+		"cleaner":
+			var frame: int = mini(character.special_visual_frame(8) * 6 / 8, 5)
+			draw_texture_rect_region(
+				CLEANUP_VFX,
+				Rect2(Vector2(-72.0, 28.0), Vector2(144.0, 48.0)),
+				Rect2(frame * 144.0, 0.0, 144.0, 48.0)
+			)
+		"chef":
+			if character.last_special_succeeded():
+				var texture: Texture2D = PAN_TOSS_DOWN_VFX if character.special_visual_vertical() > 0 else PAN_TOSS_UP_VFX
+				var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+				draw_texture_rect_region(
+					texture,
+					Rect2(Vector2(0.0, -48.0), Vector2(96.0, 96.0)),
+					Rect2(frame * 96.0, 0.0, 96.0, 96.0)
+				)
+			else:
+				var frame: int = mini(character.special_visual_frame(8) * 3 / 8, 2)
+				draw_texture_rect_region(
+					PAN_TOSS_FAILURE_VFX,
+					Rect2(Vector2(26.0, -28.0), Vector2(48.0, 48.0)),
+					Rect2(frame * 48.0, 0.0, 48.0, 48.0)
+				)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_clockmaker_cast_effect() -> void:
+	var elapsed: float = character.special_visual_elapsed()
+	if elapsed < 0.4:
+		var gear_frame: int = mini(floori(elapsed / 0.4 * 4.0), 3)
+		var wind_scale: float = lerpf(0.55, 1.0, elapsed / 0.4)
+		draw_texture_rect_region(
+			CLOCK_GEAR_VFX,
+			Rect2(Vector2(-64.0, -89.0) * wind_scale, Vector2.ONE * 128.0 * wind_scale),
+			Rect2(gear_frame * 128.0, 0.0, 128.0, 128.0),
+			Color(1.0, 1.0, 1.0, 0.82)
+		)
+		return
+	var wave_progress: float = clampf((elapsed - 0.4) / 0.4, 0.0, 1.0)
+	var wave_frame: int = mini(floori(wave_progress * 6.0), 5)
+	var wave_size: float = lerpf(160.0, 620.0, wave_progress)
+	draw_texture_rect_region(
+		CLOCK_WAVE_VFX,
+		Rect2(Vector2(-wave_size * 0.5, -25.0 - wave_size * 0.5), Vector2.ONE * wave_size),
+		Rect2(wave_frame * 192.0, 0.0, 192.0, 192.0),
+		Color(1.0, 1.0, 1.0, 0.62 - wave_progress * 0.30)
+	)
+
+
+func _draw_clock_freeze_effect(animated_frame: int) -> void:
+	var remaining_ratio: float = clampf(controller.fall_freeze_remaining / 3.0, 0.0, 1.0)
+	var ending_factor: float = 1.0
+	if controller.fall_freeze_remaining < 0.4:
+		ending_factor = clampf(controller.fall_freeze_remaining / 0.4, 0.0, 1.0)
+		ending_factor *= 0.62 + 0.38 * absf(sin(float(Time.get_ticks_msec()) / 48.0))
+	var pulse: float = 0.08 + 0.025 * sin(float(Time.get_ticks_msec()) / 140.0)
+	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.10, 0.68, 0.78, pulse * ending_factor))
+	draw_rect(
+		Rect2(BOARD_ORIGIN + Vector2.ONE * 3.0, BOARD_SIZE - Vector2.ONE * 6.0),
+		Color(0.91, 0.68, 0.20, 0.78 * ending_factor),
+		false,
+		3.0
+	)
+	for tick_index: int in range(24):
+		var ratio: float = float(tick_index) / 24.0
+		var edge_point: Vector2
+		var inward: Vector2
+		if ratio < 0.25:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x * ratio * 4.0, 5.0)
+			inward = Vector2(0.0, 9.0)
+		elif ratio < 0.5:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x - 5.0, BOARD_SIZE.y * (ratio - 0.25) * 4.0)
+			inward = Vector2(-9.0, 0.0)
+		elif ratio < 0.75:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x * (1.0 - (ratio - 0.5) * 4.0), BOARD_SIZE.y - 5.0)
+			inward = Vector2(0.0, -9.0)
+		else:
+			edge_point = BOARD_ORIGIN + Vector2(5.0, BOARD_SIZE.y * (1.0 - (ratio - 0.75) * 4.0))
+			inward = Vector2(9.0, 0.0)
+		draw_line(edge_point, edge_point + inward, Color(1.0, 0.84, 0.38, 0.72 * ending_factor), 2.0)
+
+	var active_cells: Array[Vector2i] = controller.active_board_cells()
+	if active_cells.is_empty():
+		return
+	var minimum: Vector2i = active_cells[0]
+	var maximum: Vector2i = active_cells[0]
+	for cell: Vector2i in active_cells:
+		minimum.x = mini(minimum.x, cell.x)
+		minimum.y = mini(minimum.y, cell.y)
+		maximum.x = maxi(maximum.x, cell.x)
+		maximum.y = maxi(maximum.y, cell.y)
+	var bounds: Rect2 = _cell_rect(minimum)
+	bounds = bounds.expand(_cell_rect(maximum).end)
+	var ring_size: float = maxf(bounds.size.x, bounds.size.y) + 24.0
+	var ring_center: Vector2 = bounds.get_center()
+	var ring_radius: float = ring_size * 0.5
+	ring_center.x = clampf(
+		ring_center.x,
+		BOARD_ORIGIN.x + ring_radius + 4.0,
+		BOARD_ORIGIN.x + BOARD_SIZE.x - ring_radius - 4.0
+	)
+	ring_center.y = clampf(
+		ring_center.y,
+		BOARD_ORIGIN.y + ring_radius + 4.0,
+		BOARD_ORIGIN.y + BOARD_SIZE.y - ring_radius - 4.0
+	)
+	var gear_frame: int = animated_frame % 4
+	draw_set_transform(ring_center, float(Time.get_ticks_msec()) / 4200.0, Vector2.ONE)
+	draw_texture_rect_region(
+		CLOCK_GEAR_VFX,
+		Rect2(Vector2.ONE * -ring_size * 0.5, Vector2.ONE * ring_size),
+		Rect2(gear_frame * 128.0, 0.0, 128.0, 128.0),
+		Color(1.0, 1.0, 1.0, 0.48 * ending_factor)
+	)
+	draw_arc(
+		Vector2.ZERO,
+		ring_size * 0.5 + 7.0,
+		-PI * 0.5,
+		-PI * 0.5 + TAU * remaining_ratio,
+		48,
+		Color(0.96, 0.82, 0.35, 0.92 * ending_factor),
+		4.0
+	)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_ninja_shuriken_effect() -> void:
+	var result: Dictionary = character.ninja_special_result()
+	if result.is_empty():
+		return
+	var result_direction: int = int(result.get("direction", character.facing))
+	draw_set_transform(
+		BOARD_ORIGIN + character.position,
+		0.0,
+		Vector2(float(result_direction), 1.0)
+	)
+	var elapsed_after_hit: float = character.special_visual_elapsed() - 0.25
+	if elapsed_after_hit < 0.0:
+		return
+	var travel_cells: int = int(result.get("travel_cells", 0))
+	var throw_distance: float = float(travel_cells) * CELL_SIZE
+	var flight_progress: float = clampf(elapsed_after_hit / 0.18, 0.0, 1.0)
+	var start := Vector2(24.0, -26.0)
+	var current := start + Vector2(throw_distance * flight_progress, 0.0)
+	var spin_frame: int = posmod(floori(elapsed_after_hit / 0.045), 4)
+	for trail_index: int in range(3, 0, -1):
+		var trail_ratio: float = maxf(0.0, flight_progress - float(trail_index) * 0.08)
+		var trail_center: Vector2 = start + Vector2(throw_distance * trail_ratio, 0.0)
+		var trail_scale: float = 1.0 - float(trail_index) * 0.16
+		var trail_size: float = 32.0 * trail_scale
+		draw_texture_rect_region(
+			SHURIKEN_SPIN_VFX,
+			Rect2(trail_center - Vector2.ONE * trail_size * 0.5, Vector2.ONE * trail_size),
+			Rect2(spin_frame * 32.0, 0.0, 32.0, 32.0),
+			Color(0.58, 0.86, 1.0, 0.12 + 0.12 * float(3 - trail_index))
+		)
+	if flight_progress < 1.0:
+		draw_texture_rect_region(
+			SHURIKEN_SPIN_VFX,
+			Rect2(current - Vector2.ONE * 16.0, Vector2.ONE * 32.0),
+			Rect2(spin_frame * 32.0, 0.0, 32.0, 32.0)
+		)
+		return
+	var impact_progress: float = clampf((elapsed_after_hit - 0.18) / 0.37, 0.0, 0.999)
+	var impact_frame: int = floori(impact_progress * 4.0)
+	var success: bool = bool(result.get("success", false))
+	var source_y: float = 0.0 if success else 64.0
+	draw_texture_rect_region(
+		SHURIKEN_IMPACT_VFX,
+		Rect2(current - Vector2.ONE * 32.0, Vector2.ONE * 64.0),
+		Rect2(impact_frame * 64.0, source_y, 64.0, 64.0),
+		Color(1.0, 1.0, 1.0, 1.0 if success else 0.88)
+	)
 
 
 ## 상황: `_draw()`가 우측 HUD에 다음 피스 미리보기를 표시할 때 호출한다.
@@ -379,11 +631,15 @@ func _draw_meditation_effect() -> void:
 ## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
 func _draw_character_card() -> void:
 	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
-	draw_texture_rect_region(CHARACTER_TEXTURE, portrait_rect, CHARACTER_SOURCE_RECT)
+	draw_texture_rect_region(
+		MainCharacterAnimationData.texture_for(MainCharacterAnimationData.IDLE, character.character_id),
+		portrait_rect,
+		CHARACTER_SOURCE_RECT
+	)
 	draw_string(
 		_system_font,
 		Vector2(662.0, 538.0),
-		"KUNG FU FIGHTER",
+		character.character_display_name(),
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0,
 		16,
@@ -417,8 +673,8 @@ func _draw_character_bars() -> void:
 		CYAN
 	)
 	_draw_bar(
-		PUNCH_BAR_RECT,
-		character.charge_ratio(),
+		SPECIAL_BAR_RECT,
+		1.0 - character.special_cooldown_ratio(),
 		ORANGE
 	)
 	_draw_bar(
@@ -499,7 +755,7 @@ func _refresh() -> void:
 	var life_icons: String = "♥".repeat(character.lives) + "♡".repeat( # 남은/잃은 생명을 한 문자열로 표현.
 		MainCharacterController.MAX_LIVES - character.lives
 	)
-	var cooldown_text: String = ( # 회전 킥이 가능하면 "준비", 아니면 남은 초.
+	var cooldown_text: String = ( # 블록 플립이 가능하면 "준비", 아니면 남은 초.
 		"준비"
 		if character.rotation_cooldown_remaining <= 0.0
 		else "%.1f초" % character.rotation_cooldown_remaining
@@ -508,8 +764,13 @@ func _refresh() -> void:
 	_stamina_label.text = "스태미나                         %03d / 100" % roundi(
 		character.stamina
 	)
-	_punch_label.text = "펀치 단계        %d / 3" % character.charge_level()
-	_rotation_label.text = "회전 킥                              %s" % cooldown_text
+	var special_text: String = (
+		"준비"
+		if character.special_cooldown_remaining <= 0.0
+		else "%.1f초" % character.special_cooldown_remaining
+	)
+	_punch_label.text = "%s (V)                 %s" % [character.special_display_name(), special_text]
+	_rotation_label.text = "블록 플립                             %s" % cooldown_text
 	var self_respawn_ratio: float = character.self_respawn_hold_ratio()
 	_self_respawn_panel.visible = self_respawn_ratio > 0.0
 	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio

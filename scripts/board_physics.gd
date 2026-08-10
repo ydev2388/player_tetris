@@ -113,10 +113,7 @@ func _sync_active_piece() -> void:
 	if controller.state == MainGameController.GameState.GAME_OVER:
 		return
 
-	for cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
+	for cell: Vector2i in controller.active_local_cells():
 		_add_box_shape(
 			active_body,
 			(Vector2(cell) + Vector2.ONE * 0.5) * CELL_SIZE,

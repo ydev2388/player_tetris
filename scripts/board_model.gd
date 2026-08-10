@@ -41,7 +41,12 @@ func reset() -> void:
 ## 순서: 각 로컬 셀마다 origin을 더함 → 경계 검사 → 기존 셀 점유 검사 → 실패 즉시 false.
 ## 결과: 네 칸이 모두 보드 안의 EMPTY일 때만 true이며 보드는 변경하지 않는다.
 func can_place(piece_type: int, rotation: int, origin: Vector2i) -> bool:
-	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
+	return can_place_cells(MainTetrominoData.get_cells(piece_type, rotation), origin)
+
+
+## 임의의 활성 셀 배열을 보드 원점에 배치할 수 있는지 검사한다.
+func can_place_cells(local_cells: Array[Vector2i], origin: Vector2i) -> bool:
+	for local_cell: Vector2i in local_cells:
 		var board_cell: Vector2i = origin + local_cell # 피스 로컬 좌표를 보드 절대 셀로 변환한 값.
 		if not is_inside(board_cell):
 			return false
@@ -54,8 +59,13 @@ func can_place(piece_type: int, rotation: int, origin: Vector2i) -> bool:
 ## 순서: distance=0 → 한 칸 더 아래 후보를 `can_place()` → 가능할 동안 1씩 증가.
 ## 결과: 현재 origin에서 충돌 직전까지 내려갈 수 있는 정수 셀 수를 반환한다.
 func get_drop_distance(piece_type: int, rotation: int, origin: Vector2i) -> int:
+	return get_drop_distance_cells(MainTetrominoData.get_cells(piece_type, rotation), origin)
+
+
+## 임의의 활성 셀 배열이 충돌 전까지 내려갈 수 있는 거리를 반환한다.
+func get_drop_distance_cells(local_cells: Array[Vector2i], origin: Vector2i) -> int:
 	var distance: int = 0 # 현재 위치에서 안전하게 추가 낙하할 수 있다고 확인된 셀 수.
-	while can_place(piece_type, rotation, origin + Vector2i(0, distance + 1)):
+	while can_place_cells(local_cells, origin + Vector2i(0, distance + 1)):
 		distance += 1
 	return distance
 
@@ -64,7 +74,12 @@ func get_drop_distance(piece_type: int, rotation: int, origin: Vector2i) -> int:
 ## 순서: 로컬 네 칸 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
 ## 결과: 해당 cells가 EMPTY에서 타입 정수로 바뀐다. 줄 삭제는 이 함수가 하지 않는다.
 func lock_piece(piece_type: int, rotation: int, origin: Vector2i) -> void:
-	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
+	lock_cells(piece_type, MainTetrominoData.get_cells(piece_type, rotation), origin)
+
+
+## 팬 토스로 일부 셀이 분리된 활성 도형을 현재 셀 배열 그대로 고정한다.
+func lock_cells(piece_type: int, local_cells: Array[Vector2i], origin: Vector2i) -> void:
+	for local_cell: Vector2i in local_cells:
 		var board_cell: Vector2i = origin + local_cell # 실제 cells[y][x]에 기록할 절대 셀.
 		if is_inside(board_cell):
 			cells[board_cell.y][board_cell.x] = piece_type
@@ -117,6 +132,34 @@ func get_cell(cell: Vector2i) -> int:
 	if not is_inside(cell):
 		return EMPTY
 	return cells[cell.y][cell.x]
+
+
+## 고정 블록 하나를 인접한 빈 셀로 옮긴다. 특수 스킬용 원자적 모델 연산이다.
+func move_cell(from_cell: Vector2i, to_cell: Vector2i) -> bool:
+	if not is_inside(from_cell) or not is_inside(to_cell):
+		return false
+	if cells[from_cell.y][from_cell.x] == EMPTY or cells[to_cell.y][to_cell.x] != EMPTY:
+		return false
+	var piece_type: int = cells[from_cell.y][from_cell.x]
+	cells[from_cell.y][from_cell.x] = EMPTY
+	cells[to_cell.y][to_cell.x] = piece_type
+	return true
+
+
+## 고정 블록 한 칸을 제거한다. 범위 밖이나 빈 셀은 false다.
+func remove_cell(cell: Vector2i) -> bool:
+	if not is_inside(cell) or cells[cell.y][cell.x] == EMPTY:
+		return false
+	cells[cell.y][cell.x] = EMPTY
+	return true
+
+
+## 비어 있는 보드 셀 하나를 지정한 테트로미노 타입으로 고정한다.
+func place_cell(cell: Vector2i, piece_type: int) -> bool:
+	if not is_inside(cell) or cells[cell.y][cell.x] != EMPTY:
+		return false
+	cells[cell.y][cell.x] = piece_type
+	return true
 
 
 ## 상황: `clear_full_lines()`가 행 하나의 삭제 여부를 판단할 때 호출한다.

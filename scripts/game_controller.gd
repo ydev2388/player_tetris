@@ -25,8 +25,13 @@ enum GameState {
 	GAME_OVER,
 }
 
+const SHURIKEN_CONTACT_NONE: StringName = &"none"
+const SHURIKEN_CONTACT_ACTIVE: StringName = &"active"
+const SHURIKEN_CONTACT_FIXED: StringName = &"fixed"
+
 # 게임 진행 규칙과 시간 상수.
 const SPAWN_Y: int = 1 # 새 피스 원점의 숨은 보드 행 y.
+const SPAWN_SIDE_MARGIN_CELLS: int = 1 # 우선 spawn에서 실제 점유 셀과 좌우 벽 사이에 비울 칸 수.
 const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 게임 시간(초).
 const MAX_LOCK_RESETS: int = 15 # 이동/회전으로 lock delay를 초기화할 수 있는 최대 횟수.
 const MEDITATION_TIME_SCALE: float = 2.0 # 명상 중 테트리스 중력/lock 시간 배율.
@@ -62,11 +67,19 @@ var board: MainBoardModel = MainBoardModel.new() # 고정 셀을 소유하는 �
 var bag: MainPieceBag # 아직 나오지 않은 7-bag 피스 순서를 소유한다.
 var state: GameState = GameState.PLAYING # 입력/시간 진행 허용 여부를 결정한다.
 var meditation_active: bool = false # true면 테트리스 시간만 2배로 진행된다.
+var fall_freeze_remaining: float = 0.0 # 시계공 특수 스킬로 피스 입력·낙하·고정을 멈추는 시간.
 
 var active_type: int = MainTetrominoData.Type.T # 현재 낙하 중인 Type enum 정수.
 var active_rotation: int = 0 # 활성 피스 회전 상태 0/1/2/3 = 0/90/180/270도.
 var active_origin: Vector2i = Vector2i(3, SPAWN_Y) # 로컬 셀을 더할 보드 원점.
+var active_cell_indices: Array[int] = [0, 1, 2, 3] # 팬 토스 뒤에도 원래 회전 중심을 보존하는 셀 식별자.
 var next_type: int = MainTetrominoData.Type.I # 다음 spawn의 타입.
+
+var transient_blocker_cells: Array[Vector2i] = [] # 방패병 보호벽처럼 고정시키지 않는 임시 충돌 셀.
+var water_path_cells: Array[Vector2i] = [] # 소방관 물길이 차지하는 빈 표면 셀.
+var water_path_direction: int = 0
+var water_path_serial: int = 0
+var _water_triggered_serial: int = -1
 
 var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
 var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
@@ -101,6 +114,10 @@ func _physics_process(delta: float) -> void:
 
 	if state != GameState.PLAYING:
 		return
+	if fall_freeze_remaining > 0.0:
+		fall_freeze_remaining = maxf(0.0, fall_freeze_remaining - delta)
+		game_changed.emit()
+		return
 
 	var effective_delta: float = ( # 명상 배율을 적용해 테트리스 규칙에만 사용할 시간.
 		delta * MEDITATION_TIME_SCALE if meditation_active else delta
@@ -118,9 +135,10 @@ func _advance_gravity(effective_delta: float) -> void:
 	var interval: float = gravity_interval() # 현재 level에서 한 셀 내려가는 데 필요한 초.
 	while _fall_accumulator >= interval:
 		_fall_accumulator -= interval
-		if board.can_place(active_type, active_rotation, active_origin + Vector2i.DOWN):
+		if can_place_active(active_origin + Vector2i.DOWN):
 			var previous_origin: Vector2i = active_origin
 			active_origin += Vector2i.DOWN
+			_apply_water_slide_if_needed()
 			game_changed.emit()
 			active_piece_descended.emit(previous_origin, active_origin)
 		else:
@@ -158,6 +176,8 @@ func reset_game(seed_value: int = -1) -> void:
 	total_lines = 0
 	state = GameState.PLAYING
 	meditation_active = false
+	fall_freeze_remaining = 0.0
+	clear_skill_effects()
 	_reset_piece_timers()
 	next_type = bag.next_piece()
 	spawn_next_piece()
@@ -173,6 +193,8 @@ func spawn_next_piece() -> bool:
 	active_type = next_type
 	next_type = bag.next_piece()
 	active_rotation = 0
+	active_cell_indices = [0, 1, 2, 3]
+	_water_triggered_serial = -1
 	_reset_piece_timers()
 
 	var spawn_origin: Variant = _choose_random_spawn_origin(active_type) # Vector2i 또는 불가를 뜻하는 null.
@@ -192,11 +214,337 @@ func set_meditation_active(active: bool) -> void:
 	meditation_active = active and state == GameState.PLAYING
 
 
-## 상황: 새 피스의 무작위 spawn x 후보 집합을 계산할 때 호출한다.
+## 시계공의 정지 태엽. 지속 중에는 활성 피스의 입력·낙하·고정 시간이 모두 멈춘다.
+func freeze_falling_blocks(seconds: float) -> bool:
+	if state != GameState.PLAYING or seconds <= 0.0:
+		return false
+	fall_freeze_remaining = maxf(fall_freeze_remaining, seconds)
+	game_changed.emit()
+	return true
+
+
+func clear_fall_freeze() -> void:
+	if fall_freeze_remaining <= 0.0:
+		return
+	fall_freeze_remaining = 0.0
+	game_changed.emit()
+
+
+## 현재 회전 상태에서 팬 토스로 남아 있는 셀만 반환한다.
+func active_local_cells(rotation: int = -1) -> Array[Vector2i]:
+	var resolved_rotation: int = active_rotation if rotation < 0 else rotation
+	var all_cells: Array[Vector2i] = MainTetrominoData.get_cells(active_type, resolved_rotation)
+	var result: Array[Vector2i] = []
+	for index: int in active_cell_indices:
+		if index >= 0 and index < all_cells.size():
+			result.append(all_cells[index])
+	return result
+
+
+func active_board_cells(origin: Vector2i = active_origin, rotation: int = -1) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for local_cell: Vector2i in active_local_cells(rotation):
+		result.append(origin + local_cell)
+	return result
+
+
+func can_place_active(
+	origin: Vector2i,
+	rotation: int = -1,
+	include_transient_blockers: bool = true
+) -> bool:
+	var local_cells: Array[Vector2i] = active_local_cells(rotation)
+	if not board.can_place_cells(local_cells, origin):
+		return false
+	if include_transient_blockers:
+		for local_cell: Vector2i in local_cells:
+			if origin + local_cell in transient_blocker_cells:
+				return false
+	return true
+
+
+func set_transient_blockers(cells: Array[Vector2i]) -> void:
+	transient_blocker_cells = cells.duplicate()
+	game_changed.emit()
+
+
+func clear_transient_blockers() -> void:
+	if transient_blocker_cells.is_empty():
+		return
+	transient_blocker_cells.clear()
+	game_changed.emit()
+
+
+func clear_skill_effects() -> void:
+	fall_freeze_remaining = 0.0
+	transient_blocker_cells.clear()
+	water_path_cells.clear()
+	water_path_direction = 0
+	water_path_serial += 1
+	_water_triggered_serial = -1
+
+
+## 소방관의 물길을 고정 블록과 바닥만 기준으로 계산한다.
+func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 4) -> bool:
+	water_path_cells.clear()
+	water_path_direction = signi(direction)
+	water_path_serial += 1
+	_water_triggered_serial = -1
+	if state != GameState.PLAYING or water_path_direction == 0 or maximum_steps < 1:
+		game_changed.emit()
+		return false
+
+	var cursor: Vector2i = start_cell
+	for _step: int in range(maximum_steps):
+		if cursor.x < 0 or cursor.x >= MainBoardModel.WIDTH:
+			break
+		cursor.y = clampi(cursor.y, 0, MainBoardModel.HEIGHT - 1)
+		while cursor.y < MainBoardModel.HEIGHT - 1:
+			var below := cursor + Vector2i.DOWN
+			if board.get_cell(below) != MainBoardModel.EMPTY:
+				break
+			cursor = below
+		if board.get_cell(cursor) != MainBoardModel.EMPTY:
+			break
+		if cursor not in water_path_cells:
+			water_path_cells.append(cursor)
+		var next := cursor + Vector2i(water_path_direction, 0)
+		if next.x < 0 or next.x >= MainBoardModel.WIDTH:
+			break
+		if board.get_cell(next) != MainBoardModel.EMPTY:
+			break
+		cursor = next
+	_apply_water_slide_if_needed()
+	game_changed.emit()
+	return not water_path_cells.is_empty()
+
+
+func clear_water_path() -> void:
+	if water_path_cells.is_empty():
+		return
+	water_path_cells.clear()
+	water_path_direction = 0
+	water_path_serial += 1
+	_water_triggered_serial = -1
+	game_changed.emit()
+
+
+func _apply_water_slide_if_needed() -> void:
+	if water_path_cells.is_empty() or _water_triggered_serial == water_path_serial:
+		return
+	var touches_water: bool = false
+	for cell: Vector2i in active_board_cells():
+		if cell in water_path_cells:
+			touches_water = true
+			break
+	if not touches_water:
+		return
+	_water_triggered_serial = water_path_serial
+	var was_grounded: bool = is_grounded()
+	for distance: int in range(2, 0, -1):
+		var target := active_origin + Vector2i(water_path_direction * distance, 0)
+		if can_place_active(target):
+			active_origin = target
+			_reset_lock_after_transform(was_grounded)
+			break
+	game_changed.emit()
+
+
+## 전방 한 칸의 활성 도형 또는 고정 블록을 가능한 거리만큼 민다.
+func push_front_target(
+	target_cell: Vector2i,
+	direction: int,
+	maximum_distance: int,
+	require_exposed_fixed: bool = false
+) -> int:
+	if state != GameState.PLAYING or direction == 0 or maximum_distance < 1:
+		return 0
+	var step_x: int = signi(direction)
+	if target_cell in active_board_cells():
+		var was_grounded: bool = is_grounded()
+		var moved_active: int = 0
+		for distance: int in range(1, maximum_distance + 1):
+			if not can_place_active(active_origin + Vector2i(step_x * distance, 0)):
+				break
+			moved_active = distance
+		if moved_active > 0:
+			active_origin += Vector2i(step_x * moved_active, 0)
+			_reset_lock_after_transform(was_grounded)
+			game_changed.emit()
+		return moved_active
+
+	if board.get_cell(target_cell) == MainBoardModel.EMPTY:
+		return 0
+	var above := target_cell + Vector2i.UP
+	if (
+		require_exposed_fixed
+		and board.is_inside(above)
+		and board.get_cell(above) != MainBoardModel.EMPTY
+	):
+		return 0
+	var current: Vector2i = target_cell
+	var moved_fixed: int = 0
+	for _distance: int in range(maximum_distance):
+		var destination := current + Vector2i(step_x, 0)
+		if destination in active_board_cells() or not board.move_cell(current, destination):
+			break
+		current = destination
+		moved_fixed += 1
+	if moved_fixed > 0:
+		game_changed.emit()
+	return moved_fixed
+
+
+## 캐릭터 발밑을 중심으로 노출된 고정 블록을 최대 세 칸 제거한다.
+func clean_exposed_cells(center_below: Vector2i) -> int:
+	if state != GameState.PLAYING:
+		return 0
+	var removed: int = 0
+	for x_offset: int in range(-1, 2):
+		var cell := center_below + Vector2i(x_offset, 0)
+		if not board.is_inside(cell) or board.get_cell(cell) == MainBoardModel.EMPTY:
+			continue
+		var above := cell + Vector2i.UP
+		if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
+			continue
+		if board.remove_cell(cell):
+			removed += 1
+	if removed > 0:
+		game_changed.emit()
+	return removed
+
+
+## 요리사의 대각선 팬 토스. 활성 미노는 분리해 즉시 고정하고 고정 블록은 이동한다.
+func pan_toss(target_cell: Vector2i, direction: Vector2i) -> bool:
+	if state != GameState.PLAYING or absi(direction.x) != 1 or absi(direction.y) != 1:
+		return false
+	var destination := target_cell + direction
+	var horizontal := target_cell + Vector2i(direction.x, 0)
+	var vertical := target_cell + Vector2i(0, direction.y)
+	for path_cell: Vector2i in [destination, horizontal, vertical]:
+		if not board.is_inside(path_cell) or board.get_cell(path_cell) != MainBoardModel.EMPTY:
+			return false
+		if path_cell in active_board_cells() and path_cell != target_cell:
+			return false
+
+	var active_cells: Array[Vector2i] = active_board_cells()
+	var active_index: int = active_cells.find(target_cell)
+	if active_index >= 0:
+		if active_cell_indices.size() <= 1:
+			return false
+		var removed_index: int = active_cell_indices[active_index]
+		if not board.place_cell(destination, active_type):
+			return false
+		active_cell_indices.erase(removed_index)
+		_resolve_immediate_line_clear()
+		_resolve_active_overlap_upward()
+		game_changed.emit()
+		return true
+
+	if board.get_cell(target_cell) == MainBoardModel.EMPTY:
+		return false
+	var above := target_cell + Vector2i.UP
+	if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
+		return false
+	if not board.move_cell(target_cell, destination):
+		return false
+	_resolve_immediate_line_clear()
+	game_changed.emit()
+	return true
+
+
+func _resolve_immediate_line_clear() -> void:
+	var cleared: int = board.clear_full_lines()
+	if cleared <= 0:
+		return
+	_apply_line_clear_rewards(cleared)
+
+
+func _resolve_active_overlap_upward() -> void:
+	if can_place_active(active_origin, active_rotation, false):
+		return
+	for offset: int in range(1, MainBoardModel.HEIGHT + 1):
+		var candidate := active_origin + Vector2i.UP * offset
+		if can_place_active(candidate, active_rotation, false):
+			active_origin = candidate
+			return
+	end_game()
+
+
+## 청소부의 대청소. 화면 하단 세 줄에서 위 블록을 받치지 않는 고정 블록을 제거한다.
+func clean_bottom_exposed_blocks(maximum_count: int = 3) -> int:
+	if state != GameState.PLAYING or maximum_count <= 0:
+		return 0
+	var removed: int = 0
+	var first_row: int = MainBoardModel.HEIGHT - 3
+	for y: int in range(MainBoardModel.HEIGHT - 1, first_row - 1, -1):
+		for x: int in range(MainBoardModel.WIDTH):
+			var cell := Vector2i(x, y)
+			if board.get_cell(cell) == MainBoardModel.EMPTY:
+				continue
+			var above := cell + Vector2i.UP
+			if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
+				continue
+			if board.remove_cell(cell):
+				removed += 1
+				if removed >= maximum_count:
+					game_changed.emit()
+					return removed
+	if removed > 0:
+		game_changed.emit()
+	return removed
+
+
+## 닌자의 표창. 고정 블록에 막히며 같은 행의 활성 피스만 정확히 한 칸 민다.
+func throw_shuriken_at_active_piece(
+	start_cell: Vector2i,
+	direction: int,
+	reach: int = 6,
+	forbidden_cells: Array[Vector2i] = []
+) -> Dictionary:
+	var result: Dictionary = {
+		"success": false,
+		"contact": SHURIKEN_CONTACT_NONE,
+		"travel_cells": 0,
+		"impact_cell": start_cell,
+		"direction": signi(direction),
+	}
+	if state != GameState.PLAYING or direction == 0 or reach < 1:
+		return result
+	var step_x: int = signi(direction)
+	var active_cells: Array[Vector2i] = active_board_cells()
+	var last_inside_cell: Vector2i = start_cell
+	for distance: int in range(1, reach + 1):
+		var target := start_cell + Vector2i(step_x * distance, 0)
+		if not board.is_inside(target):
+			result["travel_cells"] = distance - 1
+			result["impact_cell"] = last_inside_cell
+			return result
+		last_inside_cell = target
+		if board.get_cell(target) != MainBoardModel.EMPTY:
+			result["contact"] = SHURIKEN_CONTACT_FIXED
+			result["travel_cells"] = distance
+			result["impact_cell"] = target
+			return result
+		if target in active_cells:
+			result["contact"] = SHURIKEN_CONTACT_ACTIVE
+			result["travel_cells"] = distance
+			result["impact_cell"] = target
+			result["success"] = push_active_piece(step_x, 1, forbidden_cells)
+			return result
+	result["travel_cells"] = reach
+	result["impact_cell"] = last_inside_cell
+	return result
+
+
+## 상황: 새 피스의 무작위 spawn x 후보 집합을 지정한 좌우 여백으로 계산할 때 호출한다.
 ## 순서: 기본 모양 조회 → 빈 모양 조기 반환 → local min/max x 계산
-##       → 보드 안 원점 x 순회 → `can_place()` 가능한 원점만 append.
-## 결과: 현재 보드에서 실제 배치 가능한 Vector2i 후보 배열을 반환한다.
-func _valid_spawn_origins(piece_type: int) -> Array[Vector2i]:
+##       → 실제 점유 셀이 여백 안쪽에 드는 원점 x 순회 → `can_place()` 후보만 append.
+## 결과: 원점이 아니라 네 실제 셀을 기준으로 여백과 기존 블록 충돌을 모두 만족한 후보를 반환한다.
+func _valid_spawn_origins(
+	piece_type: int,
+	side_margin_cells: int = SPAWN_SIDE_MARGIN_CELLS
+) -> Array[Vector2i]:
 	var cells: Array[Vector2i] = MainTetrominoData.get_cells(piece_type, 0) # 회전 0의 로컬 셀.
 	var candidates: Array[Vector2i] = [] # 실제 배치 가능한 spawn 원점 목록.
 	if cells.is_empty():
@@ -208,18 +556,29 @@ func _valid_spawn_origins(piece_type: int) -> Array[Vector2i]:
 		minimum_x = mini(minimum_x, cell.x)
 		maximum_x = maxi(maximum_x, cell.x)
 
-	for origin_x: int in range(1 - minimum_x, MainBoardModel.WIDTH - 1 - maximum_x):
-		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 양쪽 경계 한 열을 비운 spawn 원점.
+	var safe_margin: int = maxi(0, side_margin_cells) # 음수 입력은 벽 밖 허용이 아니라 여백 0으로 취급한다.
+	var first_origin_x: int = safe_margin - minimum_x # 가장 왼쪽 실제 셀이 margin 열에서 시작하는 원점.
+	var end_origin_x: int = ( # range 상한은 exclusive이므로 오른쪽 여백 직전 다음 원점을 사용한다.
+		MainBoardModel.WIDTH - safe_margin - maximum_x
+	)
+	for origin_x: int in range(first_origin_x, end_origin_x):
+		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 현재 검사 중인 spawn 원점.
 		if board.can_place(piece_type, 0, origin):
 			candidates.append(origin)
 	return candidates
 
 
 ## 상황: `spawn_next_piece()`가 후보 중 실제 spawn 한 곳을 정할 때 호출한다.
-## 순서: 유효 후보 계산 → 빈 배열이면 null → 아니면 균등 random index 조회.
-## 결과: Vector2i 하나 또는 배치 불가능을 뜻하는 null Variant를 반환한다.
+## 순서: 한 칸 여백 후보 계산 → 있으면 그 집합 사용 → 없으면 여백 0 후보로 fallback
+##       → fallback도 비면 null → 아니면 선택된 집합에서 균등 random index 조회.
+## 결과: 평소에는 벽과 한 칸 떨어진 원점, 중앙이 막히면 벽 옆 예외 원점, 전부 막히면 null을 반환한다.
 func _choose_random_spawn_origin(piece_type: int) -> Variant:
-	var candidates: Array[Vector2i] = _valid_spawn_origins(piece_type) # 가능한 모든 원점.
+	var candidates: Array[Vector2i] = _valid_spawn_origins( # 벽과 한 칸 떨어진 우선 후보.
+		piece_type,
+		SPAWN_SIDE_MARGIN_CELLS
+	)
+	if candidates.is_empty():
+		candidates = _valid_spawn_origins(piece_type, 0) # 조기 game over를 막는 벽 옆 예외 후보.
 	if candidates.is_empty():
 		return null
 	var index: int = _spawn_random.randi_range(0, candidates.size() - 1) # 선택된 후보 index.
@@ -230,14 +589,26 @@ func _choose_random_spawn_origin(piece_type: int) -> Variant:
 ## 순서: 입력/state 검사 → 방향 ±1 정규화 → 모든 중간 위치 검증
 ##       → 이동 전 접지 저장 → origin 이동 → lock delay 조정 → emit.
 ## 결과: 전 경로가 비었을 때만 원자적으로 이동해 true, 막히면 변화 없이 false다.
-func push_active_piece(direction: int, distance: int) -> bool:
+func push_active_piece(
+	direction: int,
+	distance: int,
+	forbidden_cells: Array[Vector2i] = []
+) -> bool:
 	if state != GameState.PLAYING or direction == 0 or distance < 1:
 		return false
 
 	var normalized_direction: int = signi(direction) # 왼쪽 -1 또는 오른쪽 +1.
 	for step: int in range(1, distance + 1):
 		var target: Vector2i = active_origin + Vector2i(normalized_direction * step, 0) # 중간 후보.
-		if not board.can_place(active_type, active_rotation, target):
+		if (
+			not can_place_active(target)
+			or _piece_overlaps_forbidden_cells(
+				active_type,
+				active_rotation,
+				target,
+				forbidden_cells
+			)
+		):
 			return false
 
 	var was_grounded: bool = is_grounded() # 이동 전 접지 상태 snapshot.
@@ -247,7 +618,7 @@ func push_active_piece(direction: int, distance: int) -> bool:
 	return true
 
 
-## 상황: 캐릭터 회전 킥이 활성 피스를 시계/반시계 방향으로 돌릴 때 호출한다.
+## 상황: 캐릭터 블록 플립이 활성 피스를 시계/반시계 방향으로 돌릴 때 호출한다.
 ## 순서: state/O 검사 → 새 회전/SRS key 계산 → kick 표 선택
 ##       → 후보를 순서대로 can_place/금지 셀 검사 → 최초 성공 적용/timer reset/emit.
 ## 결과: 보드와 캐릭터 점유 셀을 모두 피하는 보정 위치가 있으면 true, 모두 막히면 false다.
@@ -279,7 +650,7 @@ func try_rotate(
 	for kick_variant: Variant in kick_tests:
 		var kick: Vector2i = kick_variant # Variant 원소를 명시형 좌표로 변환.
 		var target: Vector2i = active_origin + kick # 이번 offset을 적용한 원점.
-		if not board.can_place(active_type, new_rotation, target):
+		if not can_place_active(target, new_rotation):
 			continue
 		if _piece_overlaps_forbidden_cells(
 			active_type,
@@ -306,7 +677,12 @@ func _piece_overlaps_forbidden_cells(
 ) -> bool:
 	if forbidden_cells.is_empty():
 		return false
-	for local_cell: Vector2i in MainTetrominoData.get_cells(piece_type, rotation):
+	var cells: Array[Vector2i] = (
+		active_local_cells(rotation)
+		if piece_type == active_type
+		else MainTetrominoData.get_cells(piece_type, rotation)
+	)
+	for local_cell: Vector2i in cells:
 		if origin + local_cell in forbidden_cells:
 			return true
 	return false
@@ -320,18 +696,24 @@ func lock_active_piece() -> void:
 	if state != GameState.PLAYING:
 		return
 
-	board.lock_piece(active_type, active_rotation, active_origin)
+	board.lock_cells(active_type, active_local_cells(), active_origin)
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
-		score += line_clear_score(cleared, level)
-		total_lines += cleared
-		level = level_for_lines(total_lines)
-		lines_cleared.emit()
+		_apply_line_clear_rewards(cleared)
 
 	if board.has_blocks_in_hidden_rows():
 		end_game()
 		return
 	spawn_next_piece()
+
+
+func _apply_line_clear_rewards(cleared: int) -> void:
+	if cleared <= 0:
+		return
+	score += line_clear_score(cleared, level)
+	total_lines += cleared
+	level = level_for_lines(total_lines)
+	lines_cleared.emit()
 
 
 ## 상황: P/Esc 입력 또는 테스트가 일시정지 상태를 전환할 때 호출한다.
@@ -359,14 +741,14 @@ func end_game() -> void:
 ## 순서: 현재 원점보다 y+1 위치를 `board.can_place()`로 검사하고 논리 부정한다.
 ## 결과: 한 칸 아래로 이동할 수 없으면 true이며 상태는 바꾸지 않는다.
 func is_grounded() -> bool:
-	return not board.can_place(active_type, active_rotation, active_origin + Vector2i.DOWN)
+	return not can_place_active(active_origin + Vector2i.DOWN, active_rotation, false)
 
 
 ## 상황: GameView가 활성 피스의 예상 착지 고스트를 그릴 때 호출한다.
 ## 순서: drop distance 조회 → 현재 원점에 `(0,distance)` 합산.
 ## 결과: 실제 피스를 움직이지 않고 예상 착지 원점을 반환한다.
 func ghost_origin() -> Vector2i:
-	var distance: int = board.get_drop_distance(active_type, active_rotation, active_origin) # 남은 셀 수.
+	var distance: int = board.get_drop_distance_cells(active_local_cells(), active_origin) # 남은 셀 수.
 	return active_origin + Vector2i(0, distance)
 
 

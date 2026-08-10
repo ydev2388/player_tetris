@@ -333,6 +333,13 @@ func _expect(condition: bool, description: String) -> void:
 func _test_sprite_atlas_contracts() -> void:
 	var profiles_match_selection: bool = ANIMATION_DATA.PROFILES.size() == CHARACTER_DATA.CHARACTER_ORDER.size()
 	var character_frames_valid: bool = true
+	var body_frames_are_connected: bool = true
+	var body_only_states: Array[String] = [
+		ANIMATION_DATA.IDLE,
+		ANIMATION_DATA.HANG,
+		ANIMATION_DATA.JUMP,
+		ANIMATION_DATA.ROTATION_KICK,
+	]
 	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		profiles_match_selection = profiles_match_selection and ANIMATION_DATA.has_character(character_id)
 		var texture: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, character_id)
@@ -362,6 +369,11 @@ func _test_sprite_atlas_contracts() -> void:
 					and frame_region.encloses(visible_region)
 					and _image_region_has_alpha(image, visible_region)
 				)
+				if state in body_only_states:
+					body_frames_are_connected = (
+						body_frames_are_connected
+						and _image_region_alpha_component_count(image, frame_region) == 1
+					)
 
 	_expect(
 		profiles_match_selection,
@@ -370,6 +382,10 @@ func _test_sprite_atlas_contracts() -> void:
 	_expect(
 		character_frames_valid,
 		"모든 캐릭터 atlas의 사용 frame이 규격 안에 있고 불투명 픽셀을 가진다."
+	)
+	_expect(
+		body_frames_are_connected,
+		"모든 캐릭터의 idle·hang·jump·rotation kick frame에는 분리된 부유 픽셀이 없다."
 	)
 
 	var effect_specs: Array = [
@@ -521,6 +537,45 @@ func _image_region_has_alpha(image: Image, region: Rect2) -> bool:
 			if image.get_pixel(pixel_x, pixel_y).a >= ANIMATION_DATA.FRAME_ALPHA_THRESHOLD:
 				return true
 	return false
+
+
+func _image_region_alpha_component_count(image: Image, region: Rect2) -> int:
+	var width: int = int(region.size.x)
+	var height: int = int(region.size.y)
+	var origin := Vector2i(int(region.position.x), int(region.position.y))
+	var visited := PackedByteArray()
+	visited.resize(width * height)
+	var component_count: int = 0
+	var neighbors: Array[Vector2i] = [
+		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+		Vector2i(-1, 0), Vector2i(1, 0),
+		Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1),
+	]
+	for local_y: int in range(height):
+		for local_x: int in range(width):
+			var index: int = local_y * width + local_x
+			if visited[index] != 0:
+				continue
+			visited[index] = 1
+			if image.get_pixelv(origin + Vector2i(local_x, local_y)).a <= 0.0:
+				continue
+			component_count += 1
+			var queue: Array[Vector2i] = [Vector2i(local_x, local_y)]
+			var cursor: int = 0
+			while cursor < queue.size():
+				var point: Vector2i = queue[cursor]
+				cursor += 1
+				for offset: Vector2i in neighbors:
+					var next: Vector2i = point + offset
+					if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
+						continue
+					var next_index: int = next.y * width + next.x
+					if visited[next_index] != 0:
+						continue
+					visited[next_index] = 1
+					if image.get_pixelv(origin + next).a > 0.0:
+						queue.append(next)
+	return component_count
 
 
 func _test_release_punch() -> void:

@@ -1579,7 +1579,11 @@ func _build_character_screen() -> void:
 			MainCharacterAnimationData.IDLE,
 			character_id
 		)
-		portrait_texture.region = PORTRAIT_SOURCE
+		portrait_texture.region = MainCharacterAnimationData.visible_region_for(
+			MainCharacterAnimationData.IDLE,
+			0.0,
+			character_id
+		)
 		var portrait := TextureRect.new()
 		portrait.position = Vector2(47.0, 12.0)
 		portrait.size = Vector2(176.0, 158.0)

@@ -92,7 +92,6 @@ const BOSS_FRAME_INTERVAL: float = 0.18
 const BOSS_THORN_FRAME_INTERVAL: float = 0.1
 const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
 const HEART_DISPLAY_SIZE: Vector2 = Vector2(16.0, 16.0)
-const CHARACTER_SOURCE_RECT: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0) # idle 0 frame.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
@@ -653,11 +652,28 @@ func _draw_meditation_effect() -> void:
 ## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
 ## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
 func _draw_character_card() -> void:
-	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
+	var source_region: Rect2 = MainCharacterAnimationData.visible_region_for(
+		MainCharacterAnimationData.IDLE,
+		0.0,
+		character.character_id
+	)
+	var portrait_bounds: Rect2 = Rect2(Vector2(690.0, 552.0), Vector2(120.0, 164.0))
+	var portrait_scale: float = minf(
+		portrait_bounds.size.x / source_region.size.x,
+		portrait_bounds.size.y / source_region.size.y
+	)
+	var portrait_size: Vector2 = source_region.size * portrait_scale
+	var portrait_rect: Rect2 = Rect2(
+		Vector2(
+			portrait_bounds.position.x + (portrait_bounds.size.x - portrait_size.x) * 0.5,
+			portrait_bounds.end.y - portrait_size.y
+		),
+		portrait_size
+	)
 	draw_texture_rect_region(
 		MainCharacterAnimationData.texture_for(MainCharacterAnimationData.IDLE, character.character_id),
 		portrait_rect,
-		CHARACTER_SOURCE_RECT
+		source_region
 	)
 	draw_string(
 		_system_font,

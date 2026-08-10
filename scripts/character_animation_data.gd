@@ -15,6 +15,8 @@ const SPECIAL: String = "special"
 const DEFAULT_CHARACTER_ID: String = "normal"
 const FRAME_SIZE: float = 128.0
 const FRAME_DISPLAY_SIZE: Vector2 = Vector2(FRAME_SIZE, FRAME_SIZE)
+const FRAME_ALPHA_THRESHOLD: float = 0.5
+static var _visible_region_cache: Dictionary = {}
 const VISIBLE_HEIGHTS: Dictionary = {
 	IDLE: 96.0,
 	ATTACK: 96.0,
@@ -219,3 +221,47 @@ static func region_for(
 	else:
 		frame_index = mini(frame_index, frames.size() - 1)
 	return frames[frame_index]
+
+
+static func visible_region_for(
+	state: String,
+	elapsed: float,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> Rect2:
+	var frame_region: Rect2 = region_for(state, elapsed, character_id)
+	var texture: Texture2D = texture_for(state, character_id)
+	var cache_key: String = "%s:%d:%d:%d:%d" % [
+		texture.resource_path,
+		int(frame_region.position.x),
+		int(frame_region.position.y),
+		int(frame_region.size.x),
+		int(frame_region.size.y),
+	]
+	if _visible_region_cache.has(cache_key):
+		return _visible_region_cache[cache_key] as Rect2
+
+	var image: Image = texture.get_image()
+
+	var min_x: int = int(frame_region.size.x)
+	var min_y: int = int(frame_region.size.y)
+	var max_x: int = -1
+	var max_y: int = -1
+	var source_left: int = int(frame_region.position.x)
+	var source_top: int = int(frame_region.position.y)
+	for pixel_y: int in range(int(frame_region.size.y)):
+		for pixel_x: int in range(int(frame_region.size.x)):
+			if image.get_pixel(source_left + pixel_x, source_top + pixel_y).a < FRAME_ALPHA_THRESHOLD:
+				continue
+			min_x = mini(min_x, pixel_x)
+			min_y = mini(min_y, pixel_y)
+			max_x = maxi(max_x, pixel_x)
+			max_y = maxi(max_y, pixel_y)
+
+	var visible_region: Rect2 = frame_region
+	if max_x >= min_x and max_y >= min_y:
+		visible_region = Rect2(
+			frame_region.position + Vector2(float(min_x), float(min_y)),
+			Vector2(float(max_x - min_x + 1), float(max_y - min_y + 1))
+		)
+	_visible_region_cache[cache_key] = visible_region
+	return visible_region

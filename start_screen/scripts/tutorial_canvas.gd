@@ -873,7 +873,7 @@ func _draw_animated_character(
 	rotation_radians: float = 0.0
 ) -> void:
 	var texture: Texture2D = ANIMATION_DATA.texture_for(state) # state가 선택한 sprite atlas.
-	var source_region: Rect2 = ANIMATION_DATA.region_for(state, elapsed) # elapsed에 해당하는 source frame.
+	var source_region: Rect2 = ANIMATION_DATA.visible_region_for(state, elapsed) # elapsed에 해당하는 source frame.
 	var source_aspect: float = source_region.size.x / source_region.size.y # 찌그러짐 방지 비율.
 	var target_size: Vector2 = bounds.size # aspect-fit 계산으로 줄어들 destination 크기.
 	if target_size.x / target_size.y > source_aspect:

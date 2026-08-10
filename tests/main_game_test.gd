@@ -14,6 +14,15 @@ const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmak
 const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
 const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
 const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
+const SPRINT_VFX: Texture2D = preload("res://assets/sprites/effects/normal/sprint_vfx.png")
+const GUARD_BREAK_VFX: Texture2D = preload("res://assets/sprites/effects/boxer/guard_break_impact.png")
+const SHIELD_BARRIER_VFX: Texture2D = preload("res://assets/sprites/effects/shield_guard/shield_barrier.png")
+const HOSE_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/hose_overlay.png")
+const WATER_PATH_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/water_path.png")
+const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cleanup_dust.png")
+const PAN_TOSS_UP_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_up.png")
+const PAN_TOSS_DOWN_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_down.png")
+const PAN_TOSS_FAILURE_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_failure.png")
 
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
@@ -211,6 +220,7 @@ func _run() -> void:
 			and SHURIKEN_IMPACT_VFX.get_height() == 128,
 		"시계공·닌자 VFX 시트가 지정된 frame 크기와 행 구성을 지킨다."
 	)
+	_test_sprite_atlas_contracts()
 	_test_spawn_side_margin()
 	await _test_release_punch()
 	await _test_beta_specials()
@@ -314,6 +324,101 @@ func _expect(condition: bool, description: String) -> void:
 ## 상황: 실제 main scene에서 X press/release와 hitbox 기반 피스 이동을 검증할 때 호출된다.
 ## 순서: scene 생성/정지 → 맞는 위치의 hit → 빗나가는 위치의 miss → audio/node 정리.
 ## 결과: release 전에는 움직이지 않고 release 판정 창에서만 피스가 이동한다는 계약을 검사한다.
+func _test_sprite_atlas_contracts() -> void:
+	var profiles_match_selection: bool = ANIMATION_DATA.PROFILES.size() == CHARACTER_DATA.CHARACTER_ORDER.size()
+	var character_frames_valid: bool = true
+	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
+		profiles_match_selection = profiles_match_selection and ANIMATION_DATA.has_character(character_id)
+		var texture: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, character_id)
+		var image: Image = texture.get_image()
+		character_frames_valid = (
+			character_frames_valid
+			and texture.get_width() == 1024
+			and texture.get_height() == 768
+		)
+		for state: String in ANIMATION_DATA.REGIONS:
+			var frames: Array = ANIMATION_DATA.REGIONS[state]
+			for frame_index: int in range(frames.size()):
+				var frame_region: Rect2 = frames[frame_index] as Rect2
+				var elapsed: float = (
+					float(frame_index) * float(ANIMATION_DATA.FRAME_DURATIONS[state])
+					+ 0.001
+				)
+				var visible_region: Rect2 = ANIMATION_DATA.visible_region_for(
+					state,
+					elapsed,
+					character_id
+				)
+				character_frames_valid = (
+					character_frames_valid
+					and visible_region.size.x > 0.0
+					and visible_region.size.y > 0.0
+					and frame_region.encloses(visible_region)
+					and _image_region_has_alpha(image, visible_region)
+				)
+
+	_expect(
+		profiles_match_selection,
+		"캐릭터 선택 목록과 animation profile 목록이 정확히 일치한다."
+	)
+	_expect(
+		character_frames_valid,
+		"모든 캐릭터 atlas의 사용 frame이 규격 안에 있고 불투명 픽셀을 가진다."
+	)
+
+	var effect_specs: Array = [
+		[SPRINT_VFX, Vector2i(128, 128), 8, 1],
+		[GUARD_BREAK_VFX, Vector2i(64, 64), 4, 1],
+		[SHIELD_BARRIER_VFX, Vector2i(48, 144), 6, 1],
+		[HOSE_VFX, Vector2i(192, 64), 4, 1],
+		[WATER_PATH_VFX, Vector2i(48, 48), 4, 1],
+		[CLEANUP_VFX, Vector2i(144, 48), 6, 1],
+		[PAN_TOSS_UP_VFX, Vector2i(96, 96), 4, 1],
+		[PAN_TOSS_DOWN_VFX, Vector2i(96, 96), 4, 1],
+		[PAN_TOSS_FAILURE_VFX, Vector2i(48, 48), 3, 1],
+		[CLOCK_GEAR_VFX, Vector2i(128, 128), 4, 1],
+		[CLOCK_WAVE_VFX, Vector2i(192, 192), 6, 1],
+		[SHURIKEN_SPIN_VFX, Vector2i(32, 32), 4, 1],
+		[SHURIKEN_IMPACT_VFX, Vector2i(64, 64), 4, 2],
+	]
+	var effect_frames_valid: bool = true
+	for spec: Array in effect_specs:
+		var texture: Texture2D = spec[0] as Texture2D
+		var frame_size: Vector2i = spec[1] as Vector2i
+		var columns: int = spec[2] as int
+		var rows: int = spec[3] as int
+		var image: Image = texture.get_image()
+		var current_effect_valid: bool = (
+			texture.get_width() == frame_size.x * columns
+			and texture.get_height() == frame_size.y * rows
+		)
+		var current_effect_has_alpha: bool = false
+		for row: int in range(rows):
+			for column: int in range(columns):
+				var frame_region: Rect2 = Rect2(
+					Vector2(float(column * frame_size.x), float(row * frame_size.y)),
+					Vector2(frame_size)
+				)
+				current_effect_has_alpha = (
+					current_effect_has_alpha
+					or _image_region_has_alpha(image, frame_region)
+				)
+		current_effect_valid = current_effect_valid and current_effect_has_alpha
+		effect_frames_valid = effect_frames_valid and current_effect_valid
+	_expect(
+		effect_frames_valid,
+		"모든 캐릭터 특수효과 시트의 크기·행·열과 불투명 픽셀이 사용 규격과 일치한다."
+	)
+
+
+func _image_region_has_alpha(image: Image, region: Rect2) -> bool:
+	for pixel_y: int in range(int(region.position.y), int(region.end.y)):
+		for pixel_x: int in range(int(region.position.x), int(region.end.x)):
+			if image.get_pixel(pixel_x, pixel_y).a >= ANIMATION_DATA.FRAME_ALPHA_THRESHOLD:
+				return true
+	return false
+
+
 func _test_release_punch() -> void:
 	var scene: MainGameView = GAME_SCENE.instantiate() # 테스트가 소유해 마지막에 free할 실제 scene 인스턴스.
 	root.add_child(scene)

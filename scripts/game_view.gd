@@ -66,6 +66,31 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
+const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/thron_sprite.png")
+const THORN_SOURCE_REGION: Rect2 = Rect2(500.0, 64.0, 128.0, 104.0)
+const THORN_DEPTH: float = 18.0
+const THORN_EDGE_OVERLAP: float = 6.0
+const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/bind_sprite.png")
+const BIND_SOURCE_REGION: Rect2 = Rect2(337.0, 65.0, 277.0, 364.0)
+const BIND_DISPLAY_SIZE: Vector2 = Vector2(78.0, 108.0)
+const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
+const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
+const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
+const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
+const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
+const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
+const HEART_TEXTURE: Texture2D = preload("res://assets/sprites/heart.svg")
+const BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 1024.0)
+const BOSS_DOWN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 983.0)
+const BOSS_FALLEN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 234.0)
+const BOSS_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DISPLAY_SIZE
+const BOSS_DOWN_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DOWN_DISPLAY_SIZE
+const BOSS_FALLEN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 43.875)
+const BOSS_FRAME_COUNT: int = 4
+const BOSS_FRAME_INTERVAL: float = 0.18
+const BOSS_THORN_FRAME_INTERVAL: float = 0.1
+const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
+const HEART_DISPLAY_SIZE: Vector2 = Vector2(16.0, 16.0)
 const CHARACTER_SOURCE_RECT: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0) # idle 0 frame.
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
@@ -84,6 +109,20 @@ var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
 var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
 var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색 막대.
+var _binding_sprite: Sprite2D
+var _boss_sprite: Sprite2D
+var _boss_thorn_sprite: Sprite2D
+var _boss_hearts: Array[Sprite2D] = []
+var _boss_frame: int = 0
+var _boss_frame_timer: float = 0.0
+var _boss_thorn_frame_index: int = 0
+var _boss_thorn_frame_timer: float = 0.0
+var _boss_down_frame: int = 0
+var _boss_down_frame_timer: float = 0.0
+var _boss_falling_frame: int = 0
+var _boss_falling_frame_timer: float = 0.0
+var _boss_fallen_frame: int = 0
+var _boss_fallen_frame_timer: float = 0.0
 var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
 
 
@@ -95,10 +134,19 @@ func _ready() -> void:
 	_system_font = SystemFont.new()
 	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
 	_build_interface()
+	_create_binding_overlay()
+	_create_boss_display()
 	controller.game_changed.connect(_refresh)
+	controller.boss_attacked.connect(_start_boss_thorn_attack)
 	character.stats_changed.connect(_refresh)
 	character.feedback_changed.connect(_refresh)
+	character.binding_started.connect(_refresh)
+	character.binding_ended.connect(_refresh)
 	_refresh()
+
+
+func _process(delta: float) -> void:
+	_advance_boss_animation(delta)
 
 
 ## 상황: 최초 표시 또는 `queue_redraw()` 이후 Godot CanvasItem draw pass에서 호출된다.
@@ -109,6 +157,8 @@ func _draw() -> void:
 	_draw_panel(Rect2(BOARD_ORIGIN - Vector2(12.0, 12.0), BOARD_SIZE + Vector2(24.0, 24.0)))
 	_draw_panel(PANEL_RECT)
 	_draw_board()
+	_draw_thorns()
+	_draw_binding()
 	_draw_character_skill_effects()
 	_draw_meditation_effect()
 	_draw_hud_sections()
@@ -752,6 +802,15 @@ func _refresh() -> void:
 		% [controller.score, controller.level, controller.total_lines]
 	)
 
+	var stage_status: String = "보스 체력 %d / %d" % [
+		controller.boss_health,
+		MainGameController.BOSS_MAX_HEALTH,
+	] if controller.is_boss_stage() else "남은 시간 %d초" % ceili(controller.stage_time_remaining)
+	_stats_label.text += "\n\n스테이지 1-%d                 %s" % [
+		controller.stage_number,
+		stage_status,
+	]
+
 	var life_icons: String = "♥".repeat(character.lives) + "♡".repeat( # 남은/잃은 생명을 한 문자열로 표현.
 		MainCharacterController.MAX_LIVES - character.lives
 	)
@@ -790,4 +849,278 @@ func _refresh() -> void:
 		_:
 			_status_label.visible = false
 
+	_refresh_boss_display()
 	queue_redraw()
+
+
+func _draw_thorns() -> void:
+	if not controller.active_piece_has_visible_thorns():
+		return
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(
+		controller.active_type,
+		controller.active_rotation
+	)
+	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
+	# overlay는 셀 경계에 6px 겹쳐 틈을 없애고, 블록의 48×48 rect는 건드리지 않는다.
+	for local_cell: Vector2i in cells:
+		var active_cell: Vector2i = controller.active_origin + local_cell
+		if active_cell.y < MainBoardModel.HIDDEN_ROWS:
+			continue
+		var cell_rect: Rect2 = _cell_rect(active_cell)
+		var cell_center: Vector2 = cell_rect.get_center()
+		for index: int in range(faces.size()):
+			if cells.has(local_cell + faces[index]):
+				continue
+			var face_center: Vector2 = cell_center + Vector2(faces[index]) * (
+				CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP
+			)
+			draw_set_transform(face_center, angles[index])
+			draw_texture_rect_region(
+				THORN_TEXTURE,
+				Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
+				THORN_SOURCE_REGION
+			)
+	draw_set_transform(Vector2.ZERO, 0.0)
+
+
+func _draw_binding() -> void:
+	if _binding_sprite == null:
+		return
+	_binding_sprite.visible = character.is_bound
+
+
+func _create_binding_overlay() -> void:
+	_binding_sprite = Sprite2D.new()
+	_binding_sprite.name = "BindingSprite"
+	_binding_sprite.texture = BIND_TEXTURE
+	_binding_sprite.region_enabled = true
+	_binding_sprite.region_rect = BIND_SOURCE_REGION
+	_binding_sprite.scale = BIND_DISPLAY_SIZE / BIND_SOURCE_REGION.size
+	_binding_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_binding_sprite.z_index = 1
+	_binding_sprite.visible = false
+	character.add_child(_binding_sprite)
+
+
+func _create_boss_display() -> void:
+	var board_physics: Node2D = $BoardPhysics
+	_boss_sprite = Sprite2D.new()
+	_boss_sprite.name = "BossSprite"
+	_boss_sprite.texture = BOSS_NORMAL_TEXTURE
+	_boss_sprite.region_enabled = true
+	_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_boss_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_boss_sprite.z_index = 2
+	board_physics.add_child(_boss_sprite)
+
+	_boss_thorn_sprite = Sprite2D.new()
+	_boss_thorn_sprite.name = "BossThornSprite"
+	_boss_thorn_sprite.texture = BOSS_THORN_TEXTURE
+	_boss_thorn_sprite.region_enabled = true
+	_boss_thorn_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	_boss_thorn_sprite.position = MainGameController.BOSS_POSITION
+	_boss_thorn_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_boss_thorn_sprite.z_index = 3
+	_boss_thorn_sprite.visible = false
+	board_physics.add_child(_boss_thorn_sprite)
+
+	for index: int in range(MainGameController.BOSS_MAX_HEALTH):
+		var heart: Sprite2D = Sprite2D.new()
+		heart.name = "BossHeart%d" % (index + 1)
+		heart.texture = HEART_TEXTURE
+		heart.scale = HEART_DISPLAY_SIZE / Vector2(24.0, 24.0)
+		heart.position = MainGameController.BOSS_POSITION + Vector2(
+			float(index - 1) * 18.0,
+			106.0
+		)
+		heart.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		heart.z_index = 3
+		board_physics.add_child(heart)
+		_boss_hearts.append(heart)
+
+	_apply_boss_frame()
+	_apply_boss_thorn_frame()
+
+
+func _advance_boss_animation(delta: float) -> void:
+	if _boss_sprite == null:
+		return
+	if controller.is_boss_alive():
+		_boss_frame_timer += maxf(delta, 0.0)
+		while _boss_frame_timer >= BOSS_FRAME_INTERVAL:
+			_boss_frame_timer -= BOSS_FRAME_INTERVAL
+			_boss_frame = (_boss_frame + 1) % BOSS_FRAME_COUNT
+			_apply_boss_frame()
+	elif controller.is_boss_down():
+		_advance_boss_down_animation(delta)
+	elif controller.is_boss_falling():
+		_advance_boss_falling_animation(delta)
+	elif controller.is_boss_fallen():
+		_advance_boss_fallen_animation(delta)
+	else:
+		_boss_thorn_sprite.visible = false
+
+	if not _boss_thorn_sprite.visible:
+		return
+	_boss_thorn_frame_timer += maxf(delta, 0.0)
+	while _boss_thorn_frame_timer >= BOSS_THORN_FRAME_INTERVAL:
+		_boss_thorn_frame_timer -= BOSS_THORN_FRAME_INTERVAL
+		_boss_thorn_frame_index += 1
+		if _boss_thorn_frame_index >= BOSS_THORN_FRAME_SEQUENCE.size():
+			_boss_thorn_sprite.visible = false
+			_boss_thorn_frame_timer = 0.0
+			break
+		_apply_boss_thorn_frame()
+
+
+func _advance_boss_down_animation(delta: float) -> void:
+	if _boss_down_frame >= BOSS_FRAME_COUNT - 1:
+		return
+	_boss_down_frame_timer += maxf(delta, 0.0)
+	while (
+		_boss_down_frame_timer >= BOSS_FRAME_INTERVAL
+		and _boss_down_frame < BOSS_FRAME_COUNT - 1
+	):
+		_boss_down_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_down_frame += 1
+		_apply_boss_down_frame()
+	if _boss_down_frame >= BOSS_FRAME_COUNT - 1:
+		_boss_down_frame_timer = 0.0
+
+
+func _advance_boss_falling_animation(delta: float) -> void:
+	_boss_falling_frame_timer += maxf(delta, 0.0)
+	while _boss_falling_frame_timer >= BOSS_FRAME_INTERVAL:
+		_boss_falling_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_falling_frame = (_boss_falling_frame + 1) % BOSS_FRAME_COUNT
+		_apply_boss_falling_frame()
+
+
+func _advance_boss_fallen_animation(delta: float) -> void:
+	_boss_fallen_frame_timer += maxf(delta, 0.0)
+	while _boss_fallen_frame_timer >= BOSS_FRAME_INTERVAL:
+		_boss_fallen_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_fallen_frame = (_boss_fallen_frame + 1) % BOSS_FRAME_COUNT
+		_apply_boss_fallen_frame()
+
+
+func _apply_boss_frame() -> void:
+	_apply_boss_sheet_frame(_boss_frame, BOSS_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_down_frame() -> void:
+	_apply_boss_sheet_frame(_boss_down_frame, BOSS_DOWN_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_falling_frame() -> void:
+	_apply_boss_sheet_frame(_boss_falling_frame, BOSS_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_fallen_frame() -> void:
+	_apply_boss_sheet_frame(_boss_fallen_frame, BOSS_FALLEN_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_sheet_frame(frame: int, source_frame_size: Vector2) -> void:
+	_boss_sprite.region_rect = Rect2(
+		float(frame) * source_frame_size.x,
+		0.0,
+		source_frame_size.x,
+		source_frame_size.y
+	)
+
+
+func _apply_boss_thorn_frame() -> void:
+	_boss_thorn_sprite.region_rect = Rect2(
+		float(BOSS_THORN_FRAME_SEQUENCE[_boss_thorn_frame_index]) * BOSS_SOURCE_FRAME_SIZE.x,
+		0.0,
+		BOSS_SOURCE_FRAME_SIZE.x,
+		BOSS_SOURCE_FRAME_SIZE.y
+	)
+
+
+func _start_boss_thorn_attack() -> void:
+	if not controller.is_boss_alive():
+		return
+	_boss_thorn_frame_index = 0
+	_boss_thorn_frame_timer = 0.0
+	_boss_thorn_sprite.visible = true
+	_apply_boss_thorn_frame()
+
+
+func _refresh_boss_display() -> void:
+	if _boss_sprite == null:
+		return
+	var boss_alive: bool = controller.is_boss_alive()
+	var boss_visible: bool = (
+		boss_alive
+		or controller.is_boss_down()
+		or controller.is_boss_falling()
+		or controller.is_boss_fallen()
+	)
+	_boss_sprite.visible = boss_visible
+	for index: int in range(_boss_hearts.size()):
+		_boss_hearts[index].visible = boss_alive and index < controller.boss_health
+	if not boss_alive:
+		_boss_thorn_sprite.visible = false
+
+	if controller.is_boss_down():
+		if _boss_sprite.texture != BOSS_DOWN_TEXTURE:
+			_boss_sprite.texture = BOSS_DOWN_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_DOWN_DISPLAY_SIZE / BOSS_DOWN_SOURCE_FRAME_SIZE
+			_boss_down_frame = 0
+			_boss_down_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_down_frame()
+		return
+
+	if controller.is_boss_falling():
+		if _boss_sprite.texture != BOSS_FALLING_TEXTURE:
+			_boss_sprite.texture = BOSS_FALLING_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+			_boss_falling_frame = 0
+			_boss_falling_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_falling_frame()
+		return
+
+	if controller.is_boss_fallen():
+		if _boss_sprite.texture != BOSS_FALLEN_TEXTURE:
+			_boss_sprite.texture = BOSS_FALLEN_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_FALLEN_DISPLAY_SIZE / BOSS_FALLEN_SOURCE_FRAME_SIZE
+			_boss_fallen_frame = 0
+			_boss_fallen_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_fallen_frame()
+		return
+
+	if not boss_visible:
+		return
+
+	var boss_texture: Texture2D = BOSS_BIND_TEXTURE if character.is_bound else BOSS_NORMAL_TEXTURE
+	if _boss_sprite.texture != boss_texture or not _boss_sprite.region_enabled:
+		_boss_sprite.texture = boss_texture
+		_boss_sprite.region_enabled = true
+		_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+		_boss_frame = 0
+		_boss_frame_timer = 0.0
+	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_apply_boss_frame()
+
+
+## 상황: `_draw()`가 상단 HUD 카드에 다음 피스 미리보기를 표시할 때 호출한다.
+## 순서: 피스 외곽 크기 계산 → 카드 중심 원점 계산 → 회전 0의 네 셀 draw.
+## 결과: controller.next_type이 실제 spawn 전에 사용자에게 보인다.

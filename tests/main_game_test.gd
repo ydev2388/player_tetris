@@ -404,6 +404,19 @@ func _test_release_punch() -> void:
 			and character._animation_image_cache.is_empty(),
 		"요리사 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
+	var crush_results: Array[bool] = []
+	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
+		character.set_character_id(character_id)
+		crush_results.append(character._crush_mask_overlaps_active_piece(Vector2i(4, 18)))
+	var shared_crush_result: bool = true
+	for result: bool in crush_results:
+		if result != crush_results[0]:
+			shared_crush_result = false
+			break
+	_expect(
+		shared_crush_result,
+		"모든 캐릭터는 외형 알파와 무관한 동일한 압사 충돌체를 사용한다."
+	)
 	character.play_special_animation()
 	_expect(
 		character._get_animation_state() == ANIMATION_DATA.SPECIAL

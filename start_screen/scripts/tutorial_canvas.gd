@@ -263,7 +263,7 @@ func _draw_block_action_page() -> void:
 		Vector2(306.0, 205.0),
 		"1칸" if punch_stage > 0 else "준비",
 		15,
-		ORANGE if punch_releasing else MUTED
+		MUTED
 	)
 	_text(Vector2(44.0, 392.0), "X를 누르면 전방 블록을 정확히 1칸 밀기", 13, MUTED)
 	_text(Vector2(44.0, 415.0), "캐릭터별 무기 모션만 다르고 결과는 동일", 13, MUTED)
@@ -285,7 +285,7 @@ func _draw_block_action_page() -> void:
 		PURPLE,
 		clampf(sin(kick_ratio * PI) + kick_impact * 0.5, 0.0, 1.0)
 	)
-	_draw_floor(Vector2(442.0, 360.0), 336.0)
+	_draw_floor(Vector2(180.0, 360.0), 440.0)
 	if kick_active:
 		for trail_index: int in range(2, 0, -1):
 			var trail_elapsed: float = maxf(
@@ -294,7 +294,7 @@ func _draw_block_action_page() -> void:
 			)
 			_draw_animated_character(
 				Rect2(
-					500.0 - float(trail_index) * 5.0,
+					300.0 - float(trail_index) * 5.0,
 					236.0,
 					88.0,
 					111.0
@@ -312,7 +312,7 @@ func _draw_block_action_page() -> void:
 	)
 	_draw_animated_character(
 		Rect2(
-			500.0 + sin(kick_ratio * PI) * 10.0,
+			300.0 + sin(kick_ratio * PI) * 10.0,
 			236.0,
 			88.0,
 			111.0
@@ -323,14 +323,14 @@ func _draw_block_action_page() -> void:
 		_rotation_demo_angle(kick_character_elapsed) if kick_active else 0.0
 	)
 	_draw_tetromino(
-		Vector2(650.0, 279.0 - sin(kick_ratio * PI) * 22.0),
+		Vector2(450.0, 279.0 - sin(kick_ratio * PI) * 22.0),
 		RED,
 		kick_loop_alpha,
 		-kick_ratio * PI * 0.5
 	)
 	if kick_impact > 0.0:
 		draw_circle(
-			Vector2(645.0, 289.0),
+			Vector2(445.0, 289.0),
 			8.0 + kick_impact * 15.0,
 			Color(1.0, 0.72, 0.2, kick_impact * 0.32),
 			false,
@@ -338,9 +338,9 @@ func _draw_block_action_page() -> void:
 			true
 		)
 	_draw_arc_arrow(
-		Vector2(638.0, 260.0),
-		Vector2(748.0, 246.0),
-		Vector2(704.0, 205.0),
+		Vector2(438.0, 260.0),
+		Vector2(548.0, 246.0),
+		Vector2(504.0, 205.0),
 		PURPLE,
 		0.25 + 0.75 * sin(kick_ratio * PI)
 	)
@@ -348,13 +348,13 @@ func _draw_block_action_page() -> void:
 		_smooth_ratio(_animation_time, 0.88, 1.12) * kick_loop_alpha
 	)
 	_text(
-		Vector2(650.0, 190.0),
+		Vector2(450.0, 190.0),
 		"90° 플립",
 		14,
 		Color(PURPLE.r, PURPLE.g, PURPLE.b, rotation_label_alpha)
 	)
-	_text(Vector2(444.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
-	_text(Vector2(444.0, 415.0), "쿨타임 2초", 13, MUTED)
+	_text(Vector2(230.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
+	_text(Vector2(230.0, 415.0), "성공 뒤 2초, 실패 뒤 1초 대기", 13, MUTED)
 
 
 ## 상황: page 2에서 매달리기→벽 점프→원래 벽 재매달리기 경로를 그릴 때 호출된다.
@@ -627,7 +627,7 @@ func _draw_special_keys_page() -> void:
 			4.0,
 			true
 		)
-	_text(Vector2(444.0, 238.0), "점수·보드·목숨을 처음부터 시작합니다.", 13, MUTED)
+	_text(Vector2(444.0, 238.0), "보드·목숨을 처음부터 시작합니다.", 13, MUTED)
 
 	# Q: 1초 홀드 진행도 뒤 목숨을 하나 쓰고 상단에 재등장한다.
 	_text(Vector2(44.0, 303.0), "자력 재스폰", 19, TEXT)

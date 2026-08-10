@@ -19,6 +19,8 @@ extends CharacterBody2D
 
 signal stats_changed # 생명/stamina/charge/cooldown 변경을 GameView에 알린다.
 signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
+signal binding_started
+signal binding_ended
 
 # 좌표/이동 상수. Godot 2D는 +x가 오른쪽, +y가 아래이므로 점프 속도는 음수다.
 # GIT_GRID_SCALE은 원본 28px 기준 수치를 현재 48px 셀에 맞추는 배율이다.
@@ -128,6 +130,8 @@ var stamina: float = MAX_STAMINA # 행동 자원 0~100. 매달림에 사용.
 var facing: int = 1 # 바라보는 방향: 왼쪽 -1, 오른쪽 +1.
 var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 이동 branch를 실행.
 var is_meditating: bool = false # true면 정지하고 Controller 테트리스 시간을 2배로 함.
+var is_bound: bool = false
+var binding_timer: float = 0.0
 var charge_time: float = 0.0 # 현재 X hold 경과시간. release/reset 때 0.
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 블록 플립 입력 거부; 매 frame 감소.
 var special_cooldown_remaining: float = 0.0 # 고유 특수 스킬 재사용 대기시간.
@@ -388,6 +392,10 @@ func _physics_process(delta: float) -> void:
 		_stop_for_inactive_game()
 		return
 	_update_timers(delta)
+	if is_bound:
+		_update_binding(delta)
+		_finish_physics_frame(delta)
+		return
 	_handle_special_input()
 	if _handle_self_respawn_input(delta):
 		_finish_physics_frame(delta)
@@ -416,11 +424,53 @@ func _physics_process(delta: float) -> void:
 ## 결과: 캐릭터가 움직이지 않고 명상에 의한 테트리스 배율도 남지 않는다.
 func _stop_for_inactive_game() -> void:
 	_set_meditating(false)
+	if controller.state == MainGameController.GameState.GAME_OVER:
+		_end_binding()
 	velocity = Vector2.ZERO
 	_pending_punch_stage = 0
 	_pending_punch_hit_remaining = 0.0
 	if not Input.is_action_pressed(&"character_self_respawn"):
 		_reset_self_respawn_input()
+
+
+func apply_binding(duration: float = 2.0) -> void:
+	if is_bound or controller.state != MainGameController.GameState.PLAYING:
+		return
+	_set_meditating(false)
+	_exit_hang()
+	_cancel_jump_intent()
+	_cancel_wall_jump_control()
+	_pending_rotation_launch_velocity = 0.0
+	velocity = Vector2.ZERO
+	is_bound = true
+	binding_timer = maxf(duration, 0.0)
+	binding_started.emit()
+	stats_changed.emit()
+
+
+func _update_binding(delta: float) -> void:
+	velocity = Vector2.ZERO
+	binding_timer = maxf(0.0, binding_timer - delta)
+	if binding_timer <= 0.0:
+		_end_binding()
+
+
+func _end_binding() -> void:
+	if not is_bound:
+		binding_timer = 0.0
+		return
+	is_bound = false
+	binding_timer = 0.0
+	binding_ended.emit()
+	stats_changed.emit()
+
+
+func can_receive_binding() -> bool:
+	if _active_piece_overlaps_rect(_character_collider_rect()):
+		return false
+	if is_hanging:
+		return _hang_body == boundaries
+	return is_on_floor() and _has_fixed_support_underfoot()
 
 
 ## 상황: PLAYING 중 자력 재스폰 키를 누르거나 놓을 때 매 physics frame 호출한다.
@@ -481,6 +531,7 @@ func _finish_physics_frame(delta: float) -> void:
 	_sync_barrier_cells()
 	_update_visual_state(delta)
 	validate_position()
+	controller.notify_binding_surface_contact(can_receive_binding())
 
 
 ## 상황: 이미 명상 중이거나 이번 frame에 명상 조건을 만족했을 때 호출한다.
@@ -935,7 +986,16 @@ func _resolve_pending_punch(delta: float) -> void:
 		return
 
 	var target_stage: int = _pending_punch_stage # 호환용 값. 기본 공격은 항상 1칸이다.
+	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
+		_pending_punch_stage = 0
+		_pending_punch_hit_remaining = 0.0
+		controller.notify_boss_attacked()
+		take_thorn_damage("보스 가시 피해! 목숨 -1")
+		return
+	var hits_active_piece: bool = _punch_hits_active_piece()
 	var moved: int = controller.push_front_target(_front_board_cell(), facing, 1)
+	if hits_active_piece and controller.active_piece_has_visible_thorns():
+		take_thorn_damage()
 	if moved > 0:
 		_pending_punch_stage = 0
 		_pending_punch_hit_remaining = 0.0
@@ -1012,6 +1072,12 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	_start_rotation_spin()
+	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
+		controller.notify_boss_attacked()
+		take_thorn_damage("보스 가시 피해! 목숨 -1")
+		rotation_cooldown_remaining = current_rotation_cooldown()
+		stats_changed.emit()
+		return
 	if not _is_near_active_piece(0.0, MainLayout.scaled(88.0)):
 		_pending_rotation_launch_velocity = 0.0
 		_set_feedback("활성 블록에 닿지 않음")
@@ -1020,6 +1086,7 @@ func _attempt_rotation_kick() -> void:
 		stats_changed.emit()
 		return
 
+	var thorn_contact: bool = controller.active_piece_has_visible_thorns()
 	if controller.try_rotate(facing, _rotation_forbidden_cells()):
 		_play_sfx(SFX_FLIP)
 		# game_changed로 새 active shape를 만든 같은 physics frame에는 아직 PhysicsServer에
@@ -1033,6 +1100,8 @@ func _attempt_rotation_kick() -> void:
 		velocity.y = MainLayout.scaled(-140.0)
 		rotation_cooldown_remaining = current_rotation_cooldown()
 		_set_feedback("회전 공간 부족")
+	if thorn_contact:
+		take_thorn_damage("가시 회전킥 피해! 목숨 -1")
 	stats_changed.emit()
 
 
@@ -1419,10 +1488,23 @@ func take_damage() -> void:
 	_lose_life_and_respawn("압착 피해! 목숨 -1")
 
 
+func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 -1") -> void:
+	if _invulnerability_remaining > 0.0:
+		return
+	lives -= 1
+	_invulnerability_remaining = INVULNERABILITY_SECONDS
+	_play_sfx(SFX_HURT)
+	_set_feedback(feedback_message)
+	if lives <= 0:
+		controller.end_game()
+	stats_changed.emit()
+
+
 ## 상황: 압착 또는 자력 재스폰이 실제 생명 하나를 소비하기로 확정했을 때 호출한다.
 ## 순서: 생명/무적 갱신 → 모든 행동과 시각 회전 취소 → 게임오버 또는 상단 안전 재스폰.
 ## 결과: 두 진입점이 같은 정리·재스폰 규칙을 사용하며 자력 재스폰은 호출 전에 무적을 우회한다.
 func _lose_life_and_respawn(feedback_message: String) -> void:
+	_end_binding()
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
 	_set_meditating(false)
@@ -2116,6 +2198,8 @@ func _reset_character() -> void:
 	_hang_body = null
 	_clear_hang_vertical_bounds()
 	is_meditating = false
+	is_bound = false
+	binding_timer = 0.0
 	controller.set_meditation_active(false)
 	charge_time = 0.0
 	rotation_cooldown_remaining = 0.0

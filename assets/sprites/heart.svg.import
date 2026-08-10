@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://byun8noaapoen"
-path="res://.godot/imported/player_jump_animations_v2.png-103fc3be33334e67ed47b4575008f483.ctex"
+uid="uid://c1y3lbnlfe4ln"
+path="res://.godot/imported/heart.svg-e4e9b6277cd917148f9ee0283da1b182.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/player_jump_animations_v2.png"
-dest_files=["res://.godot/imported/player_jump_animations_v2.png-103fc3be33334e67ed47b4575008f483.ctex"]
+source_file="res://assets/sprites/heart.svg"
+dest_files=["res://.godot/imported/heart.svg-e4e9b6277cd917148f9ee0283da1b182.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cx7tak63myqrd"
-path="res://.godot/imported/player_animations.png-6b4d6c88e7d813e59fc27cd89d3f7e73.ctex"
+uid="uid://4h5q6e4ervpa"
+path="res://.godot/imported/player_rotation_kick_animations.png-93d5bdfd67c84c970dda29d2da794a47.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/player_animations.png"
-dest_files=["res://.godot/imported/player_animations.png-6b4d6c88e7d813e59fc27cd89d3f7e73.ctex"]
+source_file="res://assets/sprites/player/normal/player_rotation_kick_animations.png"
+dest_files=["res://.godot/imported/player_rotation_kick_animations.png-93d5bdfd67c84c970dda29d2da794a47.ctex"]
 
 [params]
 

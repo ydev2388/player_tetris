@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://chg6lb71ae0jb"
-path="res://.godot/imported/player_jump_animations.png-61d0fe9092a1f628196dc99727c65e2c.ctex"
+uid="uid://kqrsb0k7ffnm"
+path="res://.godot/imported/boss_normal_sprites.png-a1ea7e39cbe71dca468290a7231c1f26.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/player_jump_animations.png"
-dest_files=["res://.godot/imported/player_jump_animations.png-61d0fe9092a1f628196dc99727c65e2c.ctex"]
+source_file="res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png"
+dest_files=["res://.godot/imported/boss_normal_sprites.png-a1ea7e39cbe71dca468290a7231c1f26.ctex"]
 
 [params]
 

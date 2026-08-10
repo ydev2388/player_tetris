@@ -3,7 +3,7 @@ extends Node2D
 
 ## [역할 / C++ 대응]
 ## 논리 BoardModel을 Godot 2D 충돌체로 투영하는 어댑터다.
-## BoardModel이 authoritative state이고, 이 노드는 StaticBody2D/AnimatableBody2D를
+## BoardModel이 authoritative state이고, 이 노드는 StaticBody2D를
 ## 재구성할 뿐 게임 규칙을 결정하지 않는다. 자연 낙하 압사 규칙은
 ## GameController의 전용 신호를 받은 CharacterController가 처리한다.
 ##
@@ -22,7 +22,7 @@ const BOARD_PIXEL_SIZE: Vector2 = Vector2(
 # main.tscn에서 주입되는 협력 노드들.
 @onready var controller: MainGameController = $"../GameController" # authoritative BoardModel 소유자.
 @onready var locked_body: StaticBody2D = $LockedBlocks # 이미 고정된 셀 collision의 부모.
-@onready var active_body: AnimatableBody2D = $ActivePiece # 낙하 중 피스 collision의 부모.
+@onready var active_body: StaticBody2D = $ActivePiece # 낙하 중 피스 collision의 부모.
 @onready var character: MainCharacterController = $Character # 겹침 재검증을 요청할 플레이어.
 
 # 논리 보드가 같을 때 수백 개의 고정 CollisionShape 재생성을 피하는 캐시다.
@@ -103,7 +103,7 @@ func _rebuild_locked_colliders() -> void:
 ## 상황: game_changed마다 움직일 수 있는 활성 피스 collision을 갱신할 때 호출한다.
 ## 순서: ① 이전 네 shape 제거 ② active_body 원점을 픽셀로 이동 ③ game over면 종료
 ##       ④ TetrominoData의 네 로컬 셀마다 shape 생성.
-## 결과: AnimatableBody2D가 controller의 활성 타입·회전·원점과 일치한다.
+## 결과: StaticBody2D가 controller의 활성 타입·회전·원점과 일치한다.
 func _sync_active_piece() -> void:
 	_clear_shapes(active_body)
 	active_body.position = Vector2(

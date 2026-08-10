@@ -2080,7 +2080,10 @@ func _apply_animation_frame() -> void:
 	sprite.region_enabled = true
 	sprite.region_rect = region
 	sprite.scale = target_size / region.size
-	sprite.position = ANIMATION_DATA.display_offset_for(character_id)
+	sprite.position = (
+		ANIMATION_DATA.display_offset_for(character_id)
+		+ MainLayout.BOARD_VISUAL_OFFSET
+	)
 
 
 ## 상황: sprite 표시와 픽셀 마스크 역매핑이 같은 화면 크기를 사용해야 할 때 호출한다.

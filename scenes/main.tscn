@@ -54,6 +54,7 @@ position = Vector2(0, 3)
 shape = SubResource("RectangleShape2D_character")
 
 [node name="Sprite" type="Sprite2D" parent="BoardPhysics/Character"]
+position = Vector2(0, 40)
 texture_filter = 1
 texture = ExtResource("5_character_texture")
 region_enabled = true

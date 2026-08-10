@@ -4,6 +4,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
+$OriginalAppData = $env:APPDATA
+$BuildAppData = Join-Path $ProjectRoot "build\appdata"
+New-Item -ItemType Directory -Force -Path $BuildAppData | Out-Null
+$env:APPDATA = $BuildAppData
 
 # Godot 4.7.1 can fault while shutting down after a failed user:// log write in
 # restricted automation. Inherit a process-local Windows error mode so a native
@@ -72,6 +76,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[4/5] Exporting the Windows x86_64 release..."
+$env:APPDATA = $OriginalAppData
 $Executable = Join-Path $BuildDirectory "kungfu_tetris_main.exe"
 & $GodotPath --headless --log-file $LogFile --path $ProjectRoot `
     --export-release "Windows Desktop" $Executable
@@ -84,6 +89,7 @@ if (-not (Test-Path -LiteralPath $Executable)) {
 }
 
 Write-Host "[5/5] Smoke-testing the exported executable..."
+$env:APPDATA = $BuildAppData
 if (Test-Path -LiteralPath $SmokeEngineLogFile) {
     Remove-Item -LiteralPath $SmokeEngineLogFile -Force
 }

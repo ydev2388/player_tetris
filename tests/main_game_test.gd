@@ -590,6 +590,67 @@ func _test_release_punch() -> void:
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character") # 입력·hitbox 실행 대상.
 	_test_character_frame_normalization(controller, character)
 	_test_binding_overlay_alignment(scene, character)
+	character.facing = 1
+	_expect(
+		character._rotation_direction_for_arrows(true, false) == 1
+			and character._rotation_direction_for_arrows(false, true) == -1
+			and character._rotation_direction_for_arrows(false, false) == 1,
+		"위+S는 기존 방향, 아래+S는 반대 방향이며 단독 S는 기존 동작을 유지한다."
+	)
+	character.facing = -1
+	_expect(
+		character._rotation_direction_for_arrows(true, false) == -1
+			and character._rotation_direction_for_arrows(false, true) == 1,
+		"회전 화살표 방향은 캐릭터 facing을 기준으로 반전된다."
+	)
+	character._start_rotation_spin(-1)
+	var reverse_spin_started: bool = character._spin_direction == -1
+	character._spin_remaining = 0.0
+	character._start_rotation_spin(1)
+	_expect(
+		reverse_spin_started and character._spin_direction == 1,
+		"블록 회전과 캐릭터 회전 연출이 같은 방향을 사용한다."
+	)
+	character._spin_remaining = 0.0
+	character.is_hanging = true
+	character.stamina = 0.0
+	character._update_sprite_modulation()
+	var exhausted_hang_is_red: bool = character.sprite.modulate.is_equal_approx(Color(1.0, 0.0, 0.0, 1.0))
+	character.is_hanging = false
+	character.stamina = MainCharacterController.MAX_STAMINA
+	character._update_sprite_modulation()
+	_expect(
+		exhausted_hang_is_red and character.sprite.modulate.is_equal_approx(Color.WHITE),
+		"스테미나가 소진된 매달리기는 고정 빨간색이고 평상시는 기존 색으로 돌아온다."
+	)
+	_expect(
+		MainGameView.SPECIAL_BAR_RECT.position.y
+			> MainLayout.BOARD_ORIGIN.y + MainLayout.BOARD_SIZE.y
+			and MainGameView.SPECIAL_BAR_RECT.size.x == MainLayout.BOARD_SIZE.x,
+		"현재 캐릭터 스킬 쿨타임 바는 게임판 아래 전체 너비를 사용한다."
+	)
+	character.position = Vector2(-100.0, -100.0)
+	character.velocity = Vector2(-1.0, -1.0)
+	character._clamp_to_board_bounds()
+	var clamped_to_board: bool = (
+		character.position.x == MainCharacterController.BOARD_MIN_X
+		and character.position.y == MainCharacterController.BOARD_MIN_Y
+		and character.velocity == Vector2.ZERO
+	)
+	character.position = Vector2(1000.0, 1000.0)
+	character.velocity = Vector2(1.0, 1.0)
+	character._clamp_to_board_bounds()
+	clamped_to_board = clamped_to_board and (
+		character.position.x == MainCharacterController.BOARD_MAX_X
+		and character.position.y == MainCharacterController.BOARD_MAX_Y
+		and character.velocity == Vector2.ZERO
+	)
+	_expect(
+		clamped_to_board,
+		"캐릭터 collider가 게임판 상하좌우 경계를 벗어나지 않는다."
+	)
+	character.position = Vector2(240.0, 912.0)
+	character.velocity = Vector2.ZERO
 	_expect(
 		character.character_id == "normal"
 			and not character.set_character_id("missing_character"),
@@ -1040,6 +1101,22 @@ func _test_beta_specials() -> void:
 		is_equal_approx(character.rotation_cooldown_remaining, character.current_rotation_cooldown()),
 		"회전 공간과 금지 셀 때문에 실패한 회전킥도 성공과 동일한 100% 쿨다운을 적용한다."
 	)
+	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.T
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(4, 10)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	var rotation_origin: Vector2i = controller.active_origin
+	var clockwise_in_place: bool = controller.try_rotate(1, [], true)
+	controller.active_rotation = 0
+	controller.active_origin = rotation_origin
+	var counterclockwise_in_place: bool = controller.try_rotate(-1, [], true)
+	_expect(
+		clockwise_in_place
+			and counterclockwise_in_place
+			and controller.active_origin == rotation_origin,
+		"위·아래 방향 블록 플립은 SRS kick 없이 같은 원점에서 회전한다."
+	)
 
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
@@ -1336,9 +1413,11 @@ func _test_character_frame_normalization(
 		ANIMATION_DATA.ROTATION_KICK,
 		ANIMATION_DATA.SPECIAL,
 	]
-	var transforms_are_stable: bool = true
+	var visible_bounds_are_stable: bool = true
 	var collision_is_frame_independent: bool = true
 	var transparent_padding_is_excluded: bool = true
+	var hang_animation_cycles: bool = true
+	var hang_blink_keeps_frame: bool = true
 	controller.active_type = MainTetrominoData.Type.O
 	controller.active_rotation = 0
 	controller.active_cell_indices = [0, 1, 2, 3]
@@ -1351,8 +1430,7 @@ func _test_character_frame_normalization(
 		character._animation_state = ANIMATION_DATA.IDLE
 		character._animation_time = 0.0
 		character._apply_animation_frame()
-		var expected_scale: Vector2 = character.sprite.scale
-		var expected_position: Vector2 = character.sprite.position
+		var expected_visible_rect: Rect2 = _sprite_visible_rect(character)
 		var reference_region: Rect2 = character.sprite.region_rect
 		var reference_bounds: Rect2 = character._frame_alpha_bounds(reference_region)
 		transparent_padding_is_excluded = (
@@ -1360,11 +1438,12 @@ func _test_character_frame_normalization(
 			and reference_bounds.size.x < reference_region.size.x
 			and reference_bounds.size.y < reference_region.size.y
 			and is_equal_approx(
-				reference_bounds.size.y * expected_scale.y,
+				expected_visible_rect.size.y,
 				ANIMATION_DATA.visible_height_for(ANIMATION_DATA.IDLE, profile_id)
 			)
 		)
 		for state: String in states:
+			character.is_hanging = false
 			var frames: Array = ANIMATION_DATA.REGIONS[state]
 			for frame_index: int in range(frames.size()):
 				character._animation_state = state
@@ -1373,21 +1452,56 @@ func _test_character_frame_normalization(
 					+ 0.001
 				)
 				character._apply_animation_frame()
+				var visible_rect: Rect2 = _sprite_visible_rect(character)
 				if (
-					not character.sprite.scale.is_equal_approx(expected_scale)
-					or not character.sprite.position.is_equal_approx(expected_position)
+					not is_equal_approx(
+						visible_rect.size.y,
+						ANIMATION_DATA.visible_height_for(state, profile_id)
+					)
+					or not is_equal_approx(
+						visible_rect.get_center().x,
+						expected_visible_rect.get_center().x
+					)
+					or not is_equal_approx(
+						visible_rect.end.y,
+						expected_visible_rect.end.y
+					)
 					or not is_equal_approx(character.sprite.scale.x, character.sprite.scale.y)
 				):
-					transforms_are_stable = false
+					visible_bounds_are_stable = false
 				if (
 					not character._crush_mask_overlaps_active_piece(Vector2i(3, 19))
 					or character._crush_mask_overlaps_active_piece(Vector2i(7, 1))
 				):
 					collision_is_frame_independent = false
+		character.is_hanging = true
+		character._animation_state = ANIMATION_DATA.IDLE
+		character._animation_time = 0.0
+		character._advance_character_animation(0.0)
+		var hang_frame: Rect2 = character.sprite.region_rect
+		var hang_texture: Texture2D = character.sprite.texture
+		var hang_scale: Vector2 = character.sprite.scale
+		var hang_position: Vector2 = character.sprite.position
+		character._update_sprite_modulation()
+		hang_blink_keeps_frame = hang_blink_keeps_frame and (
+			character.sprite.region_rect == hang_frame
+			and character.sprite.texture == hang_texture
+			and character.sprite.scale.is_equal_approx(hang_scale)
+			and character.sprite.position.is_equal_approx(hang_position)
+		)
+		character._advance_character_animation(float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.HANG]) + 0.001)
+		hang_animation_cycles = hang_animation_cycles and (
+			character.sprite.region_rect == ANIMATION_DATA.REGIONS[ANIMATION_DATA.HANG][1]
+		)
 
+	character.is_hanging = false
 	_expect(
-		transforms_are_stable,
-		"모든 캐릭터는 모션이 바뀌어도 동일한 스케일과 기준 위치를 유지한다."
+		visible_bounds_are_stable,
+		"모든 캐릭터는 모션이 바뀌어도 실제 실루엣 크기와 기준 위치를 유지한다."
+	)
+	_expect(
+		hang_animation_cycles and hang_blink_keeps_frame,
+		"매달림은 HANG frame을 순환하고 스테미나 점멸은 sprite frame과 transform을 바꾸지 않는다."
 	)
 	_expect(
 		transparent_padding_is_excluded,
@@ -1401,6 +1515,16 @@ func _test_character_frame_normalization(
 	character._animation_state = ANIMATION_DATA.IDLE
 	character._animation_time = 0.0
 	character._apply_animation_frame()
+
+
+func _sprite_visible_rect(character: MainCharacterController) -> Rect2:
+	var frame_region: Rect2 = character.sprite.region_rect
+	var frame_bounds: Rect2 = character._frame_alpha_bounds(frame_region)
+	var source_center: Vector2 = frame_region.size * 0.5
+	var top_left: Vector2 = character.sprite.position + (
+		frame_bounds.position - source_center
+	) * character.sprite.scale
+	return Rect2(top_left, frame_bounds.size * character.sprite.scale)
 
 
 func _test_binding_overlay_alignment(

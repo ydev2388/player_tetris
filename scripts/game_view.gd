@@ -81,6 +81,7 @@ const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_bos
 const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
 const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
 const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
+const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
 const HEART_TEXTURE: Texture2D = preload("res://assets/sprites/heart.svg")
 const BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 1024.0)
 const BOSS_DOWN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 983.0)
@@ -93,6 +94,7 @@ const BOSS_FRAME_INTERVAL: float = 0.18
 const BOSS_THORN_FRAME_INTERVAL: float = 0.1
 const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
 const HEART_DISPLAY_SIZE: Vector2 = Vector2(16.0, 16.0)
+const BOSS_SEED_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_SEED_SIZE
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
@@ -115,6 +117,7 @@ var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색
 var _binding_sprite: Sprite2D
 var _boss_sprite: Sprite2D
 var _boss_thorn_sprite: Sprite2D
+var _boss_seed_sprites: Array[Sprite2D] = []
 var _boss_hearts: Array[Sprite2D] = []
 var _boss_frame: int = 0
 var _boss_frame_timer: float = 0.0
@@ -899,6 +902,16 @@ func _create_boss_display() -> void:
 	_boss_thorn_sprite.visible = false
 	board_physics.add_child(_boss_thorn_sprite)
 
+	for index: int in range(MainGameController.BOSS_SEED_COUNT):
+		var seed_sprite: Sprite2D = Sprite2D.new()
+		seed_sprite.name = "BossSeed%d" % (index + 1)
+		seed_sprite.texture = BOSS_SEED_TEXTURE
+		seed_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		seed_sprite.z_index = 4
+		seed_sprite.visible = false
+		board_physics.add_child(seed_sprite)
+		_boss_seed_sprites.append(seed_sprite)
+
 	for index: int in range(MainGameController.BOSS_MAX_HEALTH):
 		var heart: Sprite2D = Sprite2D.new()
 		heart.name = "BossHeart%d" % (index + 1)
@@ -1025,6 +1038,7 @@ func _start_boss_thorn_attack() -> void:
 func _refresh_boss_display() -> void:
 	if _boss_sprite == null:
 		return
+	_refresh_boss_seed_display()
 	var boss_alive: bool = controller.is_boss_alive()
 	var boss_visible: bool = (
 		boss_alive
@@ -1092,6 +1106,17 @@ func _refresh_boss_display() -> void:
 		_boss_frame_timer = 0.0
 	_boss_sprite.position = MainGameController.BOSS_POSITION
 	_apply_boss_frame()
+
+
+func _refresh_boss_seed_display() -> void:
+	for index: int in range(_boss_seed_sprites.size()):
+		var seed_sprite: Sprite2D = _boss_seed_sprites[index]
+		if not controller.is_boss_alive() or index >= controller.boss_seeds.size():
+			seed_sprite.visible = false
+			continue
+		var seed: Dictionary = controller.boss_seeds[index]
+		seed_sprite.position = seed["position"] as Vector2
+		seed_sprite.visible = true
 
 
 ## 상황: `_draw()`가 상단 HUD 카드에 다음 피스 미리보기를 표시할 때 호출한다.

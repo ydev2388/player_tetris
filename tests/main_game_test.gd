@@ -29,6 +29,7 @@ const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_bos
 const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
 const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
 const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
+const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
 
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
@@ -227,7 +228,9 @@ func _run() -> void:
 		"시계공·닌자 VFX 시트가 지정된 frame 크기와 행 구성을 지킨다."
 	)
 	_test_sprite_atlas_contracts()
+	_test_board_coordinate_alignment()
 	_test_spawn_side_margin()
+	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
 	await _test_fixed_support_grab()
@@ -247,6 +250,16 @@ func _run() -> void:
 ## 순서: 7종 빈 보드 후보 수/실제 셀 여백 검사 → 선택 함수의 안전 후보 우선 검사
 ##       → I 피스 중앙 차단 fallback → 전체 차단 GAME_OVER 검사.
 ## 결과: 스폰 여백의 정상 경로와 예외 경로가 모두 설계 계약을 지키는지 assertion으로 기록한다.
+func _test_board_coordinate_alignment() -> void:
+	var scene: Node = GAME_SCENE.instantiate()
+	var board_physics: Node2D = scene.get_node("BoardPhysics") as Node2D
+	_expect(
+		board_physics.position.is_equal_approx(MainLayout.BOARD_ORIGIN),
+		"BoardPhysics와 GameView는 같은 보드 원점을 사용한다."
+	)
+	scene.free()
+
+
 func _test_spawn_side_margin() -> void:
 	var controller: MainGameController = GAME_CONTROLLER.new() # scene 없이 spawn 규칙만 검증할 임시 controller.
 	controller.reset_game(20260804)
@@ -314,6 +327,218 @@ func _test_spawn_side_margin() -> void:
 		"여백 후보와 벽 옆 후보가 모두 없을 때만 GAME_OVER가 된다."
 	)
 	controller.free()
+
+
+func _test_boss_seeds() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	controller.stage_number = 5
+	controller.reset_game(20260811)
+	_expect(
+			not controller.get_stage_gimmick_config()["binding_enabled"]
+			and MainGameController.BOSS_SEED_SIZE == Vector2.ONE * MainLayout.CELL_SIZE
+			and is_equal_approx(
+				MainGameController.BOSS_SEED_FIRST_DELAY_SECONDS,
+				10.0
+			)
+			and is_equal_approx(MainGameController.BOSS_SEED_INTERVAL_SECONDS, 20.0)
+			and is_equal_approx(MainGameController.BOSS_SEED_LIFETIME_SECONDS, 5.0),
+		"Stage 1-5는 확률 속박 대신 10초 시작·20초 주기의 씨앗 기믹을 사용한다."
+	)
+	_expect(
+		controller.boss_seeds.is_empty()
+			and is_zero_approx(controller.boss_seed_timer),
+		"보스 씨앗은 게임 시작 직후 생성되지 않는다."
+	)
+	controller._advance_stage_gimmicks(9.9)
+	_expect(
+		controller.boss_seeds.is_empty()
+			and controller.boss_seed_timer < MainGameController.BOSS_SEED_FIRST_DELAY_SECONDS,
+		"첫 씨앗 발사 전 10초 동안 씨앗 타이머만 진행된다."
+	)
+	controller._advance_stage_gimmicks(0.1)
+	var first_columns: Array[int] = []
+	for seed: Dictionary in controller.boss_seeds:
+		var position: Vector2 = seed["position"] as Vector2
+		first_columns.append(floori(position.x / MainLayout.CELL_SIZE))
+	var columns_are_unique: bool = true
+	for index: int in range(first_columns.size()):
+		if first_columns.slice(index + 1).has(first_columns[index]):
+			columns_are_unique = false
+	_expect(
+		controller.boss_seeds.size() == MainGameController.BOSS_SEED_COUNT
+			and columns_are_unique
+			and is_zero_approx(controller.boss_seed_timer),
+		"첫 발사에서 보스 아래 서로 다른 랜덤 열에 씨앗 3개가 생성된다."
+	)
+	_expect(
+		BOSS_SEED_TEXTURE.get_width() > 0
+			and BOSS_SEED_TEXTURE.get_height() > 0
+			and BOSS_SEED_TEXTURE.get_size() == Vector2.ONE * MainLayout.CELL_SIZE
+			and BOSS_SEED_TEXTURE.get_image().get_format() == Image.FORMAT_RGBA8,
+		"씨앗 스프라이트는 블럭 한 칸 크기의 RGBA 이미지로 등록된다."
+	)
+	var seed_region: Rect2 = ANIMATION_DATA.opaque_region_for(
+		BOSS_SEED_TEXTURE,
+		Rect2(Vector2.ZERO, BOSS_SEED_TEXTURE.get_size())
+	)
+	_expect(
+		seed_region.position == Vector2.ZERO
+			and seed_region.size == BOSS_SEED_TEXTURE.get_size(),
+		"씨앗 스프라이트는 보이는 영역에 맞게 투명 여백을 제거한다."
+	)
+
+	var active_column: int = first_columns[1]
+	var fixed_column: int = first_columns[2]
+	if fixed_column == active_column or fixed_column == active_column + 1:
+		fixed_column = first_columns[0]
+	controller.active_origin = Vector2i(active_column, 8)
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_cell_indices = [0, 1, 2, 3]
+	controller.board.cells[8][fixed_column] = MainTetrominoData.Type.T
+	controller._advance_stage_gimmicks(0.4)
+	var fixed_seed_settled: bool = false
+	var fixed_seed_y: float = 0.0
+	var active_seed_remaining: bool = false
+	for seed: Dictionary in controller.boss_seeds:
+		var seed_position: Vector2 = seed["position"] as Vector2
+		var seed_column: int = floori(seed_position.x / MainLayout.CELL_SIZE)
+		if seed_column == fixed_column:
+			fixed_seed_settled = bool(seed["settled"])
+			fixed_seed_y = seed_position.y
+		if seed_column == active_column:
+			active_seed_remaining = true
+	_expect(
+		fixed_seed_settled
+			and is_equal_approx(
+				fixed_seed_y,
+				float(8 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					- MainGameController.BOSS_SEED_SIZE.y * 0.5
+			)
+			and not active_seed_remaining,
+		"씨앗은 떨어지는 활성 블록에 닿으면 사라지고 비활성 블록 윗면에서 멈춘다."
+	)
+	_expect(
+		not is_finite(
+			controller._boss_seed_landing_y(
+				MainGameController.BOSS_SEED_SIZE.x * 0.5,
+				MainGameController.BOSS_POSITION.y
+					+ MainGameController.BOSS_DISPLAY_SIZE.y * 0.5
+					+ MainGameController.BOSS_SEED_SPAWN_MARGIN,
+				MainGameController.BOSS_POSITION.y
+					+ MainGameController.BOSS_DISPLAY_SIZE.y * 0.5
+					+ MainGameController.BOSS_SEED_SPAWN_MARGIN
+					+ MainGameController.BOSS_SEED_FALL_SPEED * 0.1
+			)
+		),
+		"게임판 가장자리 씨앗도 벽에 붙지 않고 계속 낙하한다."
+	)
+	controller._advance_stage_gimmicks(3.0)
+	var all_seeds_settled: bool = true
+	for seed: Dictionary in controller.boss_seeds:
+		all_seeds_settled = all_seeds_settled and bool(seed["settled"])
+	_expect(all_seeds_settled, "고정 블록이 없는 씨앗은 바닥에 착지한다.")
+	controller._advance_stage_gimmicks(5.0)
+	_expect(controller.boss_seeds.is_empty(), "착지한 씨앗은 5초 뒤 모두 사라진다.")
+
+	controller._advance_stage_gimmicks(11.5)
+	_expect(
+		controller.boss_seeds.is_empty(),
+		"두 번째 씨앗 발사 전 20초 주기를 지킨다."
+	)
+	controller._advance_stage_gimmicks(0.1)
+	_expect(
+		controller.boss_seeds.size() == MainGameController.BOSS_SEED_COUNT,
+		"첫 발사 후 20초가 지나면 씨앗 3개를 다시 뿌린다."
+	)
+	var lock_controller: MainGameController = GAME_CONTROLLER.new()
+	lock_controller.stage_number = 5
+	lock_controller.reset_game(20260811)
+	lock_controller.board.reset()
+	lock_controller.board.cells[20][4] = MainTetrominoData.Type.T
+	lock_controller.active_type = MainTetrominoData.Type.O
+	lock_controller.active_rotation = 0
+	lock_controller.active_origin = Vector2i(3, 18)
+	lock_controller.active_cell_indices = [0, 1, 2, 3]
+	lock_controller.boss_seeds.append({
+		"position": Vector2(
+			4.5 * MainLayout.CELL_SIZE,
+			float(20 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+				- MainGameController.BOSS_SEED_SIZE.y * 0.5
+		),
+		"settled": true,
+		"remaining": MainGameController.BOSS_SEED_LIFETIME_SECONDS,
+	})
+	lock_controller.boss_seeds.append({
+		"position": Vector2(
+			8.5 * MainLayout.CELL_SIZE,
+			float(MainBoardModel.VISIBLE_HEIGHT) * MainLayout.CELL_SIZE
+				- MainGameController.BOSS_SEED_SIZE.y * 0.5
+		),
+		"settled": true,
+		"remaining": MainGameController.BOSS_SEED_LIFETIME_SECONDS,
+	})
+	lock_controller.lock_active_piece()
+	_expect(
+		lock_controller.boss_seeds.size() == 1,
+		"블럭이 고정될 때 겹친 씨앗만 사라지고 다른 씨앗은 유지된다."
+	)
+	lock_controller.free()
+	var paused_seed_timer: float = controller.boss_seed_timer
+	controller.state = MainGameController.GameState.PAUSED
+	controller._advance_stage_gimmicks(20.0)
+	_expect(
+		is_equal_approx(controller.boss_seed_timer, paused_seed_timer)
+			and controller.boss_seeds.size() == MainGameController.BOSS_SEED_COUNT,
+		"PAUSED에서는 씨앗 발사·수명 시간이 멈춘다."
+	)
+	controller.free()
+
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	var scene_controller: MainGameController = scene.get_node("GameController")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	scene_controller.stage_number = 5
+	scene_controller.reset_game(20260811)
+	scene.process_mode = Node.PROCESS_MODE_DISABLED
+	scene_controller._advance_stage_gimmicks(10.0)
+	var seed_count_before_contact: int = scene_controller.boss_seeds.size()
+	character.position = (scene_controller.boss_seeds[0]["position"] as Vector2)
+	var contact_position: Vector2 = character.position
+	scene_controller._advance_stage_gimmicks(0.0)
+	var seed_is_still_at_contact: bool = false
+	for child: Node in scene.get_node("BoardPhysics").get_children():
+		if not child is Sprite2D:
+			continue
+		var seed_sprite_node: Sprite2D = child as Sprite2D
+		if (
+			seed_sprite_node.name.begins_with("BossSeed")
+			and seed_sprite_node.visible
+			and seed_sprite_node.position.is_equal_approx(contact_position)
+		):
+			seed_is_still_at_contact = true
+	_expect(
+		character.is_bound
+			and is_equal_approx(
+				character.binding_timer,
+				MainGameController.BOSS_BINDING_DURATION_SECONDS
+			)
+			and scene_controller.boss_seeds.size() == seed_count_before_contact - 1
+			and not seed_is_still_at_contact,
+		"씨앗에 닿은 플레이어는 3초 속박되고 해당 씨앗은 즉시 사라진다."
+	)
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._charge_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	character._charge_loop_player.stream = null
+	scene.free()
+	await process_frame
 
 
 ## 상황: 각 테스트 조건을 기록하고 사람이 읽는 결과를 stdout/stderr에 출력할 때 호출된다.
@@ -1260,8 +1485,18 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 400.0)
-			and is_equal_approx(character._hang_bottom_global_y, 496.0),
+			and is_equal_approx(
+				character._hang_top_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(8 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			)
+			and is_equal_approx(
+				character._hang_bottom_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(10 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			),
 		"세로로 이어진 노출 옆면은 손 위치 기준 매달림 범위를 공유한다."
 	)
 	var upper_bound: float = character._hang_top_global_y
@@ -1343,8 +1578,18 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 496.0)
-			and is_equal_approx(character._hang_bottom_global_y, 544.0),
+			and is_equal_approx(
+				character._hang_top_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(10 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			)
+			and is_equal_approx(
+				character._hang_bottom_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(11 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			),
 		"세로 틈이 있는 옆면은 틈을 건너 범위를 확장하지 않는다."
 	)
 	character._exit_hang()
@@ -1359,8 +1604,18 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(character._hang_top_global_y, 400.0)
-			and is_equal_approx(character._hang_bottom_global_y, 448.0),
+			and is_equal_approx(
+				character._hang_top_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(8 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			)
+			and is_equal_approx(
+				character._hang_bottom_global_y,
+				MainLayout.BOARD_ORIGIN.y
+					+ float(9 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+					+ MainCharacterController.HANG_HAND_OFFSET_Y
+			),
 		"수평으로 꺾인 step은 다른 face를 같은 범위로 합치지 않는다."
 	)
 	character._exit_hang()

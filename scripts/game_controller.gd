@@ -49,6 +49,13 @@ const BINDING_PROBABILITY: float = 0.15
 const BINDING_PROBABILITY_STEP: float = 0.05
 const BINDING_DURATION_SECONDS: float = 2.0
 const BOSS_BINDING_DURATION_SECONDS: float = 3.0
+const BOSS_SEED_COUNT: int = 3
+const BOSS_SEED_FIRST_DELAY_SECONDS: float = 10.0
+const BOSS_SEED_INTERVAL_SECONDS: float = 20.0
+const BOSS_SEED_LIFETIME_SECONDS: float = 5.0
+const BOSS_SEED_FALL_SPEED: float = MainLayout.CELL_SIZE * 6.0
+const BOSS_SEED_SIZE: Vector2 = Vector2(MainLayout.CELL_SIZE, MainLayout.CELL_SIZE)
+const BOSS_SEED_SPAWN_MARGIN: float = 12.0
 const BOSS_MAX_HEALTH: int = 3
 const BOSS_POSITION: Vector2 = Vector2(240.0, 84.0)
 const BOSS_DISPLAY_SIZE: Vector2 = Vector2(72.0, 192.0)
@@ -68,8 +75,7 @@ const STAGE_GIMMICKS: Dictionary = {
 	4: {"thorn_probability": 0.25, "binding_enabled": true},
 	5: {
 		"thorn_probability": 0.33,
-		"binding_enabled": true,
-		"binding_duration": BOSS_BINDING_DURATION_SECONDS,
+		"binding_enabled": false,
 	},
 }
 
@@ -135,6 +141,9 @@ var boss_fall_hold_timer: float = 0.0
 var boss_down: bool = false
 var boss_falling: bool = false
 var boss_fallen: bool = false
+var boss_seeds: Array[Dictionary] = []
+var boss_seed_timer: float = 0.0
+var boss_seed_first_cast_done: bool = false
 
 # 현재 피스 하나에만 적용되는 내부 accumulator/counter.
 var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
@@ -257,6 +266,9 @@ func reset_game(seed_value: int = -1) -> void:
 	meditation_active = false
 	fall_freeze_remaining = 0.0
 	clear_skill_effects()
+	boss_seeds.clear()
+	boss_seed_timer = 0.0
+	boss_seed_first_cast_done = false
 	_reset_piece_timers()
 	next_type = bag.next_piece()
 	spawn_next_piece()
@@ -346,6 +358,12 @@ func _advance_stage_gimmicks(delta: float) -> void:
 		_advance_thorn_timer(delta)
 	else:
 		_reset_active_piece_gimmick()
+	if is_boss_stage():
+		binding_check_timer = 0.0
+		binding_pending = false
+		binding_probability = BINDING_PROBABILITY
+		_advance_boss_seed_skill(delta)
+		return
 	if not bool(config.get("binding_enabled", false)):
 		binding_check_timer = 0.0
 		binding_pending = false
@@ -444,6 +462,179 @@ func _next_gimmick_roll() -> bool:
 	if not _gimmick_roll_overrides.is_empty():
 		return _gimmick_roll_overrides.pop_front()
 	return _gimmick_random.randf() < binding_probability
+
+
+func _advance_boss_seed_skill(delta: float) -> void:
+	if not is_boss_alive():
+		return
+	var changed: bool = _advance_boss_seeds(maxf(delta, 0.0))
+	boss_seed_timer += maxf(delta, 0.0)
+	var cast_interval: float = (
+		BOSS_SEED_INTERVAL_SECONDS
+		if boss_seed_first_cast_done
+		else BOSS_SEED_FIRST_DELAY_SECONDS
+	)
+	while boss_seed_timer >= cast_interval:
+		boss_seed_timer -= cast_interval
+		boss_seed_first_cast_done = true
+		_spawn_boss_seeds()
+		changed = true
+		cast_interval = BOSS_SEED_INTERVAL_SECONDS
+	if changed:
+		game_changed.emit()
+
+
+func _spawn_boss_seeds() -> void:
+	var columns: Array[int] = []
+	while columns.size() < BOSS_SEED_COUNT:
+		var column: int = _gimmick_random.randi_range(0, MainBoardModel.WIDTH - 1)
+		if column not in columns:
+			columns.append(column)
+	for column: int in columns:
+		var seed_x: float = (float(column) + 0.5) * MainLayout.CELL_SIZE
+		boss_seeds.append({
+			"position": Vector2(
+				seed_x,
+				BOSS_POSITION.y + BOSS_DISPLAY_SIZE.y * 0.5 + BOSS_SEED_SPAWN_MARGIN
+			),
+			"settled": false,
+			"remaining": BOSS_SEED_LIFETIME_SECONDS,
+		})
+
+
+func _advance_boss_seeds(delta: float) -> bool:
+	if boss_seeds.is_empty():
+		return false
+	var changed: bool = false
+	var active_seeds: Array[Dictionary] = []
+	for seed: Dictionary in boss_seeds:
+		var position: Vector2 = seed["position"] as Vector2
+		var previous_y: float = position.y
+		var settled: bool = bool(seed["settled"])
+		if settled:
+			seed["remaining"] = float(seed["remaining"]) - delta
+			if float(seed["remaining"]) <= 0.0:
+				changed = true
+				continue
+			if _boss_seed_overlaps_active_piece(_boss_seed_rect(position)):
+				changed = true
+				continue
+			if _boss_seed_overlaps_character(_boss_seed_rect(position)):
+				_apply_boss_seed_binding()
+				changed = true
+				continue
+			active_seeds.append(seed)
+			changed = changed or delta > 0.0
+			continue
+
+		var next_y: float = position.y + BOSS_SEED_FALL_SPEED * delta
+		var landing_y: float = _boss_seed_landing_y(position.x, position.y, next_y)
+		if is_finite(landing_y):
+			position.y = landing_y
+			seed["position"] = position
+			seed["settled"] = true
+			changed = true
+		else:
+			position.y = next_y
+			seed["position"] = position
+			changed = changed or delta > 0.0
+		if _boss_seed_overlaps_active_piece(
+			_boss_seed_sweep_rect(position.x, previous_y, next_y)
+		):
+			changed = true
+			continue
+		if _boss_seed_overlaps_character(
+			_boss_seed_sweep_rect(position.x, previous_y, next_y)
+		):
+			_apply_boss_seed_binding()
+			changed = true
+			continue
+		active_seeds.append(seed)
+	boss_seeds = active_seeds
+	return changed
+
+
+func _boss_seed_landing_y(x: float, current_y: float, next_y: float) -> float:
+	var half_size: float = BOSS_SEED_SIZE.y * 0.5
+	var landing_y: float = INF
+	for y: int in range(MainBoardModel.HEIGHT):
+		for cell_x: int in range(MainBoardModel.WIDTH):
+			if board.get_cell(Vector2i(cell_x, y)) == MainBoardModel.EMPTY:
+				continue
+			var cell_left: float = float(cell_x) * MainLayout.CELL_SIZE
+			var cell_top: float = float(y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+			if x + half_size <= cell_left or x - half_size >= cell_left + MainLayout.CELL_SIZE:
+				continue
+			var candidate_y: float = cell_top - half_size
+			var overlaps_at_start: bool = (
+				current_y + half_size > cell_top
+				and current_y - half_size < cell_top + MainLayout.CELL_SIZE
+			)
+			if (
+				(current_y <= candidate_y and next_y >= candidate_y)
+				or overlaps_at_start
+			):
+				landing_y = minf(landing_y, candidate_y)
+	var floor_y: float = float(MainBoardModel.VISIBLE_HEIGHT) * MainLayout.CELL_SIZE - half_size
+	if current_y <= floor_y and next_y >= floor_y:
+		landing_y = minf(landing_y, floor_y)
+	return landing_y
+
+
+func _boss_seed_rect(position: Vector2) -> Rect2:
+	return Rect2(position - BOSS_SEED_SIZE * 0.5, BOSS_SEED_SIZE)
+
+
+func _boss_seed_sweep_rect(x: float, current_y: float, next_y: float) -> Rect2:
+	var top: float = minf(current_y, next_y) - BOSS_SEED_SIZE.y * 0.5
+	return Rect2(
+		Vector2(x - BOSS_SEED_SIZE.x * 0.5, top),
+		Vector2(BOSS_SEED_SIZE.x, absf(next_y - current_y) + BOSS_SEED_SIZE.y)
+	)
+
+
+func _boss_seed_overlaps_character(seed_rect: Rect2) -> bool:
+	if not is_instance_valid(character):
+		return false
+	return seed_rect.intersects(character._character_collider_rect())
+
+
+func _boss_seed_overlaps_active_piece(seed_rect: Rect2) -> bool:
+	return _boss_seed_overlaps_cells(seed_rect, active_board_cells())
+
+
+func _boss_seed_overlaps_cells(seed_rect: Rect2, cells: Array[Vector2i]) -> bool:
+	for cell: Vector2i in cells:
+		var cell_rect := Rect2(
+			Vector2(
+				float(cell.x) * MainLayout.CELL_SIZE,
+				float(cell.y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+			),
+			Vector2.ONE * MainLayout.CELL_SIZE
+		)
+		if seed_rect.intersects(cell_rect, true):
+			return true
+	return false
+
+
+func _apply_boss_seed_binding() -> void:
+	if is_instance_valid(character):
+		character.apply_binding(BOSS_BINDING_DURATION_SECONDS)
+
+
+func _remove_boss_seeds_overlapping_cells(locked_cells: Array[Vector2i]) -> bool:
+	if boss_seeds.is_empty() or locked_cells.is_empty():
+		return false
+	var remaining_seeds: Array[Dictionary] = []
+	var changed: bool = false
+	for seed: Dictionary in boss_seeds:
+		var seed_rect: Rect2 = _boss_seed_rect(seed["position"] as Vector2)
+		if _boss_seed_overlaps_cells(seed_rect, locked_cells):
+			changed = true
+			continue
+		remaining_seeds.append(seed)
+	boss_seeds = remaining_seeds
+	return changed
 
 
 func _advance_stage_timer(delta: float) -> void:
@@ -982,6 +1173,7 @@ func lock_active_piece() -> void:
 	if state != GameState.PLAYING:
 		return
 
+	_remove_boss_seeds_overlapping_cells(active_board_cells())
 	board.lock_cells(active_type, active_local_cells(), active_origin)
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
@@ -1021,6 +1213,9 @@ func end_game() -> void:
 	state = GameState.GAME_OVER
 	meditation_active = false
 	_reset_active_piece_gimmick()
+	boss_seeds.clear()
+	boss_seed_timer = 0.0
+	boss_seed_first_cast_done = false
 	binding_check_timer = 0.0
 	binding_pending = false
 	binding_probability = BINDING_PROBABILITY
@@ -1090,6 +1285,9 @@ func damage_boss(cleared_lines: int) -> void:
 		return
 	meditation_active = false
 	_reset_active_piece_gimmick()
+	boss_seeds.clear()
+	boss_seed_timer = 0.0
+	boss_seed_first_cast_done = false
 	binding_check_timer = 0.0
 	binding_pending = false
 	binding_probability = BINDING_PROBABILITY

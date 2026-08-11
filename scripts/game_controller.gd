@@ -900,12 +900,13 @@ func push_active_piece(
 
 
 ## 상황: 캐릭터 블록 플립이 활성 피스를 시계/반시계 방향으로 돌릴 때 호출한다.
-## 순서: state/O 검사 → 새 회전/SRS key 계산 → kick 표 선택
+## 순서: state/O 검사 → 새 회전/SRS key 계산 → kick 표 또는 원점만 검사
 ##       → 후보를 순서대로 can_place/금지 셀 검사 → 최초 성공 적용/timer reset/emit.
 ## 결과: 보드와 캐릭터 점유 셀을 모두 피하는 보정 위치가 있으면 true, 모두 막히면 false다.
 func try_rotate(
 	direction: int,
-	forbidden_cells: Array[Vector2i] = []
+	forbidden_cells: Array[Vector2i] = [],
+	preserve_origin: bool = false
 ) -> bool:
 	if state != GameState.PLAYING:
 		return false
@@ -924,7 +925,11 @@ func try_rotate(
 	var new_rotation: int = posmod(active_rotation + direction, 4) # 0~3 목표 회전.
 	var transition: String = "%d>%d" % [old_rotation, new_rotation] # 예: "0>1".
 	var kick_table: Dictionary = I_KICKS if active_type == MainTetrominoData.Type.I else JLSTZ_KICKS # 모양별 표.
-	var kick_tests: Array = kick_table.get(transition, [Vector2i.ZERO]) # 시험할 offset 목록.
+	var kick_tests: Array = (
+		[Vector2i.ZERO]
+		if preserve_origin
+		else kick_table.get(transition, [Vector2i.ZERO])
+	) # 시험할 offset 목록.
 	var was_grounded: bool = is_grounded() # 회전 전 접지 snapshot.
 
 	# SRS는 보정 후보를 표 순서대로 검사하고 처음 배치 가능한 위치만 채택한다.

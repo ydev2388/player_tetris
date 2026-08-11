@@ -60,6 +60,7 @@ var _stage_labels: Array[Label] = []
 var _stage_currency_label: Label
 var _character_buttons: Array[Button] = []
 var _character_confirm_button: Button
+var _character_back_button: Button
 var _character_detail_label: Label
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
 var _character_window_start: int = 0
@@ -271,6 +272,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif _handle_progress_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
+	elif _handle_character_select_input(key_event):
+		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
 
@@ -348,6 +351,44 @@ func _handle_debug_completion_input(key_event: InputEventKey) -> bool:
 		return false
 	_complete_stage_for_debug()
 	return true
+
+
+## 결과: 캐릭터 화면에서 좌우는 카드 이동, 끝 칸은 표시 window 이동, Z는 즉시 확정한다.
+func _handle_character_select_input(key_event: InputEventKey) -> bool:
+	if current_screen != Screen.CHARACTER:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_LEFT:
+		_move_character_focus(-1)
+		return true
+	if key_code == KEY_RIGHT:
+		_move_character_focus(1)
+		return true
+	if key_code == KEY_Z:
+		if not _selected_character_id.is_empty() and MainCharacterData.has_character(_selected_character_id):
+			show_stage_select()
+		return true
+	return false
+
+
+func _move_character_focus(direction: int) -> void:
+	var focused_button: Button = get_viewport().gui_get_focus_owner() as Button
+	var current_index: int = _character_buttons.find(focused_button)
+	if current_index < 0:
+		current_index = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
+	if current_index < 0:
+		current_index = _character_window_start
+	var target_index: int = current_index + signi(direction)
+	if target_index < 0 or target_index >= _character_buttons.size():
+		return
+	if target_index < _character_window_start:
+		_shift_character_window(-1)
+	elif target_index >= _character_window_start + 3:
+		_shift_character_window(1)
+	_character_buttons[target_index].grab_focus()
+	_select_character(MainCharacterData.CHARACTER_ORDER[target_index])
 
 
 ## 결과: 게임 밖의 초점 버튼은 Z로 누르고 Enter는 선택키로 쓰지 않는다.
@@ -1622,13 +1663,13 @@ func _build_character_screen() -> void:
 	_character_prev_button = _create_button(
 		screen, "◀", Rect2(6.0, 286.0, 38.0, 70.0), PURPLE, 19
 	)
-	_character_prev_button.pressed.connect(_shift_character_window.bind(-1))
-	_character_prev_button.focus_entered.connect(_play_select_sfx)
+	_character_prev_button.focus_mode = Control.FOCUS_NONE
+	_character_prev_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_character_next_button = _create_button(
 		screen, "▶", Rect2(916.0, 286.0, 38.0, 70.0), PURPLE, 19
 	)
-	_character_next_button.pressed.connect(_shift_character_window.bind(1))
-	_character_next_button.focus_entered.connect(_play_select_sfx)
+	_character_next_button.focus_mode = Control.FOCUS_NONE
+	_character_next_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var detail_panel: Panel = _create_panel(
 		screen,
@@ -1652,8 +1693,8 @@ func _build_character_screen() -> void:
 		CYAN,
 		16
 	)
-	_character_confirm_button.pressed.connect(show_stage_select)
-	_character_confirm_button.focus_entered.connect(_play_select_sfx)
+	_character_confirm_button.focus_mode = Control.FOCUS_NONE
+	_character_confirm_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var back_button: Button = _create_button(
 		detail_panel,
 		"뒤로",
@@ -1661,6 +1702,7 @@ func _build_character_screen() -> void:
 		DANGER,
 		16
 	)
+	_character_back_button = back_button
 	back_button.pressed.connect(show_stage_select)
 	back_button.focus_entered.connect(_play_select_sfx)
 	_refresh_character_selection()
@@ -1729,6 +1771,16 @@ func _refresh_character_selection() -> void:
 		button.visible = visible_slot >= 0 and visible_slot < 3
 		if button.visible:
 			button.position = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+			var left_button: Button = (
+				_character_buttons[index - 1] if visible_slot > 0 else button
+			)
+			var right_button: Button = (
+				_character_buttons[index + 1] if visible_slot < 2 else button
+			)
+			button.focus_neighbor_left = button.get_path_to(left_button)
+			button.focus_neighbor_right = button.get_path_to(right_button)
+			button.focus_neighbor_bottom = button.get_path_to(_character_back_button)
+			button.focus_neighbor_top = button.get_path_to(button)
 		var selected: bool = button.name == "Character_%s" % _selected_character_id
 		button.add_theme_stylebox_override("normal", _character_card_style(selected))
 		button.modulate = Color.WHITE if selected else Color(0.82, 0.85, 0.90, 0.88)
@@ -1738,6 +1790,10 @@ func _refresh_character_selection() -> void:
 					"font_color",
 					Color.WHITE if selected else TEXT
 				)
+	if _character_back_button != null:
+		_character_back_button.focus_neighbor_left = _character_back_button.get_path_to(_character_back_button)
+		_character_back_button.focus_neighbor_right = _character_back_button.get_path_to(_character_back_button)
+		_character_back_button.focus_neighbor_bottom = _character_back_button.get_path_to(_character_back_button)
 
 
 func _character_card_style(selected: bool) -> StyleBoxFlat:

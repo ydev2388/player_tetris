@@ -30,6 +30,14 @@ const CHARACTER_HEIGHT: float = CELL_SIZE * 2.0 # 논리 피해 판정 높이: 2
 const CHARACTER_COLLIDER_WIDTH: float = 28.0 * MainLayout.DISPLAY_SCALE
 const CHARACTER_COLLIDER_HEIGHT: float = 60.0 * MainLayout.DISPLAY_SCALE
 const CHARACTER_COLLIDER_OFFSET_Y: float = 2.0 * MainLayout.DISPLAY_SCALE
+const BOARD_MIN_X: float = CHARACTER_COLLIDER_WIDTH * 0.5
+const BOARD_MAX_X: float = MainBoardModel.WIDTH * CELL_SIZE - CHARACTER_COLLIDER_WIDTH * 0.5
+const BOARD_MIN_Y: float = CHARACTER_COLLIDER_HEIGHT * 0.5 - CHARACTER_COLLIDER_OFFSET_Y
+const BOARD_MAX_Y: float = (
+	MainBoardModel.VISIBLE_HEIGHT * CELL_SIZE
+	- CHARACTER_COLLIDER_HEIGHT * 0.5
+	- CHARACTER_COLLIDER_OFFSET_Y
+)
 const RESPAWN_TOP_MARGIN_CELLS: int = 1 # 피격 재스폰 시 캐릭터 윗면과 화면 위의 간격.
 const RESPAWN_CENTER_Y: float = ( # 윗면 48px + 논리 몸체 반높이 48px.
 	RESPAWN_TOP_MARGIN_CELLS * CELL_SIZE + CHARACTER_HEIGHT * 0.5
@@ -402,10 +410,12 @@ func _physics_process(delta: float) -> void:
 		_finish_physics_frame(delta)
 		return
 
-	if is_meditating:
+	if is_meditating and not Input.is_action_just_pressed(&"character_rotation_kick"):
 		_handle_meditation(delta)
 		_finish_physics_frame(delta)
 		return
+	if is_meditating:
+		_set_meditating(false)
 	if _can_start_meditating():
 		_set_meditating(true)
 		_handle_meditation(delta)
@@ -516,6 +526,7 @@ func _reset_self_respawn_input() -> void:
 func _can_start_meditating() -> bool:
 	return (
 		Input.is_action_pressed(&"character_meditate")
+		and not Input.is_action_just_pressed(&"character_rotation_kick")
 		and is_on_floor()
 		and not is_hanging
 		and not _charging
@@ -525,8 +536,8 @@ func _can_start_meditating() -> bool:
 
 
 ## 상황: 명상/매달림/일반 이동 중 하나가 끝난 모든 활성 physics frame에서 호출한다.
-## 순서: `_update_visual_state(delta)` → `validate_position()`.
-## 결과: gameplay 상태에 맞는 sprite가 적용되고 새 블록 겹침/추락 피해가 처리된다.
+## 순서: `_update_visual_state(delta)` → 보드 경계/추락 위치 검증.
+## 결과: gameplay 상태에 맞는 sprite가 적용되고 캐릭터가 보드 밖으로 나가지 않는다.
 func _finish_physics_frame(delta: float) -> void:
 	_resolve_pending_punch(delta)
 	_sync_barrier_cells()
@@ -651,7 +662,7 @@ func _apply_gravity(grounded: bool, delta: float) -> void:
 
 
 ## 상황: 일반 이동 frame에서 단발 행동 입력을 읽을 때 호출한다.
-## 순서: 회전/점프의 just_pressed 값을 `_dispatch_action_input()`에 전달.
+## 순서: 회전/점프의 just_pressed 값과 위/아래 화살표 방향을 dispatcher에 전달.
 ## 결과: 실제 우선순위 판단은 dispatcher 한곳에서 실행되어 테스트도 같은 경로를 사용할 수 있다.
 func _handle_action_input() -> void:
 	var jump_pressed: bool = Input.is_action_just_pressed(&"character_jump")
@@ -662,7 +673,8 @@ func _handle_action_input() -> void:
 			_ignore_initial_jump_until_released = false
 	_dispatch_action_input(
 		Input.is_action_just_pressed(&"character_rotation_kick"),
-		jump_pressed
+		jump_pressed,
+		_rotation_direction_for_input()
 	)
 
 
@@ -671,11 +683,12 @@ func _handle_action_input() -> void:
 ## 결과: 한 frame에 블록 플립 또는 점프 중 하나만 시작된다.
 func _dispatch_action_input(
 	rotation_kick_pressed: bool,
-	jump_pressed: bool
+	jump_pressed: bool,
+	rotation_direction: int = 0
 ) -> void:
 	if rotation_kick_pressed:
 		_cancel_jump_intent()
-		_attempt_rotation_kick()
+		_attempt_rotation_kick(rotation_direction)
 		return
 
 	_handle_jump_input(jump_pressed)
@@ -689,6 +702,22 @@ func _cancel_jump_intent() -> void:
 	_hang_jump_grace_remaining = 0.0
 	_variable_jump_active = false
 	_cancel_wall_jump_control()
+
+
+## 상황: S와 위/아래 화살표가 같은 frame에 입력됐을 때 블록 플립 방향을 계산한다.
+## 순서: 한쪽 화살표만 눌렸으면 위는 현재 facing, 아래는 반대 facing을 선택한다.
+## 결과: 화살표가 없거나 둘 다 눌리면 기존 facing 기반 동작을 유지한다.
+func _rotation_direction_for_input() -> int:
+	return _rotation_direction_for_arrows(
+		Input.is_key_pressed(KEY_UP),
+		Input.is_key_pressed(KEY_DOWN)
+	)
+
+
+func _rotation_direction_for_arrows(up_pressed: bool, down_pressed: bool) -> int:
+	if up_pressed == down_pressed:
+		return facing
+	return facing if up_pressed else -facing
 
 
 ## 상황: 회전이 이번 frame을 소비하지 않았을 때 jump press를 처리한다.
@@ -1066,10 +1095,10 @@ func _set_meditating(active: bool) -> void:
 
 ## 상황: S 블록 플립이 action 우선순위에서 선택됐을 때 호출한다.
 ## 순서: cooldown → spin 시작 → 활성 피스 88px 근접 검사
-##       → 가까우면 실제 물리 몸체 점유 셀을 계산해 Controller.try_rotate(facing, 금지 셀)
+##       → 가까우면 실제 물리 몸체 점유 셀을 계산해 Controller.try_rotate(입력 방향, 금지 셀)
 ##       → 성공/공간 부족/대상 없음별 y속도/cooldown/feedback → signal.
 ## 결과: 스태미나를 쓰지 않으며 대상이 없어도 한 바퀴 동작과 짧은 cooldown이 적용된다.
-func _attempt_rotation_kick() -> void:
+func _attempt_rotation_kick(rotation_direction: int = 0) -> void:
 	if is_meditating or _special_animation_remaining > 0.0 or not _pending_special_id.is_empty():
 		_set_feedback("지금은 블록 플립을 사용할 수 없음")
 		return
@@ -1077,7 +1106,8 @@ func _attempt_rotation_kick() -> void:
 		_set_feedback("블록 플립 재사용 대기 중")
 		return
 
-	_start_rotation_spin()
+	var resolved_direction: int = facing if rotation_direction == 0 else signi(rotation_direction)
+	_start_rotation_spin(resolved_direction)
 	if controller.boss_hitbox_overlaps(_forward_attack_rect(ROTATION_KICK_BOSS_REACH)):
 		controller.notify_boss_attacked()
 		take_thorn_damage("보스 가시 피해! 목숨 -1")
@@ -1093,7 +1123,7 @@ func _attempt_rotation_kick() -> void:
 		return
 
 	var thorn_contact: bool = controller.active_piece_has_visible_thorns()
-	if controller.try_rotate(facing, _rotation_forbidden_cells()):
+	if controller.try_rotate(resolved_direction, _rotation_forbidden_cells(), true):
 		_play_sfx(SFX_FLIP)
 		# game_changed로 새 active shape를 만든 같은 physics frame에는 아직 PhysicsServer에
 		# 반영되지 않을 수 있다. 이번 frame 수직 이동을 멈추고 다음 frame에 발사한다.
@@ -1172,12 +1202,12 @@ func _active_piece_overlaps_rect(target_rect: Rect2) -> bool:
 
 
 ## 상황: 성공/실패와 무관하게 실제 블록 플립 동작을 시작할 때 호출한다.
-## 순서: 전체/경과 timer 초기화 → 현재 facing을 방향 snapshot으로 저장 → 각도 정자세.
+## 순서: 전체/경과 timer 초기화 → 선택된 회전 방향 snapshot 저장 → 각도 정자세.
 ## 결과: 이후 방향 입력이 바뀌어도 0.42초 동안 시작 방향으로 한 바퀴를 완주한다.
-func _start_rotation_spin() -> void:
+func _start_rotation_spin(rotation_direction: int = 0) -> void:
 	_spin_remaining = ROTATION_SPIN_DURATION
 	_spin_elapsed = 0.0
-	_spin_direction = -1 if facing < 0 else 1
+	_spin_direction = facing if rotation_direction == 0 else signi(rotation_direction)
 	_post_spin_animation_seeded = false
 	sprite.rotation = 0.0
 
@@ -1392,11 +1422,12 @@ func _has_fixed_support_underfoot() -> bool:
 
 
 ## 상황: 매 physics frame 끝과 BoardPhysics collision 동기화 직후 안전망으로 호출된다.
-## 순서: 정상 플레이/보드 내부면 종료 → 보드 아래면 안전 위치 검색 및 무피해 복귀.
-## 결과: 일반 블록 겹침이나 낙사는 목숨을 깎지 않고 압착 전용 경로만 피해를 준다.
+## 순서: 캐릭터 collider가 보드 안에 있도록 위치를 clamp → 보드 아래면 안전 위치 검색.
+## 결과: 상하좌우 보드 밖 이탈을 막고, 기존 추락 복귀 경로도 유지한다.
 func validate_position() -> void:
 	if controller.state != MainGameController.GameState.PLAYING:
 		return
+	_clamp_to_board_bounds()
 	if not _is_below_board():
 		return
 
@@ -1407,6 +1438,18 @@ func validate_position() -> void:
 	position = safe_position as Vector2
 	velocity = Vector2.ZERO
 	_set_feedback("보드 이탈: 안전 위치 복귀")
+
+
+func _clamp_to_board_bounds() -> void:
+	var clamped_position: Vector2 = Vector2(
+		clampf(position.x, BOARD_MIN_X, BOARD_MAX_X),
+		clampf(position.y, BOARD_MIN_Y, BOARD_MAX_Y)
+	)
+	if not is_equal_approx(clamped_position.x, position.x):
+		velocity.x = 0.0
+	if not is_equal_approx(clamped_position.y, position.y):
+		velocity.y = 0.0
+	position = clamped_position
 
 
 ## 상황: 위치 검증 첫 단계에서 낙사 기준을 확인할 때 호출한다.
@@ -1960,10 +2003,28 @@ func _seed_post_spin_animation() -> void:
 	_post_spin_animation_seeded = true
 
 
-## 상황: 현재 명상 또는 punch charge 상태를 색으로 표시할 때 호출한다.
-## 순서: 명상이면 시간 pulse/청색 modulation → 아니면 charge_ratio/주황 glow.
-## 결과: sprite.modulate가 두 상태 중 현재 우선 상태를 반영한다.
+## 상황: 현재 매달림/명상/punch charge 상태를 색으로 표시할 때 호출한다.
+## 순서: 매달림이면 stamina 기반 적색 점멸 → 명상이면 청색 pulse → 아니면 charge glow.
+## 결과: sprite.modulate가 현재 상태의 우선 시각 효과를 반영한다.
 func _update_sprite_modulation() -> void:
+	if is_hanging:
+		var stamina_ratio: float = clampf(stamina / MAX_STAMINA, 0.0, 1.0)
+		if is_zero_approx(stamina_ratio):
+			sprite.modulate = Color(1.0, 0.0, 0.0, 1.0)
+			return
+		var danger: float = 1.0 - stamina_ratio
+		var blink_frequency: float = lerpf(1.5, 12.0, danger)
+		var pulse: float = (
+			sin(float(Time.get_ticks_msec()) * TAU * blink_frequency / 1000.0) + 1.0
+		) * 0.5
+		var red_strength: float = danger * pulse
+		sprite.modulate = Color(
+			1.0,
+			1.0 - red_strength * 0.9,
+			1.0 - red_strength * 0.9,
+			1.0
+		)
+		return
 	if is_meditating:
 		var meditation_pulse: float = ( # 0~1로 왕복하는 명상 밝기.
 			sin(float(Time.get_ticks_msec()) * 0.008) + 1.0
@@ -2023,7 +2084,7 @@ func _advance_character_animation(delta: float) -> void:
 
 
 ## 상황: 겹칠 수 있는 gameplay flag 중 표시할 animation 하나를 고를 때 호출한다.
-## 순서: 블록 플립 → attack timer → hanging → 비접지 jump → idle 순 조기 반환.
+## 순서: 블록 플립 → attack timer → 매달림 → 비접지 jump → idle 순 조기 반환.
 ## 결과: `rotation kick > attack > hang > jump > idle` 우선순위 key를 반환한다.
 func _get_animation_state() -> String:
 	if _spin_remaining > 0.0:
@@ -2040,9 +2101,8 @@ func _get_animation_state() -> String:
 
 
 ## 상황: animation 시간/state가 정해진 뒤 실제 Sprite2D frame을 적용할 때 호출한다.
-## 순서: region의 불투명 경계 조회 → 상태별 실루엣 높이에 균일 배율 적용
-##       → 불투명 중심 X와 고정 충돌체 발선을 공통 표시 기준점으로 정렬.
-## 결과: 원본 투명 여백이 달라도 프레임 전환 시 몸 크기와 발 위치가 흔들리지 않는다.
+## 순서: 현재 frame의 불투명 경계와 고정 충돌체 발선을 정렬한다.
+## 결과: 원본 투명 여백이 달라도 HANG을 포함한 frame 전환 시 몸 크기와 기준 위치가 흔들리지 않는다.
 func _apply_animation_frame() -> void:
 	if not is_instance_valid(sprite):
 		return
@@ -2051,26 +2111,21 @@ func _apply_animation_frame() -> void:
 		_animation_time,
 		character_id
 	) # source frame.
-	var reference_region: Rect2 = ANIMATION_DATA.region_for(
-		ANIMATION_DATA.IDLE,
-		0.0,
-		character_id
-	)
-	var reference_bounds: Rect2 = _frame_alpha_bounds(reference_region)
-	var visible_height: float = ANIMATION_DATA.visible_height_for(
-		ANIMATION_DATA.IDLE,
-		character_id
-	)
-	var uniform_scale: float = visible_height / maxf(reference_bounds.size.y, 1.0)
-	var source_center: Vector2 = region.size * 0.5
-	var visible_center_x: float = reference_bounds.position.x + reference_bounds.size.x * 0.5
-	var visible_bottom: float = reference_bounds.end.y
-	var ground_anchor_y: float = (
-		CHARACTER_COLLIDER_OFFSET_Y + CHARACTER_COLLIDER_HEIGHT * 0.5
-	)
 	sprite.texture = ANIMATION_DATA.texture_for(_animation_state, character_id)
 	sprite.region_enabled = true
 	sprite.region_rect = region
+	var frame_bounds: Rect2 = _frame_alpha_bounds(region)
+	var visible_height: float = ANIMATION_DATA.visible_height_for(
+		_animation_state,
+		character_id
+	)
+	var uniform_scale: float = visible_height / maxf(frame_bounds.size.y, 1.0)
+	var source_center: Vector2 = region.size * 0.5
+	var visible_center_x: float = frame_bounds.position.x + frame_bounds.size.x * 0.5
+	var visible_bottom: float = frame_bounds.end.y
+	var ground_anchor_y: float = (
+		CHARACTER_COLLIDER_OFFSET_Y + CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
 	sprite.scale = Vector2.ONE * uniform_scale
 	sprite.position = (
 		ANIMATION_DATA.display_offset_for(character_id)

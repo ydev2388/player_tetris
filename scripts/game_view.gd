@@ -21,9 +21,10 @@ const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
 const BOARD_SIZE: Vector2 = MainLayout.BOARD_SIZE
 const HUD_RECT: Rect2 = Rect2(Vector2(40.0, 10.0), Vector2(480.0, 96.0))
 const NEXT_CARD_RECT: Rect2 = Rect2(Vector2(366.0, 14.0), Vector2(144.0, 88.0))
-const STAMINA_BAR_RECT: Rect2 = Rect2(584.0, 878.0, 352.0, 14.0)
-const SPECIAL_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
-const ROTATION_BAR_RECT: Rect2 = Rect2(584.0, 998.0, 352.0, 14.0)
+const SPECIAL_BAR_RECT: Rect2 = Rect2(
+	MainLayout.BOARD_ORIGIN + Vector2(0.0, MainLayout.BOARD_SIZE.y + 30.0),
+	Vector2(MainLayout.BOARD_SIZE.x, 12.0)
+)
 const SELF_RESPAWN_BAR_RECT: Rect2 = Rect2(
 	MainLayout.BOARD_ORIGIN + Vector2(84.0, MainLayout.BOARD_SIZE.y - 78.0),
 	Vector2(312.0, 12.0)
@@ -105,7 +106,6 @@ var _timer_label: Label
 var _next_label: Label # 다음 블록 preview 제목.
 var _stats_label: Label # score/level/line 수치.
 var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
-var _stamina_label: Label # 스태미나 숫자.
 var _punch_label: Label # 보조 정보인 펀치 단계.
 var _rotation_label: Label # 블록 플립 준비/남은 초.
 var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
@@ -165,11 +165,12 @@ func _draw() -> void:
 	_draw_character_skill_effects()
 	_draw_meditation_effect()
 	_draw_next_piece()
+	_draw_skill_cooldown_bar()
 	_draw_state_overlay()
 
 
 ## 상황: `_ready()`에서 값이 바뀌는 텍스트 UI를 최초 한 번 구성할 때 호출한다.
-## 순서: 제목/next/stats/목숨/stamina/punch/rotation/feedback/status Label 생성
+## 순서: 제목/next/줄 수/목숨/타이머/feedback/status Label 생성
 ##       → 각 Label별 shadow/alignment/z-index/line spacing을 설정.
 ## 결과: 이후 `_refresh()`가 참조할 멤버 Label들이 모두 유효해진다.
 func _build_interface() -> void:
@@ -702,24 +703,15 @@ func _draw_hud_sections() -> void:
 		draw_rect(card_rect, Color("#b7c2d1"), false, 1.0)
 
 
-## 상황: `_draw()`가 캐릭터의 연속 수치를 bar 세 개로 표시할 때 호출한다.
-## 순서: stamina/MAX → charge_ratio → 1-cooldown_ratio를 각각 `_draw_bar()`에 전달.
-## 결과: 좁은 HUD에서도 stamina/punch/회전 준비도가 잘리지 않고 보인다.
-func _draw_character_bars() -> void:
-	_draw_bar(
-		STAMINA_BAR_RECT,
-		character.stamina / MainCharacterController.MAX_STAMINA,
-		CYAN
-	)
+## 상황: `_draw()`가 게임판 아래에 현재 캐릭터의 특수 스킬 준비도를 표시할 때 호출한다.
+## 순서: 쿨타임 비율을 bar fill로 변환한다.
+## 결과: 스테미나와 텍스트를 별도 HUD로 노출하지 않고 스킬 쿨타임 bar만 하단에 표시한다.
+func _draw_skill_cooldown_bar() -> void:
+	var cooldown_ratio: float = character.special_cooldown_ratio()
 	_draw_bar(
 		SPECIAL_BAR_RECT,
-		1.0 - character.special_cooldown_ratio(),
+		1.0 - cooldown_ratio,
 		ORANGE
-	)
-	_draw_bar(
-		ROTATION_BAR_RECT,
-		1.0 - character.rotation_cooldown_ratio(),
-		Color("#6f57c9")
 	)
 
 

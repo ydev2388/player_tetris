@@ -110,6 +110,7 @@ func _run() -> void:
 			and not screen.settings.is_stage_unlocked(2),
 		"진행 데이터 삭제는 스테이지 별, 해금, 별 재화만 초기화한다."
 	)
+	screen._hide_progress_reset_prompt()
 	await process_frame
 	_expect(
 		screen._options_first_button.has_focus(),
@@ -140,16 +141,75 @@ func _run() -> void:
 		screen.current_screen == KungFuTetrisStartScreen.Screen.CHARACTER,
 		"캐릭터 선택 버튼이 기존 캐릭터 선택 화면을 연다."
 	)
+	await process_frame
 	var boxer_button: Button = screen.find_child("Character_boxer", true, false) as Button
 	_expect(boxer_button != null, "캐릭터 선택 화면에 복서 카드가 있다.")
+	var right_event: InputEventKey = InputEventKey.new()
+	right_event.pressed = true
+	right_event.physical_keycode = KEY_RIGHT
+	var left_event: InputEventKey = InputEventKey.new()
+	left_event.pressed = true
+	left_event.physical_keycode = KEY_LEFT
 	if boxer_button != null:
-		boxer_button.pressed.emit()
-	if screen._character_confirm_button != null:
-		screen._character_confirm_button.pressed.emit()
+		screen._character_buttons[0].grab_focus()
+		await process_frame
+		screen._input(right_event)
+		await process_frame
+		_expect(
+			screen._selected_character_id == "boxer",
+			"캐릭터 카드에서 오른쪽 방향키를 누르면 다음 카드로 바로 이동한다."
+		)
+		screen._input(right_event)
+		await process_frame
+		_expect(
+			screen._selected_character_id == "shield_guard",
+			"복서에서 오른쪽 방향키를 누르면 방패병으로 바로 이동한다."
+		)
+		screen._input(right_event)
+		await process_frame
+		var firefighter_button: Button = screen.find_child(
+			"Character_firefighter", true, false
+		) as Button
+		_expect(
+			screen._character_window_start == 1
+				and screen._selected_character_id == "firefighter"
+				and firefighter_button != null,
+			"표시 영역 오른쪽 끝에서 오른쪽 방향키를 누르면 다음 칸으로 즉시 넘어간다."
+		)
+		screen._input(left_event)
+		await process_frame
+		screen._input(left_event)
+		await process_frame
+		screen._input(left_event)
+		await process_frame
+		_expect(
+			screen._character_window_start == 0
+				and screen._selected_character_id == "normal",
+			"표시 영역 왼쪽 끝에서 왼쪽 방향키를 누르면 이전 칸으로 즉시 넘어간다."
+		)
+		_expect(
+			screen._character_prev_button.focus_mode == Control.FOCUS_NONE
+				and screen._character_next_button.focus_mode == Control.FOCUS_NONE
+				and screen._character_confirm_button.focus_mode == Control.FOCUS_NONE
+				and screen._character_prev_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
+				and screen._character_next_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
+				and screen._character_confirm_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
+				and screen._character_buttons[2].focus_neighbor_right
+				== screen._character_buttons[2].get_path_to(screen._character_buttons[2])
+				and screen._character_buttons[2].focus_neighbor_bottom
+				== screen._character_buttons[2].get_path_to(screen._character_back_button),
+			"좌우 화살표와 선택완료 버튼은 포커스·마우스 상호작용을 받지 않는다."
+		)
+		screen._input(right_event)
+		await process_frame
+	var z_character_event: InputEventKey = InputEventKey.new()
+	z_character_event.pressed = true
+	z_character_event.physical_keycode = KEY_Z
+	screen._input(z_character_event)
 	_expect(
 		screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT
 			and screen._selected_character_id == "boxer",
-		"복서를 확정하면 선택을 보존하고 스테이지 화면으로 돌아간다."
+		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정한다."
 	)
 	var stage_button: Button = screen.find_child("StageButton1", true, false) as Button
 	_expect(stage_button != null and not stage_button.disabled, "1-1 스테이지 버튼을 선택할 수 있다.")

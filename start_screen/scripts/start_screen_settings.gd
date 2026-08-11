@@ -3,6 +3,7 @@ extends Node
 
 signal bindings_changed
 signal audio_changed
+signal progress_changed
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
@@ -12,10 +13,14 @@ const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
+const STAGE_COUNT: int = 5
+const MAX_STAGE_STARS: int = 3
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
+var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
+var star_currency: int = 0
 
 var _bindings: Dictionary = {}
 
@@ -154,6 +159,65 @@ func set_sfx_percent(value: float) -> void:
 	audio_changed.emit()
 
 
+func get_stage_best_stars(stage_number: int) -> int:
+	if stage_number < 1 or stage_number > STAGE_COUNT:
+		return 0
+	return stage_best_stars[stage_number - 1]
+
+
+func is_stage_unlocked(stage_number: int) -> bool:
+	if stage_number < 1 or stage_number > STAGE_COUNT:
+		return false
+	if stage_number == 1:
+		return true
+	return get_stage_best_stars(stage_number - 1) > 0
+
+
+func complete_stage(stage_number: int, stars: int) -> Dictionary:
+	if stage_number < 1 or stage_number > STAGE_COUNT:
+		return _failure("알 수 없는 스테이지입니다.")
+	if stars < 1:
+		return _failure("스테이지 클리어 별은 1개 이상이어야 합니다.")
+
+	var awarded_stars: int = clampi(stars, 1, MAX_STAGE_STARS)
+	var previous_stars: int = get_stage_best_stars(stage_number)
+	var reward: int = maxi(awarded_stars - previous_stars, 0)
+	if awarded_stars > previous_stars:
+		var previous_currency: int = star_currency
+		stage_best_stars[stage_number - 1] = awarded_stars
+		star_currency += reward
+		var save_error: Error = save_settings()
+		if save_error != OK:
+			stage_best_stars[stage_number - 1] = previous_stars
+			star_currency = previous_currency
+			return _failure(
+				"스테이지 결과를 저장하지 못했습니다: %s" % error_string(save_error)
+			)
+		progress_changed.emit()
+	return {
+		"ok": true,
+		"stage_number": stage_number,
+		"previous_stars": previous_stars,
+		"stars": get_stage_best_stars(stage_number),
+		"reward": reward,
+		"star_currency": star_currency,
+	}
+
+
+func reset_stage_progress() -> Error:
+	var previous_stars: Array[int] = stage_best_stars.duplicate()
+	var previous_currency: int = star_currency
+	stage_best_stars.fill(0)
+	star_currency = 0
+	var save_error: Error = save_settings()
+	if save_error != OK:
+		stage_best_stars = previous_stars
+		star_currency = previous_currency
+		return save_error
+	progress_changed.emit()
+	return OK
+
+
 func ensure_audio_buses() -> void:
 	_ensure_audio_bus(MUSIC_BUS)
 	_ensure_audio_bus(SFX_BUS)
@@ -181,6 +245,7 @@ func load_settings() -> void:
 	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
 		_migrate_self_respawn_binding()
 	_load_audio_from_config(config)
+	_load_progress_from_config(config)
 	_restore_defaults_for_duplicate_keys()
 
 
@@ -188,6 +253,8 @@ func _reset_settings_to_defaults() -> void:
 	_load_default_bindings()
 	music_percent = 100.0
 	sfx_percent = 100.0
+	stage_best_stars = [0, 0, 0, 0, 0]
+	star_currency = 0
 
 
 func _load_bindings_from_config(config: ConfigFile) -> void:
@@ -199,7 +266,7 @@ func _load_bindings_from_config(config: ConfigFile) -> void:
 			String(action_name),
 			_bindings[action_name]
 		)
-		var parsed: Array[int] = _parse_key_array(
+		var parsed: Array = _parse_key_array(
 			stored_value,
 			slot_count,
 			action_name == SELF_RESPAWN_ACTION
@@ -265,6 +332,16 @@ func _load_audio_from_config(config: ConfigFile) -> void:
 	)
 
 
+func _load_progress_from_config(config: ConfigFile) -> void:
+	star_currency = maxi(int(config.get_value("progress", "star_currency", 0)), 0)
+	for stage_number: int in range(1, STAGE_COUNT + 1):
+		stage_best_stars[stage_number - 1] = clampi(
+			int(config.get_value("progress", "stage_%d_best_stars" % stage_number, 0)),
+			0,
+			MAX_STAGE_STARS
+		)
+
+
 func _restore_defaults_for_duplicate_keys() -> void:
 	if _has_duplicate_keys():
 		_load_default_bindings()
@@ -278,6 +355,13 @@ func save_settings() -> Error:
 		config.set_value("input", String(action_name), get_action_keys(action_name))
 	config.set_value("audio", "music_percent", music_percent)
 	config.set_value("audio", "sfx_percent", sfx_percent)
+	config.set_value("progress", "star_currency", star_currency)
+	for stage_number: int in range(1, STAGE_COUNT + 1):
+		config.set_value(
+			"progress",
+			"stage_%d_best_stars" % stage_number,
+			get_stage_best_stars(stage_number)
+		)
 	var save_error: Error = config.save(settings_path)
 	if save_error != OK:
 		settings_error.emit("설정을 저장하지 못했습니다: %s" % error_string(save_error))

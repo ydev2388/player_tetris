@@ -19,9 +19,10 @@ const CELL_SIZE: float = MainLayout.CELL_SIZE
 const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
 const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
 const BOARD_SIZE: Vector2 = MainLayout.BOARD_SIZE
-const PANEL_RECT: Rect2 = MainLayout.HUD_RECT
+const HUD_RECT: Rect2 = Rect2(Vector2(40.0, 10.0), Vector2(480.0, 96.0))
+const NEXT_CARD_RECT: Rect2 = Rect2(Vector2(366.0, 14.0), Vector2(144.0, 88.0))
 const STAMINA_BAR_RECT: Rect2 = Rect2(584.0, 878.0, 352.0, 14.0)
-const PUNCH_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
+const SPECIAL_BAR_RECT: Rect2 = Rect2(720.0, 925.0, 216.0, 8.0)
 const ROTATION_BAR_RECT: Rect2 = Rect2(584.0, 998.0, 352.0, 14.0)
 const SELF_RESPAWN_BAR_RECT: Rect2 = Rect2(
 	MainLayout.BOARD_ORIGIN + Vector2(84.0, MainLayout.BOARD_SIZE.y - 78.0),
@@ -44,6 +45,19 @@ const ORANGE: Color = Color("#e47719") # charge/feedback 강조색.
 
 # sprite atlas와 piece 이름 -> atlas source Rect 매핑.
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
+const SPRINT_VFX: Texture2D = preload("res://assets/sprites/effects/normal/sprint_vfx.png")
+const GUARD_BREAK_VFX: Texture2D = preload("res://assets/sprites/effects/boxer/guard_break_impact.png")
+const SHIELD_BARRIER_VFX: Texture2D = preload("res://assets/sprites/effects/shield_guard/shield_barrier.png")
+const HOSE_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/hose_overlay.png")
+const WATER_PATH_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/water_path.png")
+const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cleanup_dust.png")
+const PAN_TOSS_UP_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_up.png")
+const PAN_TOSS_DOWN_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_down.png")
+const PAN_TOSS_FAILURE_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_failure.png")
+const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_wave.png")
+const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
+const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
+const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
 const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"I": Rect2(80, 255, 210, 215),
 	"O": Rect2(360, 255, 210, 215),
@@ -53,8 +67,31 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
-const CHARACTER_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # HUD 초상화 시트.
-const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 원본 영역.
+const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/thron_sprite.png")
+const THORN_SOURCE_REGION: Rect2 = Rect2(500.0, 64.0, 128.0, 104.0)
+const THORN_DEPTH: float = 18.0
+const THORN_EDGE_OVERLAP: float = 6.0
+const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/bind_sprite.png")
+const BIND_SOURCE_REGION: Rect2 = Rect2(337.0, 65.0, 277.0, 364.0)
+const BIND_HEIGHT_MARGIN: float = 12.0
+const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
+const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
+const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
+const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
+const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
+const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
+const HEART_TEXTURE: Texture2D = preload("res://assets/sprites/heart.svg")
+const BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 1024.0)
+const BOSS_DOWN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 983.0)
+const BOSS_FALLEN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 234.0)
+const BOSS_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DISPLAY_SIZE
+const BOSS_DOWN_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DOWN_DISPLAY_SIZE
+const BOSS_FALLEN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 43.875)
+const BOSS_FRAME_COUNT: int = 4
+const BOSS_FRAME_INTERVAL: float = 0.18
+const BOSS_THORN_FRAME_INTERVAL: float = 0.1
+const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
+const HEART_DISPLAY_SIZE: Vector2 = Vector2(16.0, 16.0)
 
 # main.tscn의 자식 노드 참조. C++에서 scene dependency를 pointer로 캐시한 것과 같다.
 @onready var controller: MainGameController = $GameController # 표시할 게임 상태의 소유자.
@@ -62,16 +99,33 @@ const CHARACTER_SOURCE_RECT: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0) # 초상 �
 
 # `_build_interface()`가 생성하고 `_refresh()`가 내용을 바꾸는 retained UI 노드.
 var _title_label: Label # 고정 게임 제목.
+var _lines_label: Label
+var _lives_label: Label
+var _timer_label: Label
 var _next_label: Label # 다음 블록 preview 제목.
 var _stats_label: Label # score/level/line 수치.
 var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
 var _stamina_label: Label # 스태미나 숫자.
 var _punch_label: Label # 보조 정보인 펀치 단계.
-var _rotation_label: Label # 회전 킥 준비/남은 초.
+var _rotation_label: Label # 블록 플립 준비/남은 초.
 var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
 var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
 var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색 막대.
+var _binding_sprite: Sprite2D
+var _boss_sprite: Sprite2D
+var _boss_thorn_sprite: Sprite2D
+var _boss_hearts: Array[Sprite2D] = []
+var _boss_frame: int = 0
+var _boss_frame_timer: float = 0.0
+var _boss_thorn_frame_index: int = 0
+var _boss_thorn_frame_timer: float = 0.0
+var _boss_down_frame: int = 0
+var _boss_down_frame_timer: float = 0.0
+var _boss_falling_frame: int = 0
+var _boss_falling_frame_timer: float = 0.0
+var _boss_fallen_frame: int = 0
+var _boss_fallen_frame_timer: float = 0.0
 var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
 
 
@@ -83,10 +137,19 @@ func _ready() -> void:
 	_system_font = SystemFont.new()
 	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
 	_build_interface()
+	_create_binding_overlay()
+	_create_boss_display()
 	controller.game_changed.connect(_refresh)
+	controller.boss_attacked.connect(_start_boss_thorn_attack)
 	character.stats_changed.connect(_refresh)
 	character.feedback_changed.connect(_refresh)
+	character.binding_started.connect(_refresh)
+	character.binding_ended.connect(_refresh)
 	_refresh()
+
+
+func _process(delta: float) -> void:
+	_advance_boss_animation(delta)
 
 
 ## 상황: 최초 표시 또는 `queue_redraw()` 이후 Godot CanvasItem draw pass에서 호출된다.
@@ -94,14 +157,14 @@ func _ready() -> void:
 ## 결과: 그 frame의 controller/character 상태가 즉시-mode draw 명령으로 화면에 표현된다.
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND_COLOR)
+	_draw_hud()
 	_draw_panel(Rect2(BOARD_ORIGIN - Vector2(12.0, 12.0), BOARD_SIZE + Vector2(24.0, 24.0)))
-	_draw_panel(PANEL_RECT)
 	_draw_board()
+	_draw_thorns()
+	_draw_binding()
+	_draw_character_skill_effects()
 	_draw_meditation_effect()
-	_draw_hud_sections()
 	_draw_next_piece()
-	_draw_character_card()
-	_draw_character_bars()
 	_draw_state_overlay()
 
 
@@ -110,69 +173,23 @@ func _draw() -> void:
 ##       → 각 Label별 shadow/alignment/z-index/line spacing을 설정.
 ## 결과: 이후 `_refresh()`가 참조할 멤버 Label들이 모두 유효해진다.
 func _build_interface() -> void:
-	_title_label = _create_label(
-		"KUNG FU TETRIS",
-		Vector2(40.0, 22.0),
-		Vector2(920.0, 42.0),
-		28,
-		TEXT_COLOR
-	)
-	_title_label.add_theme_color_override("font_shadow_color", Color(0.17, 0.56, 0.84, 0.24))
-	_title_label.add_theme_constant_override("shadow_offset_x", 2)
-	_title_label.add_theme_constant_override("shadow_offset_y", 2)
-
-	_next_label = _create_label(
-		"다음 블록",
-		Vector2(584.0, 102.0),
-		Vector2(352.0, 34.0),
-		20,
-		TEXT_COLOR
-	)
-	_stats_label = _create_label(
-		"",
-		Vector2(584.0, 330.0),
-		Vector2(352.0, 170.0),
-		20,
-		TEXT_COLOR
-	)
-	_stats_label.name = "StatsLabel"
-	_stats_label.add_theme_constant_override("line_spacing", 9)
-
-	_life_label = _create_label(
-		"",
-		Vector2(584.0, 770.0),
-		Vector2(352.0, 44.0),
-		24,
-		TEXT_COLOR
-	)
-	_life_label.name = "LifeLabel"
-
-	_stamina_label = _create_label(
-		"",
-		Vector2(584.0, 842.0),
-		Vector2(352.0, 30.0),
-		17,
-		TEXT_COLOR
-	)
-	_stamina_label.name = "StaminaLabel"
-
-	_punch_label = _create_label(
-		"",
-		Vector2(584.0, 910.0),
-		Vector2(352.0, 26.0),
-		14,
-		MUTED_TEXT_COLOR
-	)
-	_punch_label.name = "PunchLabel"
-
-	_rotation_label = _create_label(
-		"",
-		Vector2(584.0, 958.0),
-		Vector2(352.0, 30.0),
-		17,
-		TEXT_COLOR
-	)
-	_rotation_label.name = "RotationKickLabel"
+	_lines_label = _create_label("", Vector2(80.0, 24.0), Vector2(150.0, 24.0), 18, Color("#b4233b"))
+	_lines_label.name = "LinesLabel"
+	_lines_label.add_theme_constant_override("outline_size", 1)
+	_lines_label.add_theme_color_override("font_outline_color", Color("#b4233b"))
+	_lives_label = _create_label("", Vector2(205.0, 42.0), Vector2(150.0, 34.0), 22, TEXT_COLOR)
+	_lives_label.name = "LivesLabel"
+	_lives_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lives_label.add_theme_constant_override("outline_size", 1)
+	_lives_label.add_theme_color_override("font_outline_color", TEXT_COLOR)
+	_next_label = _create_label("NEXT", Vector2(380.0, 23.0), Vector2(72.0, 20.0), 14, TEXT_COLOR)
+	_next_label.name = "NextLabel"
+	_next_label.z_index = 5
+	_timer_label = _create_label("", Vector2(82.0, 55.0), Vector2(128.0, 38.0), 32, TEXT_COLOR)
+	_timer_label.name = "TimerLabel"
+	_timer_label.add_theme_constant_override("outline_size", 1)
+	_timer_label.add_theme_color_override("font_outline_color", TEXT_COLOR)
+	_timer_label.z_index = 5
 
 	_feedback_label = _create_label(
 		"",
@@ -273,8 +290,18 @@ func _draw_panel(rect: Rect2) -> void:
 	style.set_border_width_all(2)
 	style.set_corner_radius_all(8)
 	style.shadow_color = Color(0.08, 0.13, 0.20, 0.18)
-	style.shadow_size = 8
+	style.shadow_size = 3
+	style.shadow_offset = Vector2(0.0, 2.0)
 	draw_style_box(style, rect)
+
+
+func _draw_hud() -> void:
+	_draw_panel(HUD_RECT)
+	_draw_panel(NEXT_CARD_RECT)
+	var clock_center: Vector2 = Vector2(62.0, 75.0)
+	draw_circle(clock_center, 10.0, TEXT_COLOR, false, 2.0, true)
+	draw_line(clock_center, clock_center + Vector2(0.0, -5.0), TEXT_COLOR, 2.0, true)
+	draw_line(clock_center, clock_center + Vector2(4.0, 2.0), TEXT_COLOR, 2.0, true)
 
 
 ## 상황: `_draw()`가 플레이 영역의 현재 셀 상태를 표현할 때 호출한다.
@@ -295,18 +322,12 @@ func _draw_board() -> void:
 		return
 
 	var ghost_position: Vector2i = controller.ghost_origin() # 활성 피스의 예상 착지 원점.
-	for local_cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
+	for local_cell: Vector2i in controller.active_local_cells():
 		var ghost_cell: Vector2i = ghost_position + local_cell # 고스트의 절대 보드 셀.
 		if ghost_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_ghost(_cell_rect(ghost_cell), controller.active_type)
 
-	for local_cell: Vector2i in MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	):
+	for local_cell: Vector2i in controller.active_local_cells():
 		var active_cell: Vector2i = controller.active_origin + local_cell # 활성 절대 보드 셀.
 		if active_cell.y >= MainBoardModel.HIDDEN_ROWS:
 			_draw_block(
@@ -323,17 +344,270 @@ func _draw_board() -> void:
 		draw_line(Vector2(BOARD_ORIGIN.x, line_y), Vector2(BOARD_ORIGIN.x + BOARD_SIZE.x, line_y), GRID_COLOR)
 
 
+func _draw_character_skill_effects() -> void:
+	var animated_frame: int = int(Time.get_ticks_msec() / 120)
+	if controller.fall_freeze_remaining > 0.0:
+		_draw_clock_freeze_effect(animated_frame)
+	if not controller.water_path_cells.is_empty():
+		var water_frame: int = animated_frame % 4
+		for cell: Vector2i in controller.water_path_cells:
+			if cell.y < MainBoardModel.HIDDEN_ROWS:
+				continue
+			draw_texture_rect_region(
+				WATER_PATH_VFX,
+				_cell_rect(cell),
+				Rect2(water_frame * 48.0, 0.0, 48.0, 48.0)
+			)
+
+	if character.barrier_remaining() > 0.0 and not controller.transient_blocker_cells.is_empty():
+		var top_cell: Vector2i = controller.transient_blocker_cells[0]
+		for cell: Vector2i in controller.transient_blocker_cells:
+			if cell.y < top_cell.y:
+				top_cell = cell
+		var remaining: float = character.barrier_remaining()
+		var barrier_frame: int
+		if remaining > 1.8:
+			barrier_frame = 0
+		elif remaining > 1.6:
+			barrier_frame = 1
+		elif remaining < 0.15:
+			barrier_frame = 5
+		elif remaining < 0.3:
+			barrier_frame = 4
+		else:
+			barrier_frame = 2 + animated_frame % 2
+		draw_texture_rect_region(
+			SHIELD_BARRIER_VFX,
+			Rect2(_cell_rect(top_cell).position, Vector2(48.0, 144.0)),
+			Rect2(barrier_frame * 48.0, 0.0, 48.0, 144.0)
+		)
+
+	var character_center: Vector2 = BOARD_ORIGIN + character.position
+	if character.sprint_remaining() > 0.0:
+		var sprint_frame: int = animated_frame % 8
+		draw_texture_rect_region(
+			SPRINT_VFX,
+			Rect2(character_center - Vector2(64.0, 64.0), Vector2(128.0, 128.0)),
+			Rect2(sprint_frame * 128.0, 0.0, 128.0, 128.0)
+		)
+
+	if not character.is_special_animating():
+		return
+	var local_facing: float = float(character.facing)
+	draw_set_transform(character_center, 0.0, Vector2(local_facing, 1.0))
+	match character.character_id:
+		"clockmaker":
+			_draw_clockmaker_cast_effect()
+		"ninja":
+			_draw_ninja_shuriken_effect()
+		"boxer":
+			var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+			draw_texture_rect_region(
+				GUARD_BREAK_VFX,
+				Rect2(Vector2(34.0, -40.0), Vector2(64.0, 64.0)),
+				Rect2(frame * 64.0, 0.0, 64.0, 64.0)
+			)
+		"firefighter":
+			var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+			draw_texture_rect_region(
+				HOSE_VFX,
+				Rect2(Vector2(0.0, -34.0), Vector2(192.0, 64.0)),
+				Rect2(frame * 192.0, 0.0, 192.0, 64.0)
+			)
+		"cleaner":
+			var frame: int = mini(character.special_visual_frame(8) * 6 / 8, 5)
+			draw_texture_rect_region(
+				CLEANUP_VFX,
+				Rect2(Vector2(-72.0, 28.0), Vector2(144.0, 48.0)),
+				Rect2(frame * 144.0, 0.0, 144.0, 48.0)
+			)
+		"chef":
+			if character.last_special_succeeded():
+				var texture: Texture2D = PAN_TOSS_DOWN_VFX if character.special_visual_vertical() > 0 else PAN_TOSS_UP_VFX
+				var frame: int = mini(character.special_visual_frame(8) / 2, 3)
+				draw_texture_rect_region(
+					texture,
+					Rect2(Vector2(0.0, -48.0), Vector2(96.0, 96.0)),
+					Rect2(frame * 96.0, 0.0, 96.0, 96.0)
+				)
+			else:
+				var frame: int = mini(character.special_visual_frame(8) * 3 / 8, 2)
+				draw_texture_rect_region(
+					PAN_TOSS_FAILURE_VFX,
+					Rect2(Vector2(26.0, -28.0), Vector2(48.0, 48.0)),
+					Rect2(frame * 48.0, 0.0, 48.0, 48.0)
+				)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_clockmaker_cast_effect() -> void:
+	var elapsed: float = character.special_visual_elapsed()
+	if elapsed < 0.4:
+		var gear_frame: int = mini(floori(elapsed / 0.4 * 4.0), 3)
+		var wind_scale: float = lerpf(0.55, 1.0, elapsed / 0.4)
+		draw_texture_rect_region(
+			CLOCK_GEAR_VFX,
+			Rect2(Vector2(-64.0, -89.0) * wind_scale, Vector2.ONE * 128.0 * wind_scale),
+			Rect2(gear_frame * 128.0, 0.0, 128.0, 128.0),
+			Color(1.0, 1.0, 1.0, 0.82)
+		)
+		return
+	var wave_progress: float = clampf((elapsed - 0.4) / 0.4, 0.0, 1.0)
+	var wave_frame: int = mini(floori(wave_progress * 6.0), 5)
+	var wave_size: float = lerpf(160.0, 620.0, wave_progress)
+	draw_texture_rect_region(
+		CLOCK_WAVE_VFX,
+		Rect2(Vector2(-wave_size * 0.5, -25.0 - wave_size * 0.5), Vector2.ONE * wave_size),
+		Rect2(wave_frame * 192.0, 0.0, 192.0, 192.0),
+		Color(1.0, 1.0, 1.0, 0.62 - wave_progress * 0.30)
+	)
+
+
+func _draw_clock_freeze_effect(animated_frame: int) -> void:
+	var remaining_ratio: float = clampf(controller.fall_freeze_remaining / 3.0, 0.0, 1.0)
+	var ending_factor: float = 1.0
+	if controller.fall_freeze_remaining < 0.4:
+		ending_factor = clampf(controller.fall_freeze_remaining / 0.4, 0.0, 1.0)
+		ending_factor *= 0.62 + 0.38 * absf(sin(float(Time.get_ticks_msec()) / 48.0))
+	var pulse: float = 0.08 + 0.025 * sin(float(Time.get_ticks_msec()) / 140.0)
+	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.10, 0.68, 0.78, pulse * ending_factor))
+	draw_rect(
+		Rect2(BOARD_ORIGIN + Vector2.ONE * 3.0, BOARD_SIZE - Vector2.ONE * 6.0),
+		Color(0.91, 0.68, 0.20, 0.78 * ending_factor),
+		false,
+		3.0
+	)
+	for tick_index: int in range(24):
+		var ratio: float = float(tick_index) / 24.0
+		var edge_point: Vector2
+		var inward: Vector2
+		if ratio < 0.25:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x * ratio * 4.0, 5.0)
+			inward = Vector2(0.0, 9.0)
+		elif ratio < 0.5:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x - 5.0, BOARD_SIZE.y * (ratio - 0.25) * 4.0)
+			inward = Vector2(-9.0, 0.0)
+		elif ratio < 0.75:
+			edge_point = BOARD_ORIGIN + Vector2(BOARD_SIZE.x * (1.0 - (ratio - 0.5) * 4.0), BOARD_SIZE.y - 5.0)
+			inward = Vector2(0.0, -9.0)
+		else:
+			edge_point = BOARD_ORIGIN + Vector2(5.0, BOARD_SIZE.y * (1.0 - (ratio - 0.75) * 4.0))
+			inward = Vector2(9.0, 0.0)
+		draw_line(edge_point, edge_point + inward, Color(1.0, 0.84, 0.38, 0.72 * ending_factor), 2.0)
+
+	var active_cells: Array[Vector2i] = controller.active_board_cells()
+	if active_cells.is_empty():
+		return
+	var minimum: Vector2i = active_cells[0]
+	var maximum: Vector2i = active_cells[0]
+	for cell: Vector2i in active_cells:
+		minimum.x = mini(minimum.x, cell.x)
+		minimum.y = mini(minimum.y, cell.y)
+		maximum.x = maxi(maximum.x, cell.x)
+		maximum.y = maxi(maximum.y, cell.y)
+	var bounds: Rect2 = _cell_rect(minimum)
+	bounds = bounds.expand(_cell_rect(maximum).end)
+	var ring_size: float = maxf(bounds.size.x, bounds.size.y) + 24.0
+	var ring_center: Vector2 = bounds.get_center()
+	var ring_radius: float = ring_size * 0.5
+	ring_center.x = clampf(
+		ring_center.x,
+		BOARD_ORIGIN.x + ring_radius + 4.0,
+		BOARD_ORIGIN.x + BOARD_SIZE.x - ring_radius - 4.0
+	)
+	ring_center.y = clampf(
+		ring_center.y,
+		BOARD_ORIGIN.y + ring_radius + 4.0,
+		BOARD_ORIGIN.y + BOARD_SIZE.y - ring_radius - 4.0
+	)
+	var gear_frame: int = animated_frame % 4
+	draw_set_transform(ring_center, float(Time.get_ticks_msec()) / 4200.0, Vector2.ONE)
+	draw_texture_rect_region(
+		CLOCK_GEAR_VFX,
+		Rect2(Vector2.ONE * -ring_size * 0.5, Vector2.ONE * ring_size),
+		Rect2(gear_frame * 128.0, 0.0, 128.0, 128.0),
+		Color(1.0, 1.0, 1.0, 0.48 * ending_factor)
+	)
+	draw_arc(
+		Vector2.ZERO,
+		ring_size * 0.5 + 7.0,
+		-PI * 0.5,
+		-PI * 0.5 + TAU * remaining_ratio,
+		48,
+		Color(0.96, 0.82, 0.35, 0.92 * ending_factor),
+		4.0
+	)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_ninja_shuriken_effect() -> void:
+	var result: Dictionary = character.ninja_special_result()
+	if result.is_empty():
+		return
+	var result_direction: int = int(result.get("direction", character.facing))
+	draw_set_transform(
+		BOARD_ORIGIN + character.position,
+		0.0,
+		Vector2(float(result_direction), 1.0)
+	)
+	var elapsed_after_hit: float = character.special_visual_elapsed() - 0.25
+	if elapsed_after_hit < 0.0:
+		return
+	var travel_cells: int = int(result.get("travel_cells", 0))
+	var throw_distance: float = float(travel_cells) * CELL_SIZE
+	var flight_progress: float = clampf(elapsed_after_hit / 0.18, 0.0, 1.0)
+	var start := Vector2(24.0, -26.0)
+	var current := start + Vector2(throw_distance * flight_progress, 0.0)
+	var spin_frame: int = posmod(floori(elapsed_after_hit / 0.045), 4)
+	for trail_index: int in range(3, 0, -1):
+		var trail_ratio: float = maxf(0.0, flight_progress - float(trail_index) * 0.08)
+		var trail_center: Vector2 = start + Vector2(throw_distance * trail_ratio, 0.0)
+		var trail_scale: float = 1.0 - float(trail_index) * 0.16
+		var trail_size: float = 32.0 * trail_scale
+		draw_texture_rect_region(
+			SHURIKEN_SPIN_VFX,
+			Rect2(trail_center - Vector2.ONE * trail_size * 0.5, Vector2.ONE * trail_size),
+			Rect2(spin_frame * 32.0, 0.0, 32.0, 32.0),
+			Color(0.58, 0.86, 1.0, 0.12 + 0.12 * float(3 - trail_index))
+		)
+	if flight_progress < 1.0:
+		draw_texture_rect_region(
+			SHURIKEN_SPIN_VFX,
+			Rect2(current - Vector2.ONE * 16.0, Vector2.ONE * 32.0),
+			Rect2(spin_frame * 32.0, 0.0, 32.0, 32.0)
+		)
+		return
+	var impact_progress: float = clampf((elapsed_after_hit - 0.18) / 0.37, 0.0, 0.999)
+	var impact_frame: int = floori(impact_progress * 4.0)
+	var success: bool = bool(result.get("success", false))
+	var source_y: float = 0.0 if success else 64.0
+	draw_texture_rect_region(
+		SHURIKEN_IMPACT_VFX,
+		Rect2(current - Vector2.ONE * 32.0, Vector2.ONE * 64.0),
+		Rect2(impact_frame * 64.0, source_y, 64.0, 64.0),
+		Color(1.0, 1.0, 1.0, 1.0 if success else 0.88)
+	)
+
+
 ## 상황: `_draw()`가 우측 HUD에 다음 피스 미리보기를 표시할 때 호출한다.
 ## 순서: preview 배경/외곽선 → 24px cell 크기/원점 계산 → 회전 0의 네 셀 draw.
 ## 결과: controller.next_type이 실제 spawn 전에 사용자에게 보인다.
 func _draw_next_piece() -> void:
-	var preview_rect: Rect2 = Rect2(Vector2(584.0, 140.0), Vector2(352.0, 160.0))
-	draw_rect(preview_rect, BOARD_COLOR)
-	draw_rect(preview_rect, GRID_COLOR, false, 1.0)
-
-	var preview_cell_size: float = 32.0
-	var preview_origin: Vector2 = preview_rect.position + Vector2(104.0, 16.0)
-	for local_cell: Vector2i in MainTetrominoData.get_cells(controller.next_type, 0):
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(controller.next_type, 0)
+	var minimum_cell: Vector2i = cells[0]
+	var maximum_cell: Vector2i = cells[0]
+	for local_cell: Vector2i in cells:
+		minimum_cell = minimum_cell.min(local_cell)
+		maximum_cell = maximum_cell.max(local_cell)
+	var footprint: Vector2i = maximum_cell - minimum_cell + Vector2i.ONE
+	var preview_cell_size: float = minf(
+		18.0,
+		minf(120.0 / float(footprint.x), 42.0 / float(footprint.y))
+	)
+	var preview_size: Vector2 = Vector2(footprint) * preview_cell_size
+	var preview_center: Vector2 = Vector2(438.0, 71.0)
+	var preview_origin: Vector2 = preview_center - preview_size * 0.5 - Vector2(minimum_cell) * preview_cell_size
+	for local_cell: Vector2i in cells:
 		var cell_rect: Rect2 = Rect2( # 이번 local cell의 preview 픽셀 영역.
 			preview_origin + Vector2(local_cell) * preview_cell_size,
 			Vector2.ONE * preview_cell_size
@@ -378,12 +652,33 @@ func _draw_meditation_effect() -> void:
 ## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
 ## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
 func _draw_character_card() -> void:
-	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
-	draw_texture_rect_region(CHARACTER_TEXTURE, portrait_rect, CHARACTER_SOURCE_RECT)
+	var source_region: Rect2 = MainCharacterAnimationData.visible_region_for(
+		MainCharacterAnimationData.IDLE,
+		0.0,
+		character.character_id
+	)
+	var portrait_bounds: Rect2 = Rect2(Vector2(690.0, 552.0), Vector2(120.0, 164.0))
+	var portrait_scale: float = minf(
+		portrait_bounds.size.x / source_region.size.x,
+		portrait_bounds.size.y / source_region.size.y
+	)
+	var portrait_size: Vector2 = source_region.size * portrait_scale
+	var portrait_rect: Rect2 = Rect2(
+		Vector2(
+			portrait_bounds.position.x + (portrait_bounds.size.x - portrait_size.x) * 0.5,
+			portrait_bounds.end.y - portrait_size.y
+		),
+		portrait_size
+	)
+	draw_texture_rect_region(
+		MainCharacterAnimationData.texture_for(MainCharacterAnimationData.IDLE, character.character_id),
+		portrait_rect,
+		source_region
+	)
 	draw_string(
 		_system_font,
 		Vector2(662.0, 538.0),
-		"KUNG FU FIGHTER",
+		character.character_display_name(),
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0,
 		16,
@@ -417,8 +712,8 @@ func _draw_character_bars() -> void:
 		CYAN
 	)
 	_draw_bar(
-		PUNCH_BAR_RECT,
-		character.charge_ratio(),
+		SPECIAL_BAR_RECT,
+		1.0 - character.special_cooldown_ratio(),
 		ORANGE
 	)
 	_draw_bar(
@@ -443,7 +738,10 @@ func _draw_bar(rect: Rect2, ratio: float, color: Color) -> void:
 ## 순서: PLAYING이면 조기 종료, 아니면 보드 전체에 반투명 검정 rect draw.
 ## 결과: 아래 게임 화면은 유지하면서 pause/game-over 상태를 시각적으로 분리한다.
 func _draw_state_overlay() -> void:
-	if controller.state == MainGameController.GameState.PLAYING:
+	if (
+		controller.state == MainGameController.GameState.PLAYING
+		or controller.state == MainGameController.GameState.BOSS_FALLING
+	):
 		return
 	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.01, 0.02, 0.04, 0.80))
 
@@ -491,34 +789,20 @@ func _cell_rect(board_cell: Vector2i) -> Rect2:
 func _refresh() -> void:
 	if not is_node_ready():
 		return
-	_stats_label.text = (
-		"점수                         %08d\n\n레벨                              %02d\n\n삭제한 줄                       %03d"
-		% [controller.score, controller.level, controller.total_lines]
-	)
-
-	var life_icons: String = "♥".repeat(character.lives) + "♡".repeat( # 남은/잃은 생명을 한 문자열로 표현.
-		MainCharacterController.MAX_LIVES - character.lives
-	)
-	var cooldown_text: String = ( # 회전 킥이 가능하면 "준비", 아니면 남은 초.
-		"준비"
-		if character.rotation_cooldown_remaining <= 0.0
-		else "%.1f초" % character.rotation_cooldown_remaining
-	)
-	_life_label.text = "목숨      %s" % life_icons
-	_stamina_label.text = "스태미나                         %03d / 100" % roundi(
-		character.stamina
-	)
-	_punch_label.text = "펀치 단계        %d / 3" % character.charge_level()
-	_rotation_label.text = "회전 킥                              %s" % cooldown_text
+	_refresh_boss_display()
+	_lines_label.text = "삭제한 줄 %d" % controller.total_lines
+	_lives_label.text = "목숨: %d" % character.lives
+	var remaining_seconds: int = ceili(controller.stage_time_remaining)
+	_timer_label.text = "%02d:%02d" % [remaining_seconds / 60, remaining_seconds % 60]
+	_timer_label.visible = controller.is_survival_stage()
 	var self_respawn_ratio: float = character.self_respawn_hold_ratio()
 	_self_respawn_panel.visible = self_respawn_ratio > 0.0
 	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio
 	_feedback_label.text = (
-		"자력 재스폰 준비 중  %d%%" % roundi(self_respawn_ratio * 100.0)
+		"자력 리스폰 준비 중 %d%%" % roundi(self_respawn_ratio * 100.0)
 		if self_respawn_ratio > 0.0
 		else character.feedback_text
 	)
-
 	match controller.state:
 		MainGameController.GameState.PAUSED:
 			_status_label.text = "일시정지\n\nP로 계속 · Esc로 메뉴"
@@ -528,5 +812,296 @@ func _refresh() -> void:
 			_status_label.visible = true
 		_:
 			_status_label.visible = false
-
 	queue_redraw()
+
+
+func _draw_thorns() -> void:
+	if not controller.active_piece_has_visible_thorns():
+		return
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(
+		controller.active_type,
+		controller.active_rotation
+	)
+	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
+	# overlay는 셀 경계에 6px 겹쳐 틈을 없애고, 블록의 48×48 rect는 건드리지 않는다.
+	for local_cell: Vector2i in cells:
+		var active_cell: Vector2i = controller.active_origin + local_cell
+		if active_cell.y < MainBoardModel.HIDDEN_ROWS:
+			continue
+		var cell_rect: Rect2 = _cell_rect(active_cell)
+		var cell_center: Vector2 = cell_rect.get_center()
+		for index: int in range(faces.size()):
+			if cells.has(local_cell + faces[index]):
+				continue
+			var face_center: Vector2 = cell_center + Vector2(faces[index]) * (
+				CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP
+			)
+			draw_set_transform(face_center, angles[index])
+			draw_texture_rect_region(
+				THORN_TEXTURE,
+				Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
+				THORN_SOURCE_REGION
+			)
+	draw_set_transform(Vector2.ZERO, 0.0)
+
+
+func _draw_binding() -> void:
+	if _binding_sprite == null:
+		return
+	_sync_binding_overlay_transform()
+	_binding_sprite.visible = character.is_bound
+
+
+func _create_binding_overlay() -> void:
+	_binding_sprite = Sprite2D.new()
+	_binding_sprite.name = "BindingSprite"
+	_binding_sprite.texture = BIND_TEXTURE
+	_binding_sprite.region_enabled = true
+	_binding_sprite.region_rect = MainCharacterAnimationData.opaque_region_for(
+		BIND_TEXTURE,
+		BIND_SOURCE_REGION
+	)
+	_binding_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_binding_sprite.z_index = 1
+	_binding_sprite.visible = false
+	character.add_child(_binding_sprite)
+	_sync_binding_overlay_transform()
+
+
+func _sync_binding_overlay_transform() -> void:
+	if _binding_sprite == null or not is_instance_valid(character.sprite):
+		return
+	var bind_height: float = (
+		MainCharacterAnimationData.visible_height_for(
+			MainCharacterAnimationData.IDLE,
+			character.character_id
+		)
+		+ BIND_HEIGHT_MARGIN
+	)
+	var uniform_scale: float = bind_height / maxf(_binding_sprite.region_rect.size.y, 1.0)
+	_binding_sprite.scale = Vector2.ONE * uniform_scale
+	_binding_sprite.position = character.sprite.position
+
+
+func _create_boss_display() -> void:
+	var board_physics: Node2D = $BoardPhysics
+	_boss_sprite = Sprite2D.new()
+	_boss_sprite.name = "BossSprite"
+	_boss_sprite.texture = BOSS_NORMAL_TEXTURE
+	_boss_sprite.region_enabled = true
+	_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_boss_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_boss_sprite.z_index = 2
+	board_physics.add_child(_boss_sprite)
+
+	_boss_thorn_sprite = Sprite2D.new()
+	_boss_thorn_sprite.name = "BossThornSprite"
+	_boss_thorn_sprite.texture = BOSS_THORN_TEXTURE
+	_boss_thorn_sprite.region_enabled = true
+	_boss_thorn_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	_boss_thorn_sprite.position = MainGameController.BOSS_POSITION
+	_boss_thorn_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_boss_thorn_sprite.z_index = 3
+	_boss_thorn_sprite.visible = false
+	board_physics.add_child(_boss_thorn_sprite)
+
+	for index: int in range(MainGameController.BOSS_MAX_HEALTH):
+		var heart: Sprite2D = Sprite2D.new()
+		heart.name = "BossHeart%d" % (index + 1)
+		heart.texture = HEART_TEXTURE
+		heart.scale = HEART_DISPLAY_SIZE / Vector2(24.0, 24.0)
+		heart.position = MainGameController.BOSS_POSITION + Vector2(
+			float(index - 1) * 18.0,
+			106.0
+		)
+		heart.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		heart.z_index = 3
+		board_physics.add_child(heart)
+		_boss_hearts.append(heart)
+
+	_apply_boss_frame()
+	_apply_boss_thorn_frame()
+
+
+func _advance_boss_animation(delta: float) -> void:
+	if _boss_sprite == null:
+		return
+	if controller.is_boss_alive():
+		_boss_frame_timer += maxf(delta, 0.0)
+		while _boss_frame_timer >= BOSS_FRAME_INTERVAL:
+			_boss_frame_timer -= BOSS_FRAME_INTERVAL
+			_boss_frame = (_boss_frame + 1) % BOSS_FRAME_COUNT
+			_apply_boss_frame()
+	elif controller.is_boss_down():
+		_advance_boss_down_animation(delta)
+	elif controller.is_boss_falling():
+		_advance_boss_falling_animation(delta)
+	elif controller.is_boss_fallen():
+		_advance_boss_fallen_animation(delta)
+	else:
+		_boss_thorn_sprite.visible = false
+
+	if not _boss_thorn_sprite.visible:
+		return
+	_boss_thorn_frame_timer += maxf(delta, 0.0)
+	while _boss_thorn_frame_timer >= BOSS_THORN_FRAME_INTERVAL:
+		_boss_thorn_frame_timer -= BOSS_THORN_FRAME_INTERVAL
+		_boss_thorn_frame_index += 1
+		if _boss_thorn_frame_index >= BOSS_THORN_FRAME_SEQUENCE.size():
+			_boss_thorn_sprite.visible = false
+			_boss_thorn_frame_timer = 0.0
+			break
+		_apply_boss_thorn_frame()
+
+
+func _advance_boss_down_animation(delta: float) -> void:
+	if _boss_down_frame >= BOSS_FRAME_COUNT - 1:
+		return
+	_boss_down_frame_timer += maxf(delta, 0.0)
+	while (
+		_boss_down_frame_timer >= BOSS_FRAME_INTERVAL
+		and _boss_down_frame < BOSS_FRAME_COUNT - 1
+	):
+		_boss_down_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_down_frame += 1
+		_apply_boss_down_frame()
+	if _boss_down_frame >= BOSS_FRAME_COUNT - 1:
+		_boss_down_frame_timer = 0.0
+
+
+func _advance_boss_falling_animation(delta: float) -> void:
+	_boss_falling_frame_timer += maxf(delta, 0.0)
+	while _boss_falling_frame_timer >= BOSS_FRAME_INTERVAL:
+		_boss_falling_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_falling_frame = (_boss_falling_frame + 1) % BOSS_FRAME_COUNT
+		_apply_boss_falling_frame()
+
+
+func _advance_boss_fallen_animation(delta: float) -> void:
+	_boss_fallen_frame_timer += maxf(delta, 0.0)
+	while _boss_fallen_frame_timer >= BOSS_FRAME_INTERVAL:
+		_boss_fallen_frame_timer -= BOSS_FRAME_INTERVAL
+		_boss_fallen_frame = (_boss_fallen_frame + 1) % BOSS_FRAME_COUNT
+		_apply_boss_fallen_frame()
+
+
+func _apply_boss_frame() -> void:
+	_apply_boss_sheet_frame(_boss_frame, BOSS_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_down_frame() -> void:
+	_apply_boss_sheet_frame(_boss_down_frame, BOSS_DOWN_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_falling_frame() -> void:
+	_apply_boss_sheet_frame(_boss_falling_frame, BOSS_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_fallen_frame() -> void:
+	_apply_boss_sheet_frame(_boss_fallen_frame, BOSS_FALLEN_SOURCE_FRAME_SIZE)
+
+
+func _apply_boss_sheet_frame(frame: int, source_frame_size: Vector2) -> void:
+	_boss_sprite.region_rect = Rect2(
+		float(frame) * source_frame_size.x,
+		0.0,
+		source_frame_size.x,
+		source_frame_size.y
+	)
+
+
+func _apply_boss_thorn_frame() -> void:
+	_boss_thorn_sprite.region_rect = Rect2(
+		float(BOSS_THORN_FRAME_SEQUENCE[_boss_thorn_frame_index]) * BOSS_SOURCE_FRAME_SIZE.x,
+		0.0,
+		BOSS_SOURCE_FRAME_SIZE.x,
+		BOSS_SOURCE_FRAME_SIZE.y
+	)
+
+
+func _start_boss_thorn_attack() -> void:
+	if not controller.is_boss_alive():
+		return
+	_boss_thorn_frame_index = 0
+	_boss_thorn_frame_timer = 0.0
+	_boss_thorn_sprite.visible = true
+	_apply_boss_thorn_frame()
+
+
+func _refresh_boss_display() -> void:
+	if _boss_sprite == null:
+		return
+	var boss_alive: bool = controller.is_boss_alive()
+	var boss_visible: bool = (
+		boss_alive
+		or controller.is_boss_down()
+		or controller.is_boss_falling()
+		or controller.is_boss_fallen()
+	)
+	_boss_sprite.visible = boss_visible
+	for index: int in range(_boss_hearts.size()):
+		_boss_hearts[index].visible = boss_alive and index < controller.boss_health
+	if not boss_alive:
+		_boss_thorn_sprite.visible = false
+
+	if controller.is_boss_down():
+		if _boss_sprite.texture != BOSS_DOWN_TEXTURE:
+			_boss_sprite.texture = BOSS_DOWN_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_DOWN_DISPLAY_SIZE / BOSS_DOWN_SOURCE_FRAME_SIZE
+			_boss_down_frame = 0
+			_boss_down_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_down_frame()
+		return
+
+	if controller.is_boss_falling():
+		if _boss_sprite.texture != BOSS_FALLING_TEXTURE:
+			_boss_sprite.texture = BOSS_FALLING_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+			_boss_falling_frame = 0
+			_boss_falling_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_falling_frame()
+		return
+
+	if controller.is_boss_fallen():
+		if _boss_sprite.texture != BOSS_FALLEN_TEXTURE:
+			_boss_sprite.texture = BOSS_FALLEN_TEXTURE
+			_boss_sprite.region_enabled = true
+			_boss_sprite.scale = BOSS_FALLEN_DISPLAY_SIZE / BOSS_FALLEN_SOURCE_FRAME_SIZE
+			_boss_fallen_frame = 0
+			_boss_fallen_frame_timer = 0.0
+		_boss_sprite.position = Vector2(
+			controller.boss_fall_position.x,
+			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5
+		)
+		_apply_boss_fallen_frame()
+		return
+
+	if not boss_visible:
+		return
+
+	var boss_texture: Texture2D = BOSS_BIND_TEXTURE if character.is_bound else BOSS_NORMAL_TEXTURE
+	if _boss_sprite.texture != boss_texture or not _boss_sprite.region_enabled:
+		_boss_sprite.texture = boss_texture
+		_boss_sprite.region_enabled = true
+		_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+		_boss_frame = 0
+		_boss_frame_timer = 0.0
+	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_apply_boss_frame()
+
+
+## 상황: `_draw()`가 상단 HUD 카드에 다음 피스 미리보기를 표시할 때 호출한다.
+## 순서: 피스 외곽 크기 계산 → 카드 중심 원점 계산 → 회전 0의 네 셀 draw.
+## 결과: controller.next_type이 실제 spawn 전에 사용자에게 보인다.

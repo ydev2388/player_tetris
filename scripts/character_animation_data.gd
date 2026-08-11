@@ -1,109 +1,271 @@
 class_name MainCharacterAnimationData
 extends RefCounted
 
-## [역할 / C++ 대응]
-## 캐릭터 애니메이션의 상태 이름, 텍스처, 프레임 사각형, 프레임 시간을 모은
-## 읽기 전용 데이터 테이블이다. CharacterController가 이 클래스의 정적 함수만 호출한다.
-##
-## `preload()`는 C++ 프로그램 시작 전에 리소스 핸들을 준비하는 정적 로딩에 가깝고,
-## `Rect2(x, y, w, h)`는 스프라이트 시트에서 잘라 쓸 픽셀 영역이다.
-##
-## [호출 관계]
-## 호출자: CharacterController의 상수 별칭과 `_apply_animation_frame()`.
-## 호출 대상: Texture2D 리소스와 Dictionary/Array 조회만 사용한다.
+## 128px 균일 격자 캐릭터 atlas와 상태별 재생 규칙을 보관한다.
+## 현재는 일반인을 기본 profile로 등록하고, 후속 캐릭터는 PROFILES에
+## atlas과 표시 메타데이터만 추가하면 같은 Controller 상태 기계를 공유한다.
 
-const IDLE: String = "idle" # 지상 대기/기본 상태 key.
-const HANG: String = "hang" # 벽 또는 블록에 매달린 상태 key.
-const ATTACK: String = "attack" # 펀치 일회성 동작 key.
-const JUMP: String = "jump" # 공중 이동 상태 key.
-const ROTATION_KICK: String = "rotation_kick" # S 블록 플립 전용 1회전 상태 key.
+const IDLE: String = "idle"
+const HANG: String = "hang"
+const ATTACK: String = "attack"
+const JUMP: String = "jump"
+const ROTATION_KICK: String = "rotation_kick"
+const SPECIAL: String = "special"
 
-const IDLE_TEXTURE: Texture2D = preload("res://assets/sprites/player_animations.png") # idle frame 시트.
-const HANG_TEXTURE: Texture2D = preload("res://assets/sprites/player_hang_animations.png") # hang frame 시트.
-const ATTACK_TEXTURE: Texture2D = preload("res://assets/sprites/player_attack_animations.png") # punch 시트.
-const JUMP_TEXTURE: Texture2D = preload("res://assets/sprites/player_jump_animations.png") # jump frame 시트.
-const ROTATION_KICK_TEXTURE: Texture2D = preload(
-	"res://assets/sprites/player_rotation_kick_animations.png"
-) # 기존 jump 픽셀을 동일한 중심축에 재배치한 회전 킥 시트.
+const DEFAULT_CHARACTER_ID: String = "normal"
+const FRAME_SIZE: float = 128.0
+const FRAME_DISPLAY_SIZE: Vector2 = Vector2(FRAME_SIZE, FRAME_SIZE)
+const FRAME_ALPHA_THRESHOLD: float = 0.5
+static var _visible_region_cache: Dictionary = {}
+const VISIBLE_HEIGHTS: Dictionary = {
+	IDLE: 96.0,
+	ATTACK: 96.0,
+	HANG: 96.0,
+	JUMP: 96.0,
+	ROTATION_KICK: 96.0,
+	SPECIAL: 96.0,
+}
+const NORMAL_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/normal/normal_atlas.png"
+)
+const BOXER_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/boxer/boxer_atlas.png"
+)
+const SHIELD_GUARD_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/shield_guard/shield_guard_atlas.png"
+)
+const FIREFIGHTER_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/firefighter/firefighter_atlas.png"
+)
+const CLEANER_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/cleaner/cleaner_atlas.png"
+)
+const CHEF_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/chef/chef_atlas.png"
+)
+const CLOCKMAKER_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/clockmaker/clockmaker_atlas.png"
+)
+const NINJA_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/ninja/ninja_atlas.png"
+)
 
-# 상태별 sprite-sheet source frame 목록.
+const PROFILES: Dictionary = {
+	DEFAULT_CHARACTER_ID: {
+		"character_id": DEFAULT_CHARACTER_ID,
+		"display_name": "일반인",
+		"texture": NORMAL_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"boxer": {
+		"character_id": "boxer",
+		"display_name": "복서",
+		"texture": BOXER_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"shield_guard": {
+		"character_id": "shield_guard",
+		"display_name": "방패병",
+		"texture": SHIELD_GUARD_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"firefighter": {
+		"character_id": "firefighter",
+		"display_name": "소방관",
+		"texture": FIREFIGHTER_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"cleaner": {
+		"character_id": "cleaner",
+		"display_name": "청소부",
+		"texture": CLEANER_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"chef": {
+		"character_id": "chef",
+		"display_name": "요리사",
+		"texture": CHEF_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"clockmaker": {
+		"character_id": "clockmaker",
+		"display_name": "시계공",
+		"texture": CLOCKMAKER_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+	"ninja": {
+		"character_id": "ninja",
+		"display_name": "닌자",
+		"texture": NINJA_ATLAS,
+		"display_offset": Vector2.ZERO,
+		"display_size": FRAME_DISPLAY_SIZE,
+	},
+}
+
 const REGIONS: Dictionary = {
 	IDLE: [
-		Rect2(45, 55, 165, 270),
-		Rect2(255, 55, 165, 270),
-		Rect2(455, 55, 165, 270),
-		Rect2(655, 55, 165, 270),
-	],
-	HANG: [
-		Rect2(30, 80, 365, 700),
-		Rect2(470, 80, 365, 700),
-		Rect2(910, 80, 365, 700),
-		Rect2(1350, 80, 365, 700),
+		Rect2(0, 0, 128, 128),
+		Rect2(128, 0, 128, 128),
+		Rect2(256, 0, 128, 128),
+		Rect2(384, 0, 128, 128),
 	],
 	ATTACK: [
-		Rect2(30, 180, 380, 550),
-		Rect2(465, 180, 380, 550),
-		Rect2(900, 180, 380, 550),
-		Rect2(1335, 180, 380, 550),
+		Rect2(0, 128, 128, 128),
+		Rect2(128, 128, 128, 128),
+		Rect2(256, 128, 128, 128),
+		Rect2(384, 128, 128, 128),
+	],
+	HANG: [
+		Rect2(0, 256, 128, 128),
+		Rect2(128, 256, 128, 128),
+		Rect2(256, 256, 128, 128),
+		Rect2(384, 256, 128, 128),
 	],
 	JUMP: [
-		Rect2(20, 260, 240, 390),
-		Rect2(270, 310, 250, 340),
-		Rect2(530, 370, 225, 280),
-		Rect2(780, 180, 220, 420),
-		Rect2(1015, 140, 220, 400),
-		Rect2(1260, 115, 200, 360),
-		Rect2(1490, 190, 230, 460),
-		Rect2(1750, 320, 220, 330),
+		Rect2(0, 384, 128, 128),
+		Rect2(128, 384, 128, 128),
+		Rect2(256, 384, 128, 128),
+		Rect2(384, 384, 128, 128),
+		Rect2(512, 384, 128, 128),
+		Rect2(640, 384, 128, 128),
+		Rect2(768, 384, 128, 128),
+		Rect2(896, 384, 128, 128),
 	],
 	ROTATION_KICK: [
-		Rect2(0, 0, 64, 64),
-		Rect2(64, 0, 64, 64),
-		Rect2(128, 0, 64, 64),
-		Rect2(192, 0, 64, 64),
-		Rect2(256, 0, 64, 64),
-		Rect2(320, 0, 64, 64),
-		Rect2(384, 0, 64, 64),
-		Rect2(448, 0, 64, 64),
+		Rect2(0, 512, 128, 128),
+		Rect2(128, 512, 128, 128),
+		Rect2(256, 512, 128, 128),
+		Rect2(384, 512, 128, 128),
+		Rect2(512, 512, 128, 128),
+		Rect2(640, 512, 128, 128),
+		Rect2(768, 512, 128, 128),
+		Rect2(896, 512, 128, 128),
+	],
+	SPECIAL: [
+		Rect2(0, 640, 128, 128),
+		Rect2(128, 640, 128, 128),
+		Rect2(256, 640, 128, 128),
+		Rect2(384, 640, 128, 128),
+		Rect2(512, 640, 128, 128),
+		Rect2(640, 640, 128, 128),
+		Rect2(768, 640, 128, 128),
+		Rect2(896, 640, 128, 128),
 	],
 }
 
-# 상태별 한 frame의 표시 시간(초).
 const FRAME_DURATIONS: Dictionary = {
 	IDLE: 0.18,
 	HANG: 0.16,
 	ATTACK: 0.10,
 	JUMP: 0.0875,
 	ROTATION_KICK: 0.0525,
+	SPECIAL: 0.10,
 }
 
 
-## 상황: CharacterController._apply_animation_frame()이 현재 상태의 texture를 바꿀 때 호출한다.
-## 순서: ① state match ② hang/attack/jump 전용 시트 선택 ③ 나머지는 기본 idle 시트 선택.
-## 결과: Texture2D 참조만 반환하며 리소스나 캐릭터 상태는 변경하지 않는다.
-static func texture_for(state: String) -> Texture2D:
-	match state:
-		HANG:
-			return HANG_TEXTURE
-		ATTACK:
-			return ATTACK_TEXTURE
-		JUMP:
-			return JUMP_TEXTURE
-		ROTATION_KICK:
-			return ROTATION_KICK_TEXTURE
-		_:
-			return IDLE_TEXTURE
+static func has_character(character_id: String) -> bool:
+	return PROFILES.has(character_id)
 
 
-## 상황: CharacterController가 elapsed 시간에 해당하는 sprite frame을 요구할 때 호출한다.
-## 순서: ① 상태별 frame 배열/지속시간 조회 ② elapsed/duration으로 index 계산
-##       ③ idle/hang은 나머지 연산으로 반복 ④ 일회성은 마지막 index로 제한.
-## 결과: sprite sheet에서 사용할 Rect2를 반환하며 idle/hang만 무한 반복된다.
-static func region_for(state: String, elapsed: float) -> Rect2:
-	var frames: Array = REGIONS[state] # 현재 상태에 등록된 source Rect2 목록.
-	var frame_index: int = int(elapsed / float(FRAME_DURATIONS[state])) # 경과시간 기준 원시 frame 번호.
-	if state == IDLE or state == HANG:
+static func profile_for(character_id: String = DEFAULT_CHARACTER_ID) -> Dictionary:
+	if PROFILES.has(character_id):
+		return PROFILES[character_id] as Dictionary
+	return PROFILES[DEFAULT_CHARACTER_ID] as Dictionary
+
+
+static func display_name_for(character_id: String = DEFAULT_CHARACTER_ID) -> String:
+	return str(profile_for(character_id)["display_name"])
+
+
+static func display_offset_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vector2:
+	return profile_for(character_id)["display_offset"] as Vector2
+
+
+static func display_size_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vector2:
+	return profile_for(character_id)["display_size"] as Vector2
+
+
+static func visible_height_for(
+	state: String,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> float:
+	var resolved_state: String = state if VISIBLE_HEIGHTS.has(state) else IDLE
+	var profile_scale: float = display_size_for(character_id).y / FRAME_SIZE
+	return float(VISIBLE_HEIGHTS[resolved_state]) * profile_scale
+
+
+static func texture_for(
+	_state: String,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> Texture2D:
+	return profile_for(character_id)["texture"] as Texture2D
+
+
+static func region_for(
+	state: String,
+	elapsed: float,
+	_character_id: String = DEFAULT_CHARACTER_ID
+) -> Rect2:
+	var resolved_state: String = state if REGIONS.has(state) else IDLE
+	var frames: Array = REGIONS[resolved_state]
+	var frame_index: int = int(elapsed / float(FRAME_DURATIONS[resolved_state]))
+	if resolved_state == IDLE or resolved_state == HANG:
 		frame_index %= frames.size()
 	else:
 		frame_index = mini(frame_index, frames.size() - 1)
 	return frames[frame_index]
+
+
+static func visible_region_for(
+	state: String,
+	elapsed: float,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> Rect2:
+	var frame_region: Rect2 = region_for(state, elapsed, character_id)
+	var texture: Texture2D = texture_for(state, character_id)
+	return opaque_region_for(texture, frame_region)
+
+
+static func opaque_region_for(texture: Texture2D, source_region: Rect2) -> Rect2:
+	var cache_key: String = "%s:%d:%d:%d:%d" % [
+		texture.resource_path,
+		int(source_region.position.x),
+		int(source_region.position.y),
+		int(source_region.size.x),
+		int(source_region.size.y),
+	]
+	if _visible_region_cache.has(cache_key):
+		return _visible_region_cache[cache_key] as Rect2
+
+	var image: Image = texture.get_image()
+
+	var min_x: int = int(source_region.size.x)
+	var min_y: int = int(source_region.size.y)
+	var max_x: int = -1
+	var max_y: int = -1
+	var source_left: int = int(source_region.position.x)
+	var source_top: int = int(source_region.position.y)
+	for pixel_y: int in range(int(source_region.size.y)):
+		for pixel_x: int in range(int(source_region.size.x)):
+			if image.get_pixel(source_left + pixel_x, source_top + pixel_y).a < FRAME_ALPHA_THRESHOLD:
+				continue
+			min_x = mini(min_x, pixel_x)
+			min_y = mini(min_y, pixel_y)
+			max_x = maxi(max_x, pixel_x)
+			max_y = maxi(max_y, pixel_y)
+
+	var visible_region: Rect2 = source_region
+	if max_x >= min_x and max_y >= min_y:
+		visible_region = Rect2(
+			source_region.position + Vector2(float(min_x), float(min_y)),
+			Vector2(float(max_x - min_x + 1), float(max_y - min_y + 1))
+		)
+	_visible_region_cache[cache_key] = visible_region
+	return visible_region

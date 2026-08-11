@@ -7,8 +7,8 @@ signal exit_requested
 const GAME_SCENE_DEFAULT: String = "res://scenes/main.tscn"
 const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
 const TUTORIAL_PAGE_COUNT: int = 5
-const PORTRAIT: Texture2D = preload("res://assets/sprites/player_animations.png")
-const PORTRAIT_SOURCE: Rect2 = Rect2(45.0, 55.0, 165.0, 270.0)
+const PORTRAIT: Texture2D = preload("res://assets/sprites/characters/normal/normal_atlas.png")
+const PORTRAIT_SOURCE: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0)
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
 const ORANGE_BLOCK_SOURCE: Rect2 = Rect2(1745.0, 255.0, 210.0, 215.0)
@@ -16,6 +16,8 @@ const TUTORIAL_CANVAS_SCRIPT: Script = preload(
 	"res://start_screen/scripts/tutorial_canvas.gd"
 )
 const UI_SCRIPT: Script = preload("res://start_screen/scripts/start_screen_ui.gd")
+const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
+const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd")
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
 
 const BACKGROUND: Color = Color("#f7f8fb")
@@ -31,6 +33,8 @@ const DANGER: Color = Color("#d9485f")
 
 enum Screen {
 	MAIN,
+	STAGE_SELECT,
+	CHARACTER,
 	TUTORIAL,
 	OPTIONS,
 	KEY_CUSTOM,
@@ -45,11 +49,22 @@ enum Screen {
 var settings: StartScreenSettings
 var current_screen: Screen = Screen.MAIN
 var tutorial_page: int = 0
+var selected_stage_number: int = 1
 
 var _font: SystemFont
 var _ui: RefCounted
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
+var _stage_buttons: Array[Button] = []
+var _stage_labels: Array[Label] = []
+var _stage_currency_label: Label
+var _character_buttons: Array[Button] = []
+var _character_confirm_button: Button
+var _character_detail_label: Label
+var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
+var _character_window_start: int = 0
+var _character_prev_button: Button
+var _character_next_button: Button
 var _options_first_button: Button
 var _key_buttons: Dictionary = {}
 var _key_status: Label
@@ -76,6 +91,13 @@ var _capture_slot: int = -1
 
 var _message_overlay: Control
 var _message_label: Label
+var _stage_result_overlay: Control
+var _stage_result_label: Label
+var _stage_result_reward_label: Label
+var _stage_result_button: Button
+var _progress_reset_overlay: Control
+var _progress_reset_yes_button: Button
+var _progress_reset_no_button: Button
 
 
 func _ready() -> void:
@@ -89,6 +111,7 @@ func _ready() -> void:
 	settings.name = "StartScreenSettings"
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
+	settings.progress_changed.connect(_refresh_stage_select)
 	add_child(settings)
 	_select_sfx_player = AudioStreamPlayer.new()
 	_select_sfx_player.bus = &"SFX"
@@ -126,7 +149,19 @@ func _draw() -> void:
 
 
 func show_main_menu() -> void:
+	_hide_stage_result()
 	_show_screen(Screen.MAIN)
+
+
+func show_stage_select() -> void:
+	_hide_stage_result()
+	_refresh_stage_select()
+	_show_screen(Screen.STAGE_SELECT)
+
+
+func show_character_select() -> void:
+	_refresh_character_selection()
+	_show_screen(Screen.CHARACTER)
 
 
 func show_tutorial() -> void:
@@ -158,9 +193,17 @@ func previous_tutorial_page() -> void:
 	_refresh_tutorial()
 
 
-func start_game() -> bool:
+func start_game(stage_number: int = -1) -> bool:
+	if _selected_character_id.is_empty() or not MainCharacterData.has_character(_selected_character_id):
+		_show_message("먼저 캐릭터를 선택하세요.")
+		return false
 	if _game_instance != null and is_instance_valid(_game_instance):
 		return true
+	if stage_number < 1:
+		stage_number = selected_stage_number
+	if not settings.is_stage_unlocked(stage_number):
+		_show_message("아직 잠긴 스테이지입니다.")
+		return false
 	if not ResourceLoader.exists(game_scene_path, "PackedScene"):
 		_show_message("게임 장면을 찾을 수 없습니다.\n%s" % game_scene_path)
 		return false
@@ -172,7 +215,17 @@ func start_game() -> bool:
 
 	_game_instance = (game_resource as PackedScene).instantiate()
 	_game_instance.name = "LoadedGame"
+	_game_instance.set_meta("stage_number", stage_number)
+	selected_stage_number = stage_number
 	_game_host.add_child(_game_instance)
+	var selected_character: MainCharacterController = _game_instance.get_node_or_null(
+		"BoardPhysics/Character"
+	) as MainCharacterController
+	if selected_character != null:
+		selected_character.set_character_id(_selected_character_id)
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
 	_show_screen(Screen.GAME)
 	game_loaded.emit(_game_instance)
 	return true
@@ -213,6 +266,10 @@ func _input(event: InputEvent) -> void:
 	if not key_event.pressed or key_event.echo:
 		return
 	if _handle_game_exit_prompt_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_debug_completion_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_progress_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -280,6 +337,19 @@ func _handle_game_exit_prompt_input(key_event: InputEventKey) -> bool:
 	return true
 
 
+func _handle_debug_completion_input(key_event: InputEventKey) -> bool:
+	if not OS.is_debug_build() or current_screen != Screen.GAME:
+		return false
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		return false
+	if _game_exit_overlay != null and _game_exit_overlay.visible:
+		return false
+	if not _is_enter_key(key_event):
+		return false
+	_complete_stage_for_debug()
+	return true
+
+
 ## 결과: 게임 밖의 초점 버튼은 Z로 누르고 Enter는 선택키로 쓰지 않는다.
 func _handle_menu_confirm_input(key_event: InputEventKey) -> bool:
 	if current_screen == Screen.GAME or _capture_overlay.visible:
@@ -302,13 +372,64 @@ func _is_escape_key(key_event: InputEventKey) -> bool:
 	return key_event.physical_keycode == KEY_ESCAPE or key_event.keycode == KEY_ESCAPE
 
 
+func _is_x_key(key_event: InputEventKey) -> bool:
+	return key_event.physical_keycode == KEY_X or key_event.keycode == KEY_X
+
+
+func _handle_progress_reset_prompt_input(key_event: InputEventKey) -> bool:
+	if _progress_reset_overlay == null or not _progress_reset_overlay.visible:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_LEFT or key_code == KEY_RIGHT:
+		if _progress_reset_yes_button.has_focus():
+			_progress_reset_no_button.grab_focus()
+		else:
+			_progress_reset_yes_button.grab_focus()
+		return true
+	if key_code == KEY_Z:
+		if _progress_reset_yes_button.has_focus():
+			_confirm_progress_reset()
+		else:
+			_hide_progress_reset_prompt()
+		return true
+	if _is_escape_key(key_event) or _is_x_key(key_event):
+		_hide_progress_reset_prompt()
+		return true
+	return false
+
+
+func _show_progress_reset_prompt() -> void:
+	_progress_reset_overlay.visible = true
+	_progress_reset_overlay.move_to_front()
+	_progress_reset_no_button.grab_focus.call_deferred()
+
+
+func _hide_progress_reset_prompt() -> void:
+	_progress_reset_overlay.visible = false
+	_options_first_button.grab_focus.call_deferred()
+
+
+func _confirm_progress_reset() -> void:
+	var reset_error: Error = settings.reset_stage_progress()
+	if reset_error != OK:
+		_show_message("진행 데이터를 삭제하지 못했습니다: %s" % error_string(reset_error))
+		return
+	_hide_progress_reset_prompt()
+
+
 func _handle_back_navigation(key_event: InputEventKey) -> bool:
 	if current_screen == Screen.GAME:
 		return false
-	if not _is_escape_key(key_event):
+	if not (_is_escape_key(key_event) or _is_x_key(key_event)):
 		return false
 
 	match current_screen:
+		Screen.STAGE_SELECT:
+			show_main_menu()
+		Screen.CHARACTER:
+			show_stage_select()
 		Screen.TUTORIAL, Screen.OPTIONS:
 			show_main_menu()
 		Screen.KEY_CUSTOM, Screen.VOLUME:
@@ -326,13 +447,17 @@ func _build_interface() -> void:
 	add_child(_game_host)
 
 	_build_main_screen()
+	_build_stage_select_screen()
+	_build_character_screen()
 	_build_tutorial_screen()
 	_build_options_screen()
 	_build_key_screen()
 	_build_volume_screen()
 	_build_capture_overlay()
 	_build_message_overlay()
+	_build_progress_reset_overlay()
 	_build_game_exit_overlay()
+	_build_stage_result_overlay()
 
 
 func _build_main_screen() -> void:
@@ -383,7 +508,7 @@ func _build_main_screen() -> void:
 	panel.add_child(portrait)
 
 	var button_data: Array = [
-		["GAME START", CYAN, start_game],
+		["GAME START", CYAN, show_stage_select],
 		["게임 설명", ORANGE, show_tutorial],
 		["OPTION", PURPLE, show_options],
 		["EXIT", DANGER, request_exit],
@@ -408,6 +533,79 @@ func _build_main_screen() -> void:
 		13,
 		MUTED
 	)
+
+
+func _build_stage_select_screen() -> void:
+	var screen: Control = _create_screen("StageSelectScreen", Screen.STAGE_SELECT)
+	_add_screen_title(screen, "STAGE SELECT", "클리어한 스테이지의 별은 다음 도전에 이어집니다")
+	_stage_currency_label = _create_label(
+		screen,
+		"별 0개",
+		Rect2(680.0, 54.0, 210.0, 40.0),
+		18,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+	var character_button: Button = _create_button(
+		screen,
+		"캐릭터 선택",
+		Rect2(730.0, 104.0, 170.0, 46.0),
+		PURPLE,
+		14
+	)
+	character_button.name = "CharacterSelectButton"
+	character_button.pressed.connect(show_character_select)
+	character_button.focus_entered.connect(_play_select_sfx)
+
+	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
+	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
+		var x_position: float = 70.0 + float(stage_number - 1) * 166.0
+		var panel: Panel = _create_panel(
+			screen,
+			Rect2(x_position, 190.0, 150.0, 340.0),
+			PANEL,
+			accents[stage_number - 1],
+			10
+		)
+		_create_label(
+			panel,
+			"1-%d%s" % [stage_number, "  BOSS" if stage_number == 5 else ""],
+			Rect2(10.0, 26.0, 130.0, 38.0),
+			19,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		var status_label: Label = _create_label(
+			panel,
+			"",
+			Rect2(10.0, 102.0, 130.0, 72.0),
+			17,
+			ORANGE,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		_stage_labels.append(status_label)
+		var stage_button: Button = _create_button(
+			panel,
+			"블록 깨러 가기",
+			Rect2(10.0, 235.0, 130.0, 48.0),
+			accents[stage_number - 1],
+			12
+		)
+		stage_button.name = "StageButton%d" % stage_number
+		stage_button.pressed.connect(_on_stage_selected.bind(stage_number))
+		stage_button.focus_entered.connect(_play_select_sfx)
+		_stage_buttons.append(stage_button)
+
+	var back_button: Button = _create_button(
+		screen,
+		"메인으로",
+		Rect2(390.0, 650.0, 180.0, 48.0),
+		PURPLE,
+		14
+	)
+	back_button.pressed.connect(show_main_menu)
+	_refresh_stage_select()
 
 
 func _build_tutorial_screen() -> void:
@@ -479,11 +677,42 @@ func _build_options_screen() -> void:
 		"볼륨 설정 열기",
 		show_volume
 	)
+	var reset_panel: Panel = _create_panel(
+		screen,
+		Rect2(310.0, 575.0, 340.0, 130.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		reset_panel,
+		"진행 데이터 초기화",
+		Rect2(20.0, 14.0, 300.0, 30.0),
+		18,
+		DANGER,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		reset_panel,
+		"스테이지 해금과 별 재화를 지웁니다.",
+		Rect2(20.0, 45.0, 300.0, 24.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	var reset_button: Button = _create_button(
+		reset_panel,
+		"진행 상황 삭제",
+		Rect2(70.0, 78.0, 200.0, 38.0),
+		DANGER,
+		14
+	)
+	reset_button.pressed.connect(_show_progress_reset_prompt)
 
 	var back_button: Button = _create_button(
 		screen,
 		"메인으로",
-		Rect2(390.0, 650.0, 180.0, 48.0),
+		Rect2(390.0, 725.0, 180.0, 40.0),
 		PURPLE,
 		14
 	)
@@ -844,13 +1073,68 @@ func _build_message_overlay() -> void:
 	okay_button.pressed.connect(_hide_message)
 
 
+func _build_progress_reset_overlay() -> void:
+	_progress_reset_overlay = Control.new()
+	_progress_reset_overlay.name = "ProgressResetOverlay"
+	_progress_reset_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_progress_reset_overlay.z_as_relative = false
+	_progress_reset_overlay.z_index = 150
+	_progress_reset_overlay.visible = false
+	add_child(_progress_reset_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_progress_reset_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_progress_reset_overlay,
+		Rect2(220.0, 270.0, 520.0, 260.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		panel,
+		"진행 데이터를 삭제할까요?",
+		Rect2(40.0, 38.0, 440.0, 38.0),
+		24,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		panel,
+		"스테이지 해금과 별 재화가 초기화됩니다.",
+		Rect2(40.0, 92.0, 440.0, 32.0),
+		15,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_progress_reset_yes_button = _create_button(
+		panel,
+		"삭제",
+		Rect2(72.0, 170.0, 180.0, 46.0),
+		DANGER,
+		15
+	)
+	_progress_reset_yes_button.pressed.connect(_confirm_progress_reset)
+	_progress_reset_no_button = _create_button(
+		panel,
+		"취소",
+		Rect2(268.0, 170.0, 180.0, 46.0),
+		CYAN,
+		15
+	)
+	_progress_reset_no_button.pressed.connect(_hide_progress_reset_prompt)
+
+
 ## 상황: 게임 중 Esc로 메인 메뉴 복귀 여부를 물을 modal UI를 준비한다.
 ## 호출: `_build_interface()`가 일반 화면과 다른 overlay를 모두 만든 뒤 한 번 호출한다.
 ## 결과: 질문과 Yes/No 버튼이 생성되며 실제 요청 전까지 숨김 상태를 유지한다.
 func _build_game_exit_overlay() -> void:
 	_game_exit_overlay = Control.new()
 	_game_exit_overlay.name = "GameExitOverlay"
-	_game_exit_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_exit_overlay.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_game_exit_overlay.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
 	_game_exit_overlay.z_as_relative = false
 	_game_exit_overlay.z_index = 100
 	_game_exit_overlay.visible = false
@@ -862,15 +1146,16 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_overlay.add_child(shade)
 	var panel: Panel = _create_panel(
 		_game_exit_overlay,
-		Rect2(230.0, 390.0, 540.0, 280.0),
+		Rect2(60.0, 440.0, 440.0, 260.0),
 		PANEL,
 		PURPLE,
 		12
 	)
+	panel.name = "GameExitPanel"
 	_create_label(
 		panel,
 		"메뉴로 나가겠습니까?",
-		Rect2(40.0, 52.0, 460.0, 52.0),
+		Rect2(20.0, 46.0, 400.0, 52.0),
 		25,
 		TEXT,
 		HORIZONTAL_ALIGNMENT_CENTER
@@ -878,7 +1163,7 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_yes_button = _create_button(
 		panel,
 		"Yes",
-		Rect2(72.0, 166.0, 180.0, 52.0),
+		Rect2(40.0, 152.0, 160.0, 52.0),
 		CYAN,
 		16
 	)
@@ -887,12 +1172,114 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_no_button = _create_button(
 		panel,
 		"No",
-		Rect2(288.0, 166.0, 180.0, 52.0),
+		Rect2(240.0, 152.0, 160.0, 52.0),
 		DANGER,
 		16
 	)
 	_game_exit_no_button.name = "GameExitNoButton"
 	_game_exit_no_button.pressed.connect(_hide_game_exit_prompt)
+
+
+func _build_stage_result_overlay() -> void:
+	_stage_result_overlay = Control.new()
+	_stage_result_overlay.name = "StageResultOverlay"
+	_stage_result_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_result_overlay.z_as_relative = false
+	_stage_result_overlay.z_index = 200
+	_stage_result_overlay.visible = false
+	add_child(_stage_result_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_stage_result_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_stage_result_overlay,
+		Rect2(220.0, 250.0, 520.0, 300.0),
+		PANEL,
+		ORANGE,
+		12
+	)
+	_stage_result_label = _create_label(
+		panel,
+		"",
+		Rect2(40.0, 40.0, 440.0, 84.0),
+		27,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_stage_result_reward_label = _create_label(
+		panel,
+		"",
+		Rect2(40.0, 140.0, 440.0, 42.0),
+		17,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_stage_result_button = _create_button(
+		panel,
+		"스테이지 선택으로",
+		Rect2(150.0, 220.0, 220.0, 46.0),
+		CYAN,
+		14
+	)
+	_stage_result_button.name = "StageResultButton"
+	_stage_result_button.pressed.connect(show_stage_select)
+
+
+func _show_stage_result(result: Dictionary) -> void:
+	if _stage_result_overlay == null:
+		return
+	var stage_number: int = int(result.get("stage_number", selected_stage_number))
+	var stars: int = int(result.get("stars", 3))
+	var reward: int = int(result.get("reward", 0))
+	_stage_result_label.text = "1-%d 클리어!\n%s" % [stage_number, _star_text(stars)]
+	_stage_result_reward_label.text = "별 보상 +%d   (보유 %d)" % [
+		reward,
+		int(result.get("star_currency", settings.star_currency)),
+	]
+	_stage_result_overlay.visible = true
+	_stage_result_overlay.move_to_front()
+	_stage_result_button.grab_focus.call_deferred()
+
+
+func _hide_stage_result() -> void:
+	if _stage_result_overlay != null:
+		_stage_result_overlay.visible = false
+
+
+func _complete_stage_for_debug() -> void:
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		return
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null and game_controller.is_boss_stage():
+		if game_controller.is_boss_alive():
+			game_controller.damage_boss(game_controller.boss_health)
+		return
+	_complete_stage(3)
+
+
+func _on_survival_stage_cleared(cleared_lines: int) -> void:
+	var game_controller: MainGameController = _loaded_game_controller()
+	var stars: int = (
+		3
+		if game_controller != null and game_controller.is_boss_stage()
+		else MainGameController.stage_stars_for_lines(cleared_lines)
+	)
+	_complete_stage(stars)
+
+
+func _complete_stage(stars: int) -> void:
+	var result: Dictionary = settings.complete_stage(selected_stage_number, stars)
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
+		return
+	if _game_instance != null and is_instance_valid(_game_instance):
+		_game_instance.queue_free()
+	_game_instance = null
+	_apply_menu_viewport_size()
+	_show_screen(Screen.STAGE_SELECT)
+	_show_stage_result(result)
 
 
 func _show_screen(screen_type: Screen) -> void:
@@ -906,6 +1293,17 @@ func _show_screen(screen_type: Screen) -> void:
 	match screen_type:
 		Screen.MAIN:
 			_main_buttons[0].grab_focus.call_deferred()
+		Screen.STAGE_SELECT:
+			if not _stage_buttons.is_empty():
+				var focus_index: int = clampi(selected_stage_number - 1, 0, _stage_buttons.size() - 1)
+				if _stage_buttons[focus_index].disabled:
+					focus_index = 0
+				_stage_buttons[focus_index].grab_focus.call_deferred()
+		Screen.CHARACTER:
+			for button: Button in _character_buttons:
+				if button.visible:
+					button.grab_focus.call_deferred()
+					break
 		Screen.TUTORIAL:
 			_tutorial_next_button.grab_focus.call_deferred()
 		Screen.OPTIONS:
@@ -922,6 +1320,33 @@ func _refresh_tutorial() -> void:
 	_tutorial_counter.text = "%d / %d" % [tutorial_page + 1, TUTORIAL_PAGE_COUNT]
 	_tutorial_prev_button.disabled = tutorial_page == 0
 	_tutorial_next_button.disabled = tutorial_page == TUTORIAL_PAGE_COUNT - 1
+
+
+func _refresh_stage_select() -> void:
+	if settings == null or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT:
+		return
+	_stage_currency_label.text = "별 %d개" % settings.star_currency
+	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
+		var index: int = stage_number - 1
+		var unlocked: bool = settings.is_stage_unlocked(stage_number)
+		_stage_labels[index].text = "%s\n%s" % [
+			_star_text(settings.get_stage_best_stars(stage_number)),
+			"입장 가능" if unlocked else "잠김",
+		]
+		_stage_buttons[index].disabled = not unlocked
+		_stage_buttons[index].text = "블록 깨러 가기" if unlocked else "잠김"
+
+
+func _on_stage_selected(stage_number: int) -> void:
+	if settings.is_stage_unlocked(stage_number):
+		start_game(stage_number)
+
+
+func _star_text(stars: int) -> String:
+	var result: String = ""
+	for star_index: int in range(StartScreenSettings.MAX_STAGE_STARS):
+		result += "★" if star_index < stars else "☆"
+	return result
 
 
 func _refresh_key_buttons() -> void:
@@ -963,6 +1388,15 @@ func _on_music_changed(value: float) -> void:
 func _on_sfx_changed(value: float) -> void:
 	settings.set_sfx_percent(value)
 	_sfx_value_label.text = "%d%%" % roundi(value)
+
+
+func _is_enter_key(key_event: InputEventKey) -> bool:
+	return (
+		key_event.physical_keycode == KEY_ENTER
+		or key_event.physical_keycode == KEY_KP_ENTER
+		or key_event.keycode == KEY_ENTER
+		or key_event.keycode == KEY_KP_ENTER
+	)
 
 
 func _show_message(message: String) -> void:
@@ -1029,7 +1463,7 @@ func _loaded_game_controller() -> MainGameController:
 	return _game_instance.get_node_or_null("GameController") as MainGameController
 
 
-## 상황: 게임 전용 1000×1080 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
+## 상황: 게임 전용 560×1140 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
 ## 결과: content scale과 실제 창 크기를 메뉴 설계 크기 960×800으로 복원한다.
 func _apply_menu_viewport_size() -> void:
 	var window: Window = get_window()
@@ -1112,9 +1546,211 @@ func _draw_decorative_blocks(origin: Vector2, color: Color, alpha: float) -> voi
 	]
 	var source_region: Rect2 = CYAN_BLOCK_SOURCE if color == CYAN else ORANGE_BLOCK_SOURCE
 	for cell: Vector2i in cells:
-		draw_texture_rect_region(
+			draw_texture_rect_region(
 			BLOCK_TEXTURE,
 			Rect2(origin + Vector2(cell) * 30.0, Vector2(27.0, 27.0)),
 			source_region,
 			Color(1.0, 1.0, 1.0, alpha)
 		)
+
+
+func _build_character_screen() -> void:
+	var screen: Control = _create_screen("CharacterScreen", Screen.CHARACTER)
+	_add_screen_title(screen, "캐릭터 선택", "다섯 능력치와 하나의 특수 스킬을 비교하세요")
+
+	for index: int in range(MainCharacterData.CHARACTER_ORDER.size()):
+		var character_id: String = MainCharacterData.CHARACTER_ORDER[index]
+		var profile: Dictionary = MainCharacterData.profile_for(character_id)
+		var card: Button = _create_button(
+			screen,
+			"",
+			Rect2(50.0 + float(index) * 285.0, 142.0, 270.0, 354.0),
+			CYAN,
+			16
+		)
+		card.name = "Character_%s" % character_id
+		card.pressed.connect(_select_character.bind(character_id))
+		card.focus_entered.connect(_select_character.bind(character_id))
+		card.focus_entered.connect(_play_select_sfx)
+		_character_buttons.append(card)
+
+		var portrait_texture := AtlasTexture.new()
+		portrait_texture.atlas = MainCharacterAnimationData.texture_for(
+			MainCharacterAnimationData.IDLE,
+			character_id
+		)
+		portrait_texture.region = MainCharacterAnimationData.visible_region_for(
+			MainCharacterAnimationData.IDLE,
+			0.0,
+			character_id
+		)
+		var portrait := TextureRect.new()
+		portrait.position = Vector2(47.0, 12.0)
+		portrait.size = Vector2(176.0, 158.0)
+		portrait.texture = portrait_texture
+		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(portrait)
+
+		var stat_text: String = (
+			"%s  [%s]\n%s\n\n공속 %d   이동 %d   점프 %d\n스태미나 %d   특수스킬 %d\n\n무기: %s"
+			% [
+				profile["display_name"],
+				profile["unlock_text"],
+				profile["role"],
+				profile["attack_speed"],
+				profile["move"],
+				profile["jump"],
+				profile["stamina"],
+				profile["special_skill"],
+				profile["weapon"],
+			]
+		)
+		var info: Label = _create_label(
+			card,
+			stat_text,
+			Rect2(12.0, 168.0, 246.0, 174.0),
+			14,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		info.add_theme_constant_override("line_spacing", 4)
+
+	_character_prev_button = _create_button(
+		screen, "◀", Rect2(6.0, 286.0, 38.0, 70.0), PURPLE, 19
+	)
+	_character_prev_button.pressed.connect(_shift_character_window.bind(-1))
+	_character_prev_button.focus_entered.connect(_play_select_sfx)
+	_character_next_button = _create_button(
+		screen, "▶", Rect2(916.0, 286.0, 38.0, 70.0), PURPLE, 19
+	)
+	_character_next_button.pressed.connect(_shift_character_window.bind(1))
+	_character_next_button.focus_entered.connect(_play_select_sfx)
+
+	var detail_panel: Panel = _create_panel(
+		screen,
+		Rect2(34.0, 516.0, 892.0, 160.0),
+		PANEL,
+		BORDER,
+		10
+	)
+	_character_detail_label = _create_label(
+		detail_panel,
+		"",
+		Rect2(22.0, 10.0, 848.0, 88.0),
+		14,
+		TEXT
+	)
+	_character_detail_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_character_confirm_button = _create_button(
+		detail_panel,
+		"선택 완료",
+		Rect2(472.0, 104.0, 238.0, 42.0),
+		CYAN,
+		16
+	)
+	_character_confirm_button.pressed.connect(show_stage_select)
+	_character_confirm_button.focus_entered.connect(_play_select_sfx)
+	var back_button: Button = _create_button(
+		detail_panel,
+		"뒤로",
+		Rect2(720.0, 104.0, 150.0, 42.0),
+		DANGER,
+		16
+	)
+	back_button.pressed.connect(show_stage_select)
+	back_button.focus_entered.connect(_play_select_sfx)
+	_refresh_character_selection()
+
+
+func _select_character(character_id: String) -> void:
+	if not MainCharacterData.has_character(character_id):
+		return
+	_selected_character_id = character_id
+	_refresh_character_selection()
+
+
+func _shift_character_window(direction: int) -> void:
+	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
+	_character_window_start = clampi(_character_window_start + signi(direction), 0, maximum_start)
+	if not _selected_character_id.is_empty():
+		var selected_index: int = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
+		if selected_index < _character_window_start or selected_index >= _character_window_start + 3:
+			_selected_character_id = ""
+	_refresh_character_selection()
+
+
+func _refresh_character_selection() -> void:
+	if _character_detail_label == null:
+		return
+	var has_selection: bool = (
+		not _selected_character_id.is_empty()
+		and MainCharacterData.has_character(_selected_character_id)
+	)
+	if has_selection:
+		var profile: Dictionary = MainCharacterData.profile_for(_selected_character_id)
+		var detail_text: String = (
+			"%s · %s\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
+			% [
+				profile["display_name"],
+				profile["description"],
+				profile["special_name"],
+				profile["special_description"],
+				float(profile["special_base_cooldown"]),
+				MainCharacterData.special_cooldown(_selected_character_id),
+			]
+		)
+		if profile.has("unlock_hint"):
+			detail_text = (
+				"%s · %s\n해금 힌트: “%s”\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
+				% [
+					profile["display_name"],
+					profile["description"],
+					profile["unlock_hint"],
+					profile["special_name"],
+					profile["special_description"],
+					float(profile["special_base_cooldown"]),
+					MainCharacterData.special_cooldown(_selected_character_id),
+				]
+			)
+		_character_detail_label.text = detail_text
+	else:
+		_character_detail_label.text = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
+	_character_confirm_button.disabled = not has_selection
+	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
+	_character_prev_button.disabled = _character_window_start <= 0
+	_character_next_button.disabled = _character_window_start >= maximum_start
+	for index: int in range(_character_buttons.size()):
+		var button: Button = _character_buttons[index]
+		var visible_slot: int = index - _character_window_start
+		button.visible = visible_slot >= 0 and visible_slot < 3
+		if button.visible:
+			button.position = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+		var selected: bool = button.name == "Character_%s" % _selected_character_id
+		button.add_theme_stylebox_override("normal", _character_card_style(selected))
+		button.modulate = Color.WHITE if selected else Color(0.82, 0.85, 0.90, 0.88)
+		for child: Node in button.get_children():
+			if child is Label:
+				(child as Label).add_theme_color_override(
+					"font_color",
+					Color.WHITE if selected else TEXT
+				)
+
+
+func _character_card_style(selected: bool) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = CYAN.darkened(0.72) if selected else PANEL
+	style.border_color = CYAN if selected else BORDER
+	style.set_border_width_all(3 if selected else 1)
+	style.set_corner_radius_all(7)
+	style.content_margin_left = 12.0
+	style.content_margin_right = 12.0
+	return style
+
+
+## 상황: 게임 설명의 canvas·탐색 버튼·counter·뒤로가기를 최초 조립할 때 호출된다.
+## 순서: screen/title → TutorialCanvas 설정 주입 → prev/next/counter/back 생성과 signal 연결.
+## 결과: page 멤버만 바꾸면 재사용 가능한 TUTORIAL 화면이 완성된다.

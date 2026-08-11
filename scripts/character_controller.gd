@@ -2129,7 +2129,6 @@ func _apply_animation_frame() -> void:
 	sprite.scale = Vector2.ONE * uniform_scale
 	sprite.position = (
 		ANIMATION_DATA.display_offset_for(character_id)
-		+ MainLayout.BOARD_VISUAL_OFFSET
 		+ Vector2(
 			-(visible_center_x - source_center.x) * uniform_scale,
 			ground_anchor_y - (visible_bottom - source_center.y) * uniform_scale

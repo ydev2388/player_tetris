@@ -23,7 +23,7 @@ script = ExtResource("1_view")
 script = ExtResource("2_controller")
 
 [node name="BoardPhysics" type="Node2D" parent="."]
-position = Vector2(40, 80)
+position = Vector2(40, 120)
 script = ExtResource("3_physics")
 
 [node name="Boundaries" type="StaticBody2D" parent="BoardPhysics"]
@@ -54,7 +54,6 @@ position = Vector2(0, 3)
 shape = SubResource("RectangleShape2D_character")
 
 [node name="Sprite" type="Sprite2D" parent="BoardPhysics/Character"]
-position = Vector2(0, 40)
 texture_filter = 1
 texture = ExtResource("5_character_texture")
 region_enabled = true

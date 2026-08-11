@@ -32,10 +32,20 @@
 | `CELL_SIZE` | 실제 한 셀 48px. View와 Physics가 공유한다. |
 | `BOARD_SIZE` | 보이는 10×20 셀의 pixel 크기. |
 | `GAME_VIEWPORT_SIZE` | 게임 화면 논리 해상도 1000×1080. |
-| `BOARD_ORIGIN` | 게임 View에서 보드 좌상단 위치. |
+| `BOARD_ORIGIN` | 게임 View와 `BoardPhysics`가 공유하는 보드 좌상단 위치. `scenes/main.tscn`의 `BoardPhysics.position`도 이 값과 같아야 한다. |
 | `HUD_RECT` | 우측 HUD panel 영역. |
 
 이 파일은 인스턴스 멤버가 없다. C++의 상수 namespace처럼 사용한다.
+
+#### 보드 좌표 규칙
+
+`BoardPhysics`와 `GameView`는 `MainLayout.BOARD_ORIGIN`을 같은 보드 원점으로 사용한다.
+따라서 물리 상태를 `BoardPhysics`의 자식 `Sprite2D` 등으로 표시할 때는 물리 좌표를 그대로
+대입하면 되고, 별도의 시각 보정값이나 임의의 `40px` 이동을 추가하지 않는다.
+
+낙하·착지·충돌 계산과 화면 표시가 같은 보드 좌표를 사용해야 한다. 새 보드 표시물을 추가할
+때는 `scenes/main.tscn`의 `BoardPhysics.position`이 `MainLayout.BOARD_ORIGIN`과 일치하는지도
+함께 확인한다.
 
 ### `scripts/tetromino_data.gd`
 

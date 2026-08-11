@@ -86,6 +86,55 @@ func _run() -> void:
 		"스테이지 별과 별 화폐가 설정 파일에 저장된다."
 	)
 	reloaded_settings.free()
+	_expect(
+		screen.settings.get_passive_level("attack_speed") == 0
+			and screen.settings.get_passive_cost("attack_speed") == 1,
+		"패시브는 처음에 0레벨이고 첫 강화 비용은 별 1개다."
+	)
+	var attack_level_one: Dictionary = screen.settings.upgrade_passive("attack_speed")
+	var attack_level_two: Dictionary = screen.settings.upgrade_passive("attack_speed")
+	_expect(
+		bool(attack_level_one.get("ok", false))
+			and bool(attack_level_two.get("ok", false))
+			and screen.settings.get_passive_level("attack_speed") == 2
+			and screen.settings.star_currency == 0,
+		"공속 1·2레벨은 각각 별 1·2개를 차감한다."
+	)
+	var attack_level_three_without_stars: Dictionary = screen.settings.upgrade_passive(
+		"attack_speed"
+	)
+	_expect(
+		not bool(attack_level_three_without_stars.get("ok", false))
+			and screen.settings.get_passive_cost("attack_speed") == 3,
+		"별이 부족하면 3레벨 강화를 막고 다음 비용을 별 3개로 표시한다."
+	)
+	var second_stage_reward: Dictionary = screen.settings.complete_stage(2, 3)
+	var attack_level_three: Dictionary = screen.settings.upgrade_passive("attack_speed")
+	_expect(
+		bool(second_stage_reward.get("ok", false))
+			and bool(attack_level_three.get("ok", false))
+			and screen.settings.get_passive_level("attack_speed") == 3
+			and screen.settings.star_currency == 0,
+		"공속을 최대 레벨까지 올리는 총 비용은 별 6개다."
+	)
+	var passive_reset: Dictionary = screen.settings.reset_passive_upgrades()
+	var move_upgrade: Dictionary = screen.settings.upgrade_passive("move")
+	_expect(
+		bool(passive_reset.get("ok", false))
+			and int(passive_reset.get("refund", -1)) == 6
+			and bool(move_upgrade.get("ok", false))
+			and screen.settings.get_passive_level("move") == 1
+			and screen.settings.star_currency == 5,
+		"패시브 초기화는 투자 별 6개를 전액 환급하고 새 강화도 구매할 수 있다."
+	)
+	var passive_reloaded: StartScreenSettings = StartScreenSettings.new(TEST_SETTINGS_PATH)
+	passive_reloaded.load_settings()
+	_expect(
+		passive_reloaded.get_passive_level("move") == 1
+			and passive_reloaded.star_currency == 5,
+		"패시브 레벨과 남은 별이 설정 파일에 저장된다."
+	)
+	passive_reloaded.free()
 	var back_event: InputEventKey = InputEventKey.new()
 	back_event.pressed = true
 	back_event.physical_keycode = KEY_X
@@ -134,7 +183,24 @@ func _run() -> void:
 	var character_select_button: Button = screen.find_child(
 		"CharacterSelectButton", true, false
 	) as Button
-	_expect(character_select_button != null, "스테이지 선택 우측 상단에 캐릭터 선택 버튼이 있다.")
+	var shop_button: Button = screen.find_child("ShopButton", true, false) as Button
+	_expect(
+		character_select_button != null
+			and shop_button != null
+			and character_select_button.position.x > shop_button.position.x
+			and character_select_button.position.y >= 640.0
+			and shop_button.position.y >= 640.0,
+		"스테이지 선택 하단에 상점은 좌측, 캐릭터 선택은 우측에 있다."
+	)
+	if shop_button != null:
+		shop_button.pressed.emit()
+	_expect(
+		screen.current_screen == KungFuTetrisStartScreen.Screen.SHOP
+			and screen.find_child("PassiveUpgradeButton_attack_speed", true, false) != null
+			and screen.find_child("PassiveResetButton", true, false) != null,
+		"상점에서 5개 패시브 강화 버튼과 초기화 버튼을 사용할 수 있다."
+	)
+	screen.show_stage_select()
 	if character_select_button != null:
 		character_select_button.pressed.emit()
 	_expect(

@@ -5,6 +5,9 @@ extends RefCounted
 ## 능력치는 공속(회전킥 쿨다운), 이동, 점프, 스태미나, 특수스킬만 사용한다.
 
 const DEFAULT_CHARACTER_ID: String = "normal"
+const PASSIVE_COUNT: int = 5
+const PASSIVE_LEVEL_MAX: int = 3
+const PASSIVE_EFFECT_STEP: float = 0.05
 const CHARACTER_ORDER: Array[String] = [
 	"normal",
 	"boxer",
@@ -156,26 +159,54 @@ static func stat(character_id: String, key: String) -> int:
 	return clampi(int(profile_for(character_id).get(key, 1)), 1, 10)
 
 
-static func move_speed(character_id: String) -> float:
-	return 140.0 + float(stat(character_id, "move")) * 10.0
+static func move_speed(character_id: String, passive_levels: Array = []) -> float:
+	var base_speed: float = 140.0 + float(stat(character_id, "move")) * 10.0
+	return base_speed * passive_speed_multiplier(passive_levels, 1)
 
 
 static func jump_cells(character_id: String) -> int:
 	return 2 + (stat(character_id, "jump") - 1) / 3
 
 
-static func stamina_drain_multiplier(character_id: String) -> float:
-	return 1.0 - float(stat(character_id, "stamina") - 1) * 0.06
+static func stamina_drain_multiplier(character_id: String, passive_levels: Array = []) -> float:
+	var base_multiplier: float = 1.0 - float(stat(character_id, "stamina") - 1) * 0.06
+	return base_multiplier * passive_cooldown_multiplier(passive_levels, 3)
 
 
-static func special_cooldown_multiplier(character_id: String) -> float:
-	return 1.0 - float(stat(character_id, "special_skill") - 1) * 0.03
+static func special_cooldown_multiplier(
+	character_id: String,
+	passive_levels: Array = []
+) -> float:
+	var base_multiplier: float = 1.0 - float(stat(character_id, "special_skill") - 1) * 0.03
+	return base_multiplier * passive_cooldown_multiplier(passive_levels, 4)
 
 
-static func rotation_cooldown(character_id: String) -> float:
-	return 2.1 - float(stat(character_id, "attack_speed")) * 0.1
+static func rotation_cooldown(character_id: String, passive_levels: Array = []) -> float:
+	var base_cooldown: float = 2.1 - float(stat(character_id, "attack_speed")) * 0.1
+	return base_cooldown * passive_cooldown_multiplier(passive_levels, 0)
 
 
-static func special_cooldown(character_id: String) -> float:
+static func special_cooldown(character_id: String, passive_levels: Array = []) -> float:
 	var profile: Dictionary = profile_for(character_id)
-	return float(profile["special_base_cooldown"]) * special_cooldown_multiplier(character_id)
+	return float(profile["special_base_cooldown"]) * special_cooldown_multiplier(
+		character_id,
+		passive_levels
+	)
+
+
+static func jump_height_multiplier(passive_levels: Array = []) -> float:
+	return passive_speed_multiplier(passive_levels, 2)
+
+
+static func passive_speed_multiplier(passive_levels: Array, index: int) -> float:
+	return 1.0 + float(_passive_level(passive_levels, index)) * PASSIVE_EFFECT_STEP
+
+
+static func passive_cooldown_multiplier(passive_levels: Array, index: int) -> float:
+	return 1.0 - float(_passive_level(passive_levels, index)) * PASSIVE_EFFECT_STEP
+
+
+static func _passive_level(passive_levels: Array, index: int) -> int:
+	if index < 0 or index >= passive_levels.size():
+		return 0
+	return clampi(int(passive_levels[index]), 0, PASSIVE_LEVEL_MAX)

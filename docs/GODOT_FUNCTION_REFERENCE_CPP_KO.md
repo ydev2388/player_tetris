@@ -142,10 +142,10 @@
 | --- | --- | --- |
 | `_ready()` | 입력·signal·SFX player를 준비하고 캐릭터를 reset한다. | 첫 physics frame 전 모든 상태가 유효하다. |
 | `_physics_process(delta)` | 비활성→timer→재스폰→명상→펀치→매달림/이동을 우선순위로 실행한다. | 한 frame에 배타적 상태 하나가 진행된다. |
-| `_stop_for_inactive_game()` | 명상·차지 loop를 정리하고 속도를 0으로 만든다. | PAUSED/GAME_OVER에서 행동이 멈춘다. |
+| `_stop_for_inactive_game()` | 명상 loop를 정리하고 속도를 0으로 만든다. | PAUSED/GAME_OVER에서 행동이 멈춘다. |
 | `_handle_self_respawn_input(delta)` | hold/release latch와 1초 임계값을 관리한다. | 짧은 입력은 취소, 완료 입력은 생명을 사용한다. |
 | `_reset_self_respawn_input()` | hold time과 release latch를 초기화한다. | 다음 입력이 0초부터 시작한다. |
-| `_can_start_meditating()` | 아래키·접지·비매달림·비차지를 AND 검사한다. | 상태를 바꾸지 않고 진입 가능 bool을 반환한다. |
+| `_can_start_meditating()` | 아래키·접지·비매달림을 AND 검사한다. | 상태를 바꾸지 않고 진입 가능 bool을 반환한다. |
 | `_finish_physics_frame(delta)` | visual update 후 위치 유효성을 검사한다. | 모든 활성 branch가 같은 후처리를 공유한다. |
 | `_handle_meditation(delta)` | 유지 조건을 재검사하고 정지·중력·접지를 처리한다. | 발판을 잃거나 키를 놓으면 즉시 종료한다. |
 | `_handle_movement(delta)` | 입력→방향→수평속도→중력→행동→grab→move_and_slide 순서다. | 일반 캐릭터 이동을 한곳에서 조정한다. |
@@ -180,15 +180,11 @@
 
 | 함수 | 호출과 내부 순서 | 결과 |
 | --- | --- | --- |
-| `_handle_charge(delta)` | X press 시작, hold 시간/SFX, release 시 tap 또는 charge를 선택한다. | 실제 공격은 release 뒤 한 번만 예약된다. |
-| `_start_punch_sequence()` | cooldown 검사 뒤 charging/time/audio flag를 초기화한다. | 새 hold sequence를 시작한다. |
+| `_handle_punch()` | X press를 확인해 기본 공격을 호출한다. | 입력 즉시 한 칸 펀치 판정을 예약한다. |
 | `_perform_tap_punch()` | attack animation/cooldown/SFX와 1칸 판정을 예약한다. | 짧은 입력의 일반 펀치를 만든다. |
 | `_start_attack_animation()` | animation state와 시간을 ATTACK 첫 frame으로 바꾼다. | 다른 이동 frame을 공격 모션이 잠시 덮는다. |
-| `_release_charge_punch()` | loop 종료 뒤 charging/time/audio flag를 초기화한다. | HUD 단계가 0으로 돌아간다. |
-| `_perform_charge_punch(stage)` | stamina 검사 뒤 attack/SFX와 2~3칸 판정을 예약한다. | 적중 전에는 stamina를 확정 차감하지 않는다. |
 | `_begin_punch_hit_confirmation(stage)` | stage와 0.1초 판정 시간을 멤버에 기록한다. | 이후 frame hitbox 검사를 예약한다. |
 | `_resolve_pending_punch(delta)` | hit면 피스 이동/비용/cue, miss면 timeout 감소/feedback을 처리한다. | 한 공격이 정확히 한 번 성공 또는 만료된다. |
-| `_cancel_punch_sequence()` | 진행 중 loop와 charging 상태를 정리한다. | 명상·피해 같은 상위 상태가 hold를 취소한다. |
 | `_set_meditating(active)` | 실제 가능 조건을 재검사하고 다른 행동을 정리해 controller 배율과 SFX를 바꾼다. | 명상 진입/종료가 원자적으로 적용된다. |
 | `_attempt_rotation_kick()` | cooldown→spin→근접→SRS 회전→상승 예약/실패 처리를 한다. | stamina 없이 블록 플립과 feedback을 만든다. |
 | `_apply_pending_rotation_launch(delta)` | 새 collider와 swept rect 겹침을 검사한다. | 안전한 다음 frame에만 상승 속도를 적용한다. |
@@ -210,10 +206,6 @@
 | `take_damage()` | 무적 guard 뒤 공통 생명 감소 함수를 호출한다. | 연속 피해를 막는다. |
 | `_lose_life_and_respawn(message)` | 생명 감소·행동 정리→게임오버 또는 안전 상단 재스폰을 실행한다. | 피해와 자력 재스폰의 공통 결과를 적용한다. |
 | `self_respawn_hold_ratio()` | hold time/필요 시간을 clamp한다. | View용 0~1 진행률을 반환한다. |
-| `charge_level()` | charging 여부와 hold 시간을 단계 함수에 전달한다. | HUD용 0~3을 반환한다. |
-| `charge_ratio()` | charging일 때 time/0.9를 clamp한다. | glow/bar용 0~1을 반환한다. |
-| `rotation_cooldown_ratio()` | 남은 cooldown/전체 cooldown을 clamp한다. | 준비도 bar의 0~1을 반환한다. |
-| `push_distance_for_charge(seconds)` | 두 임계값을 비교한다. | 1, 2, 3칸 중 하나를 반환한다. |
 | `_punch_hits_active_piece()` | 현재 punch rect와 active piece 근접 검사를 위임한다. | release 판정의 bool을 반환한다. |
 | `_punch_hitbox_rect()` | facing 방향으로 character 앞 Rect를 계산한다. | 주먹 판정 영역을 반환한다. |
 | `_is_near_active_piece(horizontal, radial)` | 네 active 셀 중심과 character/방향 거리를 검사한다. | 액션 범위 안의 셀이 있으면 true다. |
@@ -234,7 +226,7 @@
 | `_update_visual_state(delta)` | spin→modulation→blink→frame 순서로 호출한다. | 시각 효과 합성 순서를 고정한다. |
 | `_update_spin_visual(delta)` | elapsed smoothstep으로 한 바퀴 각도를 계산하고 완료 시 seed한다. | 누적 오차 없는 flip 회전을 만든다. |
 | `_seed_post_spin_animation()` | 접지면 idle, 공중이면 속도별 jump frame을 선택한다. | flip 뒤 animation이 자연스럽게 이어진다. |
-| `_update_sprite_modulation()` | 명상 pulse 또는 charge glow 색을 계산한다. | 행동 상태를 색으로 표시한다. |
+| `_update_sprite_modulation()` | 명상 pulse 또는 기본색을 계산한다. | 행동 상태를 색으로 표시한다. |
 | `_update_damage_blink()` | 무적 중 12Hz phase로 visible을 토글한다. | 피해 무적 피드백을 만든다. |
 | `_advance_character_animation(delta)` | 상태 우선순위와 시간 진행 뒤 frame을 적용한다. | 반복/일회 animation을 갱신한다. |
 | `_get_animation_state()` | flip→attack→hang→jump→idle 순서로 첫 상태를 반환한다. | 배타적인 animation key를 결정한다. |
@@ -246,8 +238,6 @@
 | `_play_sfx_cue(stream)` | 보조 channel을 사용한다. | 주 효과음을 끊지 않는 cue를 낸다. |
 | `_play_block_elimination_sfx()` | 줄 삭제 stream을 cue helper에 전달한다. | signal adapter 역할을 한다. |
 | `_start_meditation_loop()` / `_stop_meditation_loop()` / `_restart_meditation_loop()` | 명상 지속 player를 상태에 맞게 시작·정지·재개한다. | pause와 상태 전환에도 loop를 일관되게 관리한다. |
-| `_start_charge_loop()` / `_start_charge_audio()` | 중복 guard 뒤 시작음과 지속음을 재생한다. | 같은 hold에서 한 번만 시작한다. |
-| `_stop_charge_loop(release)` / `_restart_charge_loop()` | 지속음 정지·release cue 또는 pause 뒤 재개를 처리한다. | 차지 audio 수명과 gameplay 상태를 맞춘다. |
 | `_reset_character()` | 모든 public/private 상태·audio·position·sprite를 초기화한다. | 이전 게임 상태가 남지 않는 캐릭터를 만든다. |
 
 ## 7. 게임 View
@@ -266,8 +256,6 @@
 | `_draw_board()` | 빈 grid/고정 셀→ghost→active 순서로 그린다. | 논리 보드를 숨은 행 없이 표시한다. |
 | `_draw_next_piece()` | next type의 회전 0 네 셀을 작은 cell size로 그린다. | 다음 피스 preview를 표시한다. |
 | `_draw_meditation_effect()` | 비명상이면 반환, 아니면 시간 pulse·ring·문구를 그린다. | gameplay 상태를 바꾸지 않는 청색 효과를 만든다. |
-| `_draw_character_card()` | atlas 초상과 캐릭터 제목을 그린다. | HUD의 캐릭터 식별 영역을 만든다. |
-| `_draw_hud_sections()` | 수치 묶음별 card 배경과 테두리를 그린다. | 좁은 HUD 정보를 시각적으로 구분한다. |
 | `_draw_character_bars()` | stamina/charge/flip 비율을 공통 bar helper에 전달한다. | 세 연속 수치를 같은 규격으로 표시한다. |
 | `_draw_bar(rect,ratio,color)` | ratio clamp→채움 폭→배경/채움/외곽선을 그린다. | 범위 밖 값도 넘치지 않는 bar를 만든다. |
 | `_draw_state_overlay()` | PLAYING이면 반환, 아니면 반투명 배경과 상태 문구를 그린다. | PAUSED/GAME_OVER를 아래 화면과 분리한다. |
@@ -457,7 +445,7 @@
 | `_run()` | 입력 보존, 기본 키, 계산식, physics 경로, 리소스, 스폰 여백, 실제 펀치 scene을 검사하고 종료 코드를 반환한다. |
 | `_expect(condition,description)` | 검사 수와 실패 수를 누적하고 결과를 출력한다. |
 | `_test_spawn_side_margin()` | 7종 안전 후보 수·실제 셀 여백·안전 후보 우선·벽 옆 fallback·완전 차단 GAME_OVER를 검사한다. |
-| `_test_release_punch()` | 실제 scene에서 hold 전 무이동, release hit 이동, miss 무이동을 검증한다. |
+| `_test_tap_punch()` | 실제 scene에서 press 판정 예약, hit 이동, miss 무이동을 검증한다. |
 | `_prepare_punch(...)` | 각 펀치 사례의 보드·피스·캐릭터 private 상태를 동일하게 초기화한다. |
 
 ### `start_screen/tests/main_ui_test.gd`

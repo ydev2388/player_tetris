@@ -35,6 +35,7 @@ enum Screen {
 	MAIN,
 	STAGE_SELECT,
 	CHARACTER,
+	SHOP,
 	TUTORIAL,
 	OPTIONS,
 	KEY_CUSTOM,
@@ -58,6 +59,11 @@ var _main_buttons: Array[Button] = []
 var _stage_buttons: Array[Button] = []
 var _stage_labels: Array[Label] = []
 var _stage_currency_label: Label
+var _shop_currency_label: Label
+var _shop_level_labels: Array[Label] = []
+var _shop_cost_labels: Array[Label] = []
+var _shop_upgrade_buttons: Array[Button] = []
+var _shop_reset_button: Button
 var _character_buttons: Array[Button] = []
 var _character_confirm_button: Button
 var _character_back_button: Button
@@ -99,6 +105,9 @@ var _stage_result_button: Button
 var _progress_reset_overlay: Control
 var _progress_reset_yes_button: Button
 var _progress_reset_no_button: Button
+var _passive_reset_overlay: Control
+var _passive_reset_yes_button: Button
+var _passive_reset_no_button: Button
 
 
 func _ready() -> void:
@@ -113,6 +122,7 @@ func _ready() -> void:
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
 	settings.progress_changed.connect(_refresh_stage_select)
+	settings.progress_changed.connect(_refresh_shop)
 	add_child(settings)
 	_select_sfx_player = AudioStreamPlayer.new()
 	_select_sfx_player.bus = &"SFX"
@@ -163,6 +173,11 @@ func show_stage_select() -> void:
 func show_character_select() -> void:
 	_refresh_character_selection()
 	_show_screen(Screen.CHARACTER)
+
+
+func show_shop() -> void:
+	_refresh_shop()
+	_show_screen(Screen.SHOP)
 
 
 func show_tutorial() -> void:
@@ -224,6 +239,7 @@ func start_game(stage_number: int = -1) -> bool:
 	) as MainCharacterController
 	if selected_character != null:
 		selected_character.set_character_id(_selected_character_id)
+		selected_character.set_passive_levels(settings.get_passive_levels())
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
@@ -271,6 +287,8 @@ func _input(event: InputEvent) -> void:
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_progress_reset_prompt_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_passive_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_character_select_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -441,15 +459,50 @@ func _handle_progress_reset_prompt_input(key_event: InputEventKey) -> bool:
 	return false
 
 
+func _handle_passive_reset_prompt_input(key_event: InputEventKey) -> bool:
+	if _passive_reset_overlay == null or not _passive_reset_overlay.visible:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_LEFT or key_code == KEY_RIGHT:
+		if _passive_reset_yes_button.has_focus():
+			_passive_reset_no_button.grab_focus()
+		else:
+			_passive_reset_yes_button.grab_focus()
+		return true
+	if key_code == KEY_Z:
+		if _passive_reset_yes_button.has_focus():
+			_confirm_passive_reset()
+		else:
+			_hide_passive_reset_prompt()
+		return true
+	if _is_escape_key(key_event) or _is_x_key(key_event):
+		_hide_passive_reset_prompt()
+		return true
+	return false
+
+
 func _show_progress_reset_prompt() -> void:
 	_progress_reset_overlay.visible = true
 	_progress_reset_overlay.move_to_front()
 	_progress_reset_no_button.grab_focus.call_deferred()
 
 
+func _show_passive_reset_prompt() -> void:
+	_passive_reset_overlay.visible = true
+	_passive_reset_overlay.move_to_front()
+	_passive_reset_no_button.grab_focus.call_deferred()
+
+
 func _hide_progress_reset_prompt() -> void:
 	_progress_reset_overlay.visible = false
 	_options_first_button.grab_focus.call_deferred()
+
+
+func _hide_passive_reset_prompt() -> void:
+	_passive_reset_overlay.visible = false
+	_shop_reset_button.grab_focus.call_deferred()
 
 
 func _confirm_progress_reset() -> void:
@@ -458,6 +511,14 @@ func _confirm_progress_reset() -> void:
 		_show_message("진행 데이터를 삭제하지 못했습니다: %s" % error_string(reset_error))
 		return
 	_hide_progress_reset_prompt()
+
+
+func _confirm_passive_reset() -> void:
+	var result: Dictionary = settings.reset_passive_upgrades()
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "패시브를 초기화할 수 없습니다.")))
+		return
+	_hide_passive_reset_prompt()
 
 
 func _handle_back_navigation(key_event: InputEventKey) -> bool:
@@ -470,6 +531,8 @@ func _handle_back_navigation(key_event: InputEventKey) -> bool:
 		Screen.STAGE_SELECT:
 			show_main_menu()
 		Screen.CHARACTER:
+			show_stage_select()
+		Screen.SHOP:
 			show_stage_select()
 		Screen.TUTORIAL, Screen.OPTIONS:
 			show_main_menu()
@@ -490,6 +553,7 @@ func _build_interface() -> void:
 	_build_main_screen()
 	_build_stage_select_screen()
 	_build_character_screen()
+	_build_shop_screen()
 	_build_tutorial_screen()
 	_build_options_screen()
 	_build_key_screen()
@@ -497,6 +561,7 @@ func _build_interface() -> void:
 	_build_capture_overlay()
 	_build_message_overlay()
 	_build_progress_reset_overlay()
+	_build_passive_reset_overlay()
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 
@@ -591,7 +656,7 @@ func _build_stage_select_screen() -> void:
 	var character_button: Button = _create_button(
 		screen,
 		"캐릭터 선택",
-		Rect2(730.0, 104.0, 170.0, 46.0),
+		Rect2(700.0, 650.0, 200.0, 48.0),
 		PURPLE,
 		14
 	)
@@ -638,6 +703,17 @@ func _build_stage_select_screen() -> void:
 		stage_button.focus_entered.connect(_play_select_sfx)
 		_stage_buttons.append(stage_button)
 
+	var shop_button: Button = _create_button(
+		screen,
+		"상점",
+		Rect2(70.0, 650.0, 200.0, 48.0),
+		ORANGE,
+		14
+	)
+	shop_button.name = "ShopButton"
+	shop_button.pressed.connect(show_shop)
+	shop_button.focus_entered.connect(_play_select_sfx)
+
 	var back_button: Button = _create_button(
 		screen,
 		"메인으로",
@@ -647,6 +723,98 @@ func _build_stage_select_screen() -> void:
 	)
 	back_button.pressed.connect(show_main_menu)
 	_refresh_stage_select()
+
+
+func _build_shop_screen() -> void:
+	var screen: Control = _create_screen("ShopScreen", Screen.SHOP)
+	_add_screen_title(screen, "상점", "스테이지에서 모은 별로 전역 패시브를 강화하세요")
+	_shop_currency_label = _create_label(
+		screen,
+		"별 0개",
+		Rect2(680.0, 54.0, 210.0, 40.0),
+		18,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
+	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
+		var card: Panel = _create_panel(
+			screen,
+			Rect2(32.0 + float(index) * 183.0, 155.0, 168.0, 405.0),
+			PANEL,
+			accents[index],
+			10
+		)
+		_create_label(
+			card,
+			StartScreenSettings.PASSIVE_NAMES[index],
+			Rect2(10.0, 22.0, 148.0, 34.0),
+			21,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		_create_label(
+			card,
+			StartScreenSettings.PASSIVE_DESCRIPTIONS[index],
+			Rect2(12.0, 70.0, 144.0, 82.0),
+			13,
+			MUTED,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		var level_label: Label = _create_label(
+			card,
+			"",
+			Rect2(12.0, 174.0, 144.0, 58.0),
+			17,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		level_label.name = "PassiveLevelLabel_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		_shop_level_labels.append(level_label)
+		var cost_label: Label = _create_label(
+			card,
+			"",
+			Rect2(12.0, 245.0, 144.0, 38.0),
+			15,
+			ORANGE,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		cost_label.name = "PassiveCostLabel_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		_shop_cost_labels.append(cost_label)
+		var upgrade_button: Button = _create_button(
+			card,
+			"강화",
+			Rect2(14.0, 320.0, 140.0, 48.0),
+			accents[index],
+			14
+		)
+		upgrade_button.name = "PassiveUpgradeButton_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		upgrade_button.pressed.connect(
+			_upgrade_passive.bind(StartScreenSettings.PASSIVE_IDS[index])
+		)
+		upgrade_button.focus_entered.connect(_play_select_sfx)
+		_shop_upgrade_buttons.append(upgrade_button)
+
+	var back_button: Button = _create_button(
+		screen,
+		"스테이지 선택으로",
+		Rect2(70.0, 650.0, 220.0, 48.0),
+		PURPLE,
+		14
+	)
+	back_button.pressed.connect(show_stage_select)
+	_shop_reset_button = _create_button(
+		screen,
+		"패시브 초기화",
+		Rect2(670.0, 650.0, 220.0, 48.0),
+		DANGER,
+		14
+	)
+	_shop_reset_button.name = "PassiveResetButton"
+	_shop_reset_button.pressed.connect(_show_passive_reset_prompt)
+	_shop_reset_button.focus_entered.connect(_play_select_sfx)
+	_refresh_shop()
 
 
 func _build_tutorial_screen() -> void:
@@ -1168,6 +1336,60 @@ func _build_progress_reset_overlay() -> void:
 	_progress_reset_no_button.pressed.connect(_hide_progress_reset_prompt)
 
 
+func _build_passive_reset_overlay() -> void:
+	_passive_reset_overlay = Control.new()
+	_passive_reset_overlay.name = "PassiveResetOverlay"
+	_passive_reset_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_passive_reset_overlay.z_as_relative = false
+	_passive_reset_overlay.z_index = 150
+	_passive_reset_overlay.visible = false
+	add_child(_passive_reset_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_passive_reset_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_passive_reset_overlay,
+		Rect2(220.0, 270.0, 520.0, 260.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		panel,
+		"패시브를 초기화할까요?",
+		Rect2(40.0, 38.0, 440.0, 38.0),
+		24,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		panel,
+		"투자한 별을 모두 돌려받습니다.",
+		Rect2(40.0, 92.0, 440.0, 32.0),
+		15,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_passive_reset_yes_button = _create_button(
+		panel,
+		"초기화",
+		Rect2(72.0, 170.0, 180.0, 46.0),
+		DANGER,
+		15
+	)
+	_passive_reset_yes_button.pressed.connect(_confirm_passive_reset)
+	_passive_reset_no_button = _create_button(
+		panel,
+		"취소",
+		Rect2(268.0, 170.0, 180.0, 46.0),
+		CYAN,
+		15
+	)
+	_passive_reset_no_button.pressed.connect(_hide_passive_reset_prompt)
+
+
 ## 상황: 게임 중 Esc로 메인 메뉴 복귀 여부를 물을 modal UI를 준비한다.
 ## 호출: `_build_interface()`가 일반 화면과 다른 overlay를 모두 만든 뒤 한 번 호출한다.
 ## 결과: 질문과 Yes/No 버튼이 생성되며 실제 요청 전까지 숨김 상태를 유지한다.
@@ -1350,6 +1572,9 @@ func _show_screen(screen_type: Screen) -> void:
 		Screen.OPTIONS:
 			if _options_first_button != null:
 				_options_first_button.grab_focus.call_deferred()
+		Screen.SHOP:
+			if not _shop_upgrade_buttons.is_empty():
+				_shop_upgrade_buttons[0].grab_focus.call_deferred()
 		_:
 			pass
 
@@ -1376,6 +1601,34 @@ func _refresh_stage_select() -> void:
 		]
 		_stage_buttons[index].disabled = not unlocked
 		_stage_buttons[index].text = "블록 깨러 가기" if unlocked else "잠김"
+
+
+func _refresh_shop() -> void:
+	if settings == null or _shop_upgrade_buttons.size() != StartScreenSettings.PASSIVE_IDS.size():
+		return
+	_shop_currency_label.text = "별 %d개" % settings.star_currency
+	var effect_percent: int = roundi(MainCharacterData.PASSIVE_EFFECT_STEP * 100.0)
+	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
+		var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
+		var level: int = settings.get_passive_level(passive_id)
+		var cost: int = settings.get_passive_cost(passive_id)
+		var effect_sign: String = "-" if index in [0, 3, 4] else "+"
+		_shop_level_labels[index].text = "Lv. %d / %d\n효과 %s%d%%" % [
+			level,
+			StartScreenSettings.MAX_PASSIVE_LEVEL,
+			effect_sign,
+			level * effect_percent,
+		]
+		var maxed: bool = level >= StartScreenSettings.MAX_PASSIVE_LEVEL
+		_shop_cost_labels[index].text = "최대 레벨" if maxed else "다음 비용 ★ %d" % cost
+		_shop_upgrade_buttons[index].disabled = maxed or settings.star_currency < cost
+		_shop_upgrade_buttons[index].text = "최대 레벨" if maxed else "강화"
+
+
+func _upgrade_passive(passive_id: String) -> void:
+	var result: Dictionary = settings.upgrade_passive(passive_id)
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "패시브를 강화할 수 없습니다.")))
 
 
 func _on_stage_selected(stage_number: int) -> void:

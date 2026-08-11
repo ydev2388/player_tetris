@@ -171,15 +171,14 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 
 | 이름 | 의미 |
 | --- | --- |
-| `stats_changed` | lives/stamina/charge/cooldown 변경을 View에 알린다. |
+| `stats_changed` | lives/stamina/cooldown 변경을 View에 알린다. |
 | `feedback_changed` | feedback 문자열 생성·만료를 알린다. |
 | `controller` | 피스 이동/회전과 게임 종료를 명령할 GameController 참조. |
 | `sprite` | texture/region/flip/rotation/modulation/visible의 대상. |
 | `left_ray`, `right_ray` | 매달릴 collider 탐지용 RayCast2D. |
 | `_sfx_player` | 일반 단발음 channel. 새 재생이 이전 단발음을 교체할 수 있다. |
-| `_sfx_cue_player` | 차지 단계·줄 삭제처럼 일반음과 겹칠 보조 channel. |
+| `_sfx_cue_player` | 줄 삭제처럼 일반음과 겹칠 보조 channel. |
 | `_meditation_loop_player` | 명상 지속음 전용 channel. |
-| `_charge_loop_player` | 펀치 차지 지속음 전용 channel. |
 
 ### 공간·이동·점프 상수
 
@@ -201,7 +200,6 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | 블록 플립 | `ROTATION_COOLDOWN`, `ROTATION_FAILED_COOLDOWN`, `ROTATION_SPIN_DURATION`, `POST_SPIN_APEX_SPEED` | 성공/실패 재사용 시간, 0.42초 연출과 종료 frame 경계. |
 | 자력 재스폰·피해 | `SELF_RESPAWN_HOLD_SECONDS`, `INVULNERABILITY_SECONDS`, `MAX_LIVES` | hold 1초, 피해 무적 1.2초, 생명 3. |
 | 펀치 | `ATTACK_COOLDOWN`, `ATTACK_ANIMATION_DURATION`, `PUNCH_HIT_CONFIRM_SECONDS` | sequence 간격, sprite 우선 시간, release 판정 창. |
-| 차지 표 | `PUNCH_STAGE_TIMES`, `PUNCH_TOTAL_COSTS`, `PUNCH_MAX_HOLD_TIME` | 0/0.4/0.9초와 누적 비용 0/8/18. 같은 index가 같은 단계다. |
 | hitbox·압착 | `PUNCH_HITBOX_WIDTH`, `CRUSH_ALPHA_THRESHOLD`, `CRUSH_CORE_SIZE`, `FIXED_SUPPORT_TOLERANCE` | 주먹 범위와 sprite alpha 기반 몸통/발판 검사 규격. |
 | animation | `ANIMATION_DATA` | 상태별 texture/region table script. |
 | SFX resource | `SFX_HURT`부터 `SFX_WALL_CLIMB` | preload된 효과음 handle. 재생 상태가 아니라 immutable resource 참조다. |
@@ -211,11 +209,10 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | 이름 | 의미 |
 | --- | --- |
 | `lives` | 남은 생명. 0이면 controller가 GAME_OVER로 전환한다. |
-| `stamina` | 0~100 행동 자원. 현재는 매달리기와 적중한 차지 펀치에 사용한다. |
+| `stamina` | 0~100 행동 자원. 현재는 매달리기에 사용한다. |
 | `facing` | 왼쪽 -1, 오른쪽 +1. 피스 이동/회전과 sprite 방향의 공통 원본이다. |
 | `is_hanging` | 일반 이동 대신 hang branch를 선택하는 flag. |
 | `is_meditating` | 정지와 controller 시간 2배를 나타내는 flag. |
-| `charge_time` | 현재 X hold 경과 초. release/reset에서 0이다. |
 | `rotation_cooldown_remaining` | 0보다 크면 새 블록 플립을 거부하는 countdown. |
 | `feedback_text` | View가 1.4초 동안 표시할 최근 행동 결과. |
 
@@ -227,7 +224,7 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | flip | `_spin_remaining`, `_spin_elapsed`, `_spin_direction`, `_pending_rotation_launch_velocity`, `_post_spin_animation_seeded` | 회전 진행·시작 방향·다음 frame 상승·종료 frame 보존. |
 | hang | `_hang_body`, `_hang_last_global_position`, `_hang_regrab_remaining`, `_hang_jump_grace_remaining`, `_hang_jump_facing` | 붙은 body와 이동 delta, 재잡기/점프 유예, 벽 방향. |
 | jump | `_coyote_remaining`, `_jump_buffer_remaining`, `_wall_jump_control_remaining`, `_wall_jump_wall_facing`, `_variable_jump_active` | 점프 입력 유예와 벽점프 조향, release cut 가능 상태. |
-| punch | `_charging`, `_attack_cooldown_remaining`, `_attack_animation_remaining`, `_pending_punch_stage`, `_pending_punch_hit_remaining`, `_charge_audio_started` | hold sequence, sprite 우선, release 판정 예약과 audio latch. |
+| punch | `_attack_cooldown_remaining`, `_attack_animation_remaining`, `_pending_punch_stage`, `_pending_punch_hit_remaining` | 재사용 대기, sprite 우선, 적중 판정 예약 상태. |
 | 메뉴 입력 | `_ignore_initial_jump_until_released` | 메뉴 Z가 게임 첫 점프로 전파되는 것을 막는 latch. |
 | animation | `_animation_state`, `_animation_time` | 현재 frame table key와 그 상태 경과 초. |
 | 접지·재스폰 | `_respawn_airborne_pending`, `_was_grounded_for_stamina`, `_self_respawn_hold_time`, `_self_respawn_requires_release` | 순간이동 접지 cache, 착지 edge, Q hold와 반복 발동 방지. |

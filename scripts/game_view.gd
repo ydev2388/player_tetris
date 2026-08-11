@@ -652,60 +652,6 @@ func _draw_meditation_effect() -> void:
 	)
 
 
-## 상황: `_draw()`가 우측 HUD 상단의 캐릭터 정적 카드를 그릴 때 호출한다.
-## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
-## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
-func _draw_character_card() -> void:
-	var source_region: Rect2 = MainCharacterAnimationData.visible_region_for(
-		MainCharacterAnimationData.IDLE,
-		0.0,
-		character.character_id
-	)
-	var portrait_bounds: Rect2 = Rect2(Vector2(690.0, 552.0), Vector2(120.0, 164.0))
-	var portrait_scale: float = minf(
-		portrait_bounds.size.x / source_region.size.x,
-		portrait_bounds.size.y / source_region.size.y
-	)
-	var portrait_size: Vector2 = source_region.size * portrait_scale
-	var portrait_rect: Rect2 = Rect2(
-		Vector2(
-			portrait_bounds.position.x + (portrait_bounds.size.x - portrait_size.x) * 0.5,
-			portrait_bounds.end.y - portrait_size.y
-		),
-		portrait_size
-	)
-	draw_texture_rect_region(
-		MainCharacterAnimationData.texture_for(MainCharacterAnimationData.IDLE, character.character_id),
-		portrait_rect,
-		source_region
-	)
-	draw_string(
-		_system_font,
-		Vector2(662.0, 538.0),
-		character.character_display_name(),
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1.0,
-		16,
-		CYAN
-	)
-
-
-## 상황: 세 핵심 상태와 초상 영역을 좁은 패널 안에서 카드로 구분한다.
-func _draw_hud_sections() -> void:
-	var card_color: Color = Color("#f8fafc")
-	var card_rects: Array[Rect2] = [
-		Rect2(576.0, 318.0, 368.0, 190.0),
-		Rect2(576.0, 516.0, 368.0, 224.0),
-		Rect2(576.0, 754.0, 368.0, 70.0),
-		Rect2(576.0, 832.0, 368.0, 64.0),
-		Rect2(576.0, 902.0, 368.0, 42.0),
-		Rect2(576.0, 950.0, 368.0, 70.0),
-	]
-	for card_rect: Rect2 in card_rects:
-		draw_rect(card_rect, card_color)
-		draw_rect(card_rect, Color("#b7c2d1"), false, 1.0)
-
-
 ## 상황: `_draw()`가 게임판 아래에 현재 캐릭터의 특수 스킬 준비도를 표시할 때 호출한다.
 ## 순서: 쿨타임 비율을 bar fill로 변환한다.
 ## 결과: 스테미나와 텍스트를 별도 HUD로 노출하지 않고 스킬 쿨타임 bar만 하단에 표시한다.
@@ -1117,8 +1063,3 @@ func _refresh_boss_seed_display() -> void:
 		var seed: Dictionary = controller.boss_seeds[index]
 		seed_sprite.position = seed["position"] as Vector2
 		seed_sprite.visible = true
-
-
-## 상황: `_draw()`가 상단 HUD 카드에 다음 피스 미리보기를 표시할 때 호출한다.
-## 순서: 피스 외곽 크기 계산 → 카드 중심 원점 계산 → 회전 0의 네 셀 draw.
-## 결과: controller.next_type이 실제 spawn 전에 사용자에게 보인다.

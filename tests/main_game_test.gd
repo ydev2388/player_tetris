@@ -43,7 +43,7 @@ func _init() -> void:
 
 ## 상황: test runner의 단일 진입점으로 입력·수식·scene 통합 계약을 순서대로 검증한다.
 ## 순서: 사용자 키 보존 → 기본 정의/수식 → controller loop → tutorial/SFX
-##       → spawn 좌우 여백/벽 옆 fallback → release punch.
+##       → spawn 좌우 여백/벽 옆 fallback → tap punch.
 ## 결과: 임시 입력 객체를 정리하고 실패 수를 프로세스 종료 코드로 반환한다.
 func _run() -> void:
 	INPUT_ACTIONS.ensure_defaults()
@@ -207,6 +207,30 @@ func _run() -> void:
 			and not CHARACTER_DATA.profile_for("normal").has("special_cost"),
 		"점프·공속·특수스킬 능력치가 지정된 칸 수와 쿨다운으로 변환된다."
 	)
+	var max_passive_levels: Array[int] = [3, 3, 3, 3, 3]
+	_expect(
+		is_equal_approx(
+			CHARACTER_DATA.move_speed("normal", max_passive_levels),
+			CHARACTER_DATA.move_speed("normal") * 1.15
+		)
+			and is_equal_approx(
+				CHARACTER_DATA.rotation_cooldown("normal", max_passive_levels),
+				CHARACTER_DATA.rotation_cooldown("normal") * 0.85
+			)
+			and is_equal_approx(
+				CHARACTER_DATA.jump_height_multiplier(max_passive_levels),
+				1.15
+			)
+			and is_equal_approx(
+				CHARACTER_DATA.stamina_drain_multiplier("normal", max_passive_levels),
+				CHARACTER_DATA.stamina_drain_multiplier("normal") * 0.85
+			)
+			and is_equal_approx(
+				CHARACTER_DATA.special_cooldown("normal", max_passive_levels),
+				CHARACTER_DATA.special_cooldown("normal") * 0.85
+			),
+		"패시브 3레벨은 이동·점프를 15% 높이고 공속·스태미나·특수 쿨다운을 15% 줄인다."
+	)
 	_expect(
 		ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE].size() == 4
 			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.ATTACK].size() == 4
@@ -231,7 +255,7 @@ func _run() -> void:
 	_test_board_coordinate_alignment()
 	_test_spawn_side_margin()
 	await _test_boss_seeds()
-	await _test_release_punch()
+	await _test_tap_punch()
 	await _test_beta_specials()
 	await _test_fixed_support_grab()
 	await _test_hang_face_bounds()
@@ -532,11 +556,9 @@ func _test_boss_seeds() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -552,9 +574,9 @@ func _expect(condition: bool, description: String) -> void:
 		push_error("  [실패] %s" % description)
 
 
-## 상황: 실제 main scene에서 X press/release와 hitbox 기반 피스 이동을 검증할 때 호출된다.
+## 상황: 실제 main scene에서 X press와 hitbox 기반 피스 이동을 검증할 때 호출된다.
 ## 순서: scene 생성/정지 → 맞는 위치의 hit → 빗나가는 위치의 miss → audio/node 정리.
-## 결과: release 전에는 움직이지 않고 release 판정 창에서만 피스가 이동한다는 계약을 검사한다.
+## 결과: press가 판정 창을 예약하고 hitbox 안의 피스만 이동한다는 계약을 검사한다.
 func _test_sprite_atlas_contracts() -> void:
 	var profiles_match_selection: bool = ANIMATION_DATA.PROFILES.size() == CHARACTER_DATA.CHARACTER_ORDER.size()
 	var character_frames_valid: bool = true
@@ -803,7 +825,7 @@ func _image_region_alpha_component_count(image: Image, region: Rect2) -> int:
 	return component_count
 
 
-func _test_release_punch() -> void:
+func _test_tap_punch() -> void:
 	var scene: MainGameView = GAME_SCENE.instantiate() # 테스트가 소유해 마지막에 free할 실제 scene 인스턴스.
 	root.add_child(scene)
 	await process_frame
@@ -1013,10 +1035,9 @@ func _test_release_punch() -> void:
 	var start_origin: Vector2i = controller.active_origin # release 전후를 비교할 immutable 기준값.
 	Input.action_release(&"character_punch")
 	Input.action_press(&"character_punch")
-	character._handle_charge(0.2)
+	character._handle_punch()
 	_expect(
-		not character._charging
-			and character._pending_punch_stage == 1
+		character._pending_punch_stage == 1
 			and controller.active_origin == start_origin,
 		"X를 누르면 즉시 공통 1칸 밀치기 판정이 예약된다."
 	)
@@ -1029,7 +1050,7 @@ func _test_release_punch() -> void:
 
 	_prepare_punch(controller, character, Vector2i(7, 1), Vector2(24.0, 912.0))
 	Input.action_press(&"character_punch")
-	character._handle_charge(0.2)
+	character._handle_punch()
 	character._resolve_pending_punch(0.1)
 	_expect(
 		controller.active_origin == Vector2i(7, 1),
@@ -1039,11 +1060,9 @@ func _test_release_punch() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	await create_timer(0.12).timeout
 	scene.free()
 	await process_frame
@@ -1346,11 +1365,9 @@ func _test_beta_specials() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1398,11 +1415,9 @@ func _test_fixed_support_grab() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1623,11 +1638,9 @@ func _test_hang_face_bounds() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1837,8 +1850,6 @@ func _prepare_punch(
 	character.velocity = Vector2.ZERO
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA
-	character._charging = false
-	character.charge_time = 0.0
 	character._attack_cooldown_remaining = 0.0
 	character._attack_animation_remaining = 0.0
 	character._pending_punch_stage = 0

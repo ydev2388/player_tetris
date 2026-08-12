@@ -30,6 +30,8 @@ const CYAN: Color = Color("#2c8fd6")
 const ORANGE: Color = Color("#e47719")
 const PURPLE: Color = Color("#6f57c9")
 const DANGER: Color = Color("#d9485f")
+const _CHARACTER_SELECT_HINT: String = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
+const _CHARACTER_INSELECT_MODULATE: Color = Color(0.82, 0.85, 0.90, 0.88)
 
 enum Screen {
 	MAIN,
@@ -69,6 +71,8 @@ var _character_confirm_button: Button
 var _character_back_button: Button
 var _character_detail_label: Label
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
+var _character_card_selected_style: StyleBoxFlat
+var _character_card_normal_style: StyleBoxFlat
 var _character_window_start: int = 0
 var _character_prev_button: Button
 var _character_next_button: Button
@@ -1907,7 +1911,7 @@ func _build_character_screen() -> void:
 			stat_text,
 			Rect2(12.0, 168.0, 246.0, 174.0),
 			14,
-			TEXT,
+			Color.WHITE,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
 		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -1958,6 +1962,11 @@ func _build_character_screen() -> void:
 	_character_back_button = back_button
 	back_button.pressed.connect(show_stage_select)
 	back_button.focus_entered.connect(_play_select_sfx)
+	back_button.focus_neighbor_left = back_button.get_path_to(back_button)
+	back_button.focus_neighbor_right = back_button.get_path_to(back_button)
+	back_button.focus_neighbor_bottom = back_button.get_path_to(back_button)
+	_character_card_selected_style = _character_card_style(true)
+	_character_card_normal_style = _character_card_style(false)
 	_refresh_character_selection()
 
 
@@ -2011,9 +2020,11 @@ func _refresh_character_selection() -> void:
 					MainCharacterData.special_cooldown(_selected_character_id),
 				]
 			)
-		_character_detail_label.text = detail_text
+		if _character_detail_label.text != detail_text:
+			_character_detail_label.text = detail_text
 	else:
-		_character_detail_label.text = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
+		if _character_detail_label.text != _CHARACTER_SELECT_HINT:
+			_character_detail_label.text = _CHARACTER_SELECT_HINT
 	_character_confirm_button.disabled = not has_selection
 	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
 	_character_prev_button.disabled = _character_window_start <= 0
@@ -2021,9 +2032,14 @@ func _refresh_character_selection() -> void:
 	for index: int in range(_character_buttons.size()):
 		var button: Button = _character_buttons[index]
 		var visible_slot: int = index - _character_window_start
-		button.visible = visible_slot >= 0 and visible_slot < 3
-		if button.visible:
-			button.position = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+		var is_visible: bool = visible_slot >= 0 and visible_slot < 3
+		if button.visible != is_visible:
+			button.visible = is_visible
+		if not is_visible:
+			continue
+		var target_position: Vector2 = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+		if button.position != target_position:
+			button.position = target_position
 			var left_button: Button = (
 				_character_buttons[index - 1] if visible_slot > 0 else button
 			)
@@ -2034,19 +2050,14 @@ func _refresh_character_selection() -> void:
 			button.focus_neighbor_right = button.get_path_to(right_button)
 			button.focus_neighbor_bottom = button.get_path_to(_character_back_button)
 			button.focus_neighbor_top = button.get_path_to(button)
-		var selected: bool = button.name == "Character_%s" % _selected_character_id
-		button.add_theme_stylebox_override("normal", _character_card_style(selected))
-		button.modulate = Color.WHITE if selected else Color(0.82, 0.85, 0.90, 0.88)
-		for child: Node in button.get_children():
-			if child is Label:
-				(child as Label).add_theme_color_override(
-					"font_color",
-					Color.WHITE if selected else TEXT
-				)
-	if _character_back_button != null:
-		_character_back_button.focus_neighbor_left = _character_back_button.get_path_to(_character_back_button)
-		_character_back_button.focus_neighbor_right = _character_back_button.get_path_to(_character_back_button)
-		_character_back_button.focus_neighbor_bottom = _character_back_button.get_path_to(_character_back_button)
+	for index: int in range(_character_buttons.size()):
+		var button: Button = _character_buttons[index]
+		if not button.visible:
+			continue
+		_apply_card_style(
+			button,
+			MainCharacterData.CHARACTER_ORDER[index] == _selected_character_id
+		)
 
 
 func _character_card_style(selected: bool) -> StyleBoxFlat:
@@ -2058,6 +2069,17 @@ func _character_card_style(selected: bool) -> StyleBoxFlat:
 	style.content_margin_left = 12.0
 	style.content_margin_right = 12.0
 	return style
+
+
+func _apply_card_style(button: Button, selected: bool) -> void:
+	button.add_theme_stylebox_override(
+		"normal",
+		_character_card_selected_style if selected else _character_card_normal_style
+	)
+	button.modulate = Color.WHITE if selected else _CHARACTER_INSELECT_MODULATE
+	for child: Node in button.get_children():
+		if child is Label:
+			(child as Label).modulate = Color.WHITE if selected else TEXT
 
 
 ## 상황: 게임 설명의 canvas·탐색 버튼·counter·뒤로가기를 최초 조립할 때 호출된다.

@@ -2,9 +2,13 @@ class_name MainCharacterData
 extends RefCounted
 
 ## 플레이 가능한 여덟 캐릭터의 선택 정보와 능력치 계산을 한곳에서 관리한다.
-## 능력치는 공속(회전킥 쿨다운), 이동, 점프, 스태미나, 특수스킬만 사용한다.
+## 능력치는 공속(회전킥 쿨다운), 이동, 점프, 스태미나, 특수스킬, 체력을 사용한다.
 
 const DEFAULT_CHARACTER_ID: String = "normal"
+const PASSIVE_COUNT: int = 6
+const PASSIVE_LEVEL_MAX: int = 3
+const PASSIVE_EFFECT_STEP: float = 0.05
+const HEALTH_PASSIVE_INDEX: int = 5
 const CHARACTER_ORDER: Array[String] = [
 	"normal",
 	"boxer",
@@ -39,7 +43,7 @@ const PROFILES: Dictionary = {
 		"description": "짧은 거리에서 블록을 강하게 밀어내는 공격형.",
 		"weapon": "복싱 글러브",
 		"special_name": "가드 브레이크",
-		"special_description": "전방 블록을 가능한 거리만큼 최대 3칸 밀고 정면 충돌을 잠시 막는다.",
+		"special_description": "전방 블록을 가능한 거리만큼 최대 3칸 민다.",
 		"special_base_cooldown": 6.0,
 		"attack_speed": 4,
 		"move": 3,
@@ -49,7 +53,7 @@ const PROFILES: Dictionary = {
 	},
 	"shield_guard": {
 		"display_name": "방패병",
-		"unlock_text": "7별",
+		"unlock_text": "6별",
 		"role": "정면 생존형",
 		"description": "이동하는 보호벽으로 한쪽 위험을 견디는 수호자.",
 		"weapon": "원형 방패",
@@ -64,12 +68,12 @@ const PROFILES: Dictionary = {
 	},
 	"firefighter": {
 		"display_name": "소방관",
-		"unlock_text": "12별",
+		"unlock_text": "9별",
 		"role": "낙하 경로 제어형",
 		"description": "중력에 따라 흐르는 물길로 활성 블록의 착지 위치를 바꾼다.",
 		"weapon": "소방 도끼 옆면",
 		"special_name": "중력 물길",
-		"special_description": "전방 물길을 만들고 닿은 활성 블록을 흐르는 방향으로 최대 2칸 미끄러뜨린다.",
+		"special_description": "전방에 3셀 물길을 4초 만들고 자동 낙하마다 흐르는 방향으로 1칸 이동시킨다.",
 		"special_base_cooldown": 13.0,
 		"attack_speed": 3,
 		"move": 3,
@@ -79,7 +83,7 @@ const PROFILES: Dictionary = {
 	},
 	"cleaner": {
 		"display_name": "청소부",
-		"unlock_text": "18별",
+		"unlock_text": "12별",
 		"role": "근거리 복구형",
 		"description": "발밑의 노출된 고정 블록을 빠르게 정리하는 현장 전문가.",
 		"weapon": "빗자루",
@@ -94,12 +98,12 @@ const PROFILES: Dictionary = {
 	},
 	"chef": {
 		"display_name": "요리사",
-		"unlock_text": "24별",
-		"role": "정밀 재배치형",
-		"description": "프라이팬으로 블록 한 칸을 위나 아래 대각선으로 옮긴다.",
+		"unlock_text": "15별",
+		"role": "생존 강화형",
+		"description": "고기를 먹어 짧은 시간 빠르게 움직이고 다음 기믹이나 보스 공격을 버틴다.",
 		"weapon": "프라이팬",
-		"special_name": "팬 토스",
-		"special_description": "전방 블록 한 칸을 앞·위 또는 앞·아래 대각선으로 이동한다.",
+		"special_name": "고기 섭취",
+		"special_description": "3초 동안 이동속도 +20%, 다음 기믹·보스 공격 1회 무효. 압착은 막지 못한다.",
 		"special_base_cooldown": 9.0,
 		"attack_speed": 3,
 		"move": 4,
@@ -109,13 +113,13 @@ const PROFILES: Dictionary = {
 	},
 	"clockmaker": {
 		"display_name": "시계공",
-		"unlock_text": "조건",
-		"unlock_hint": "시간을 멈추려면 먼저 시간을 견뎌라.",
+		"unlock_text": "15별",
+		"unlock_hint": "목표: 별 15개 (선택 제한 없음)",
 		"role": "시간 정지형",
 		"description": "황동 톱니 가방과 거대한 태엽 열쇠로 낙하 시간을 멈추는 괴짜 장인.",
 		"weapon": "태엽 열쇠 지팡이",
 		"special_name": "정지 태엽",
-		"special_description": "낙하 중인 활성 블록의 중력과 고정 시간을 3초 동안 멈추고 캐릭터만 움직인다.",
+		"special_description": "활성 블록과 다음 가시·결박·씨앗 발동을 3초 동안 늦춘다.",
 		"special_base_cooldown": 12.0,
 		"attack_speed": 4,
 		"move": 3,
@@ -125,8 +129,8 @@ const PROFILES: Dictionary = {
 	},
 	"ninja": {
 		"display_name": "닌자",
-		"unlock_text": "조건",
-		"unlock_hint": "상처 없이 속도를 견뎌라.",
+		"unlock_text": "전 스테이지 무피해",
+		"unlock_hint": "목표: 전 스테이지 무피해 (선택 제한 없음)",
 		"role": "고속 원거리형",
 		"description": "긴 스카프를 휘날리며 활성 블록을 원거리에서 조작하는 고속 숙련자.",
 		"weapon": "단봉",
@@ -156,26 +160,58 @@ static func stat(character_id: String, key: String) -> int:
 	return clampi(int(profile_for(character_id).get(key, 1)), 1, 10)
 
 
-static func move_speed(character_id: String) -> float:
-	return 140.0 + float(stat(character_id, "move")) * 10.0
+static func move_speed(character_id: String, passive_levels: Array = []) -> float:
+	var base_speed: float = 140.0 + float(stat(character_id, "move")) * 10.0
+	return base_speed * passive_speed_multiplier(passive_levels, 1)
 
 
 static func jump_cells(character_id: String) -> int:
 	return 2 + (stat(character_id, "jump") - 1) / 3
 
 
-static func stamina_drain_multiplier(character_id: String) -> float:
-	return 1.0 - float(stat(character_id, "stamina") - 1) * 0.06
+static func stamina_drain_multiplier(character_id: String, passive_levels: Array = []) -> float:
+	var base_multiplier: float = 1.0 - float(stat(character_id, "stamina") - 1) * 0.06
+	return base_multiplier * passive_cooldown_multiplier(passive_levels, 3)
 
 
-static func special_cooldown_multiplier(character_id: String) -> float:
-	return 1.0 - float(stat(character_id, "special_skill") - 1) * 0.03
+static func special_cooldown_multiplier(
+	character_id: String,
+	passive_levels: Array = []
+) -> float:
+	var base_multiplier: float = 1.0 - float(stat(character_id, "special_skill") - 1) * 0.03
+	return base_multiplier * passive_cooldown_multiplier(passive_levels, 4)
 
 
-static func rotation_cooldown(character_id: String) -> float:
-	return 2.1 - float(stat(character_id, "attack_speed")) * 0.1
+static func rotation_cooldown(character_id: String, passive_levels: Array = []) -> float:
+	var base_cooldown: float = 2.1 - float(stat(character_id, "attack_speed")) * 0.1
+	return base_cooldown * passive_cooldown_multiplier(passive_levels, 0)
 
 
-static func special_cooldown(character_id: String) -> float:
+static func special_cooldown(character_id: String, passive_levels: Array = []) -> float:
 	var profile: Dictionary = profile_for(character_id)
-	return float(profile["special_base_cooldown"]) * special_cooldown_multiplier(character_id)
+	return float(profile["special_base_cooldown"]) * special_cooldown_multiplier(
+		character_id,
+		passive_levels
+	)
+
+
+static func jump_height_multiplier(passive_levels: Array = []) -> float:
+	return passive_speed_multiplier(passive_levels, 2)
+
+
+static func health_life_bonus(passive_levels: Array = []) -> int:
+	return _passive_level(passive_levels, HEALTH_PASSIVE_INDEX)
+
+
+static func passive_speed_multiplier(passive_levels: Array, index: int) -> float:
+	return 1.0 + float(_passive_level(passive_levels, index)) * PASSIVE_EFFECT_STEP
+
+
+static func passive_cooldown_multiplier(passive_levels: Array, index: int) -> float:
+	return 1.0 - float(_passive_level(passive_levels, index)) * PASSIVE_EFFECT_STEP
+
+
+static func _passive_level(passive_levels: Array, index: int) -> int:
+	if index < 0 or index >= passive_levels.size():
+		return 0
+	return clampi(int(passive_levels[index]), 0, PASSIVE_LEVEL_MAX)

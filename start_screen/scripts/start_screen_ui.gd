@@ -74,6 +74,8 @@ func create_label(
 	label.size = rect.size
 	label.horizontal_alignment = alignment
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.clip_text = true
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_override("font", _font)
 	label.add_theme_font_size_override("font_size", font_size)
@@ -99,6 +101,8 @@ func create_button(
 	button.size = rect.size
 	button.focus_mode = Control.FOCUS_ALL
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button.clip_text = true
 	button.add_theme_font_override("font", _font)
 	button.add_theme_font_size_override("font_size", font_size)
 	button.add_theme_color_override("font_color", _text_color)

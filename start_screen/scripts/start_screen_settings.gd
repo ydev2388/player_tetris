@@ -15,12 +15,31 @@ const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
 const STAGE_COUNT: int = 5
 const MAX_STAGE_STARS: int = 3
+const PASSIVE_IDS: Array[String] = [
+	"attack_speed",
+	"move",
+	"jump",
+	"stamina",
+	"special_skill",
+	"health",
+]
+const PASSIVE_NAMES: Array[String] = ["공속", "이동", "점프", "스태미나", "특수스킬", "체력"]
+const PASSIVE_DESCRIPTIONS: Array[String] = [
+	"기본 공격과 회전킥의 재사용 대기시간이 줄어듭니다.",
+	"좌우 이동 속도가 빨라집니다.",
+	"점프 높이가 높아집니다.",
+	"벽에 매달릴 때 스태미나 소모량이 줄어듭니다.",
+	"특수 스킬의 재사용 대기시간이 줄어듭니다.",
+	"레벨마다 캐릭터의 목숨이 1개 추가됩니다.",
+]
+const MAX_PASSIVE_LEVEL: int = 3
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
 var star_currency: int = 0
+var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
 
 var _bindings: Dictionary = {}
 
@@ -173,7 +192,76 @@ func is_stage_unlocked(stage_number: int) -> bool:
 	return get_stage_best_stars(stage_number - 1) > 0
 
 
-func complete_stage(stage_number: int, stars: int) -> Dictionary:
+func get_passive_level(passive_id: String) -> int:
+	var index: int = PASSIVE_IDS.find(passive_id)
+	if index < 0:
+		return 0
+	return passive_levels[index]
+
+
+func get_passive_cost(passive_id: String) -> int:
+	if not PASSIVE_IDS.has(passive_id):
+		return 0
+	var level: int = get_passive_level(passive_id)
+	return 0 if level >= MAX_PASSIVE_LEVEL else level + 1
+
+
+func get_passive_levels() -> Array[int]:
+	return passive_levels.duplicate()
+
+
+func upgrade_passive(passive_id: String) -> Dictionary:
+	var index: int = PASSIVE_IDS.find(passive_id)
+	if index < 0:
+		return _failure("알 수 없는 패시브입니다.")
+	var current_level: int = passive_levels[index]
+	if current_level >= MAX_PASSIVE_LEVEL:
+		return _failure("이미 최대 레벨입니다.")
+	var cost: int = current_level + 1
+	if star_currency < cost:
+		return _failure("별이 부족합니다. 필요한 별: %d개" % cost)
+
+	var previous_currency: int = star_currency
+	passive_levels[index] = current_level + 1
+	star_currency -= cost
+	var save_error: Error = save_settings()
+	if save_error != OK:
+		passive_levels[index] = current_level
+		star_currency = previous_currency
+		return _failure("패시브 강화를 저장하지 못했습니다: %s" % error_string(save_error))
+	progress_changed.emit()
+	return {
+		"ok": true,
+		"passive_id": passive_id,
+		"level": passive_levels[index],
+		"cost": cost,
+		"star_currency": star_currency,
+	}
+
+
+func reset_passive_upgrades() -> Dictionary:
+	var previous_levels: Array[int] = passive_levels.duplicate()
+	var previous_currency: int = star_currency
+	var refund: int = 0
+	for level: int in passive_levels:
+		for spent_level: int in range(1, level + 1):
+			refund += spent_level
+	passive_levels.fill(0)
+	star_currency += refund
+	var save_error: Error = save_settings()
+	if save_error != OK:
+		passive_levels = previous_levels
+		star_currency = previous_currency
+		return _failure("패시브 초기화를 저장하지 못했습니다: %s" % error_string(save_error))
+	progress_changed.emit()
+	return {
+		"ok": true,
+		"refund": refund,
+		"star_currency": star_currency,
+	}
+
+
+func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) -> Dictionary:
 	if stage_number < 1 or stage_number > STAGE_COUNT:
 		return _failure("알 수 없는 스테이지입니다.")
 	if stars < 1:
@@ -199,6 +287,7 @@ func complete_stage(stage_number: int, stars: int) -> Dictionary:
 		"stage_number": stage_number,
 		"previous_stars": previous_stars,
 		"stars": get_stage_best_stars(stage_number),
+		"remaining_lives": remaining_lives,
 		"reward": reward,
 		"star_currency": star_currency,
 	}
@@ -207,12 +296,15 @@ func complete_stage(stage_number: int, stars: int) -> Dictionary:
 func reset_stage_progress() -> Error:
 	var previous_stars: Array[int] = stage_best_stars.duplicate()
 	var previous_currency: int = star_currency
+	var previous_passive_levels: Array[int] = passive_levels.duplicate()
 	stage_best_stars.fill(0)
 	star_currency = 0
+	passive_levels.fill(0)
 	var save_error: Error = save_settings()
 	if save_error != OK:
 		stage_best_stars = previous_stars
 		star_currency = previous_currency
+		passive_levels = previous_passive_levels
 		return save_error
 	progress_changed.emit()
 	return OK
@@ -255,6 +347,7 @@ func _reset_settings_to_defaults() -> void:
 	sfx_percent = 100.0
 	stage_best_stars = [0, 0, 0, 0, 0]
 	star_currency = 0
+	passive_levels = [0, 0, 0, 0, 0, 0]
 
 
 func _load_bindings_from_config(config: ConfigFile) -> void:
@@ -340,6 +433,20 @@ func _load_progress_from_config(config: ConfigFile) -> void:
 			0,
 			MAX_STAGE_STARS
 		)
+	var stored_passive_levels: Variant = config.get_value(
+		"progress",
+		"passive_levels",
+		passive_levels
+	)
+	if stored_passive_levels is Array:
+		var values: Array = stored_passive_levels as Array
+		for index: int in range(mini(values.size(), passive_levels.size())):
+			if values[index] is int or values[index] is float:
+				passive_levels[index] = clampi(
+					int(values[index]),
+					0,
+					MAX_PASSIVE_LEVEL
+				)
 
 
 func _restore_defaults_for_duplicate_keys() -> void:
@@ -356,6 +463,7 @@ func save_settings() -> Error:
 	config.set_value("audio", "music_percent", music_percent)
 	config.set_value("audio", "sfx_percent", sfx_percent)
 	config.set_value("progress", "star_currency", star_currency)
+	config.set_value("progress", "passive_levels", passive_levels)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
 		config.set_value(
 			"progress",

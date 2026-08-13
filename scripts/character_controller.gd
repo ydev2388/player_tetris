@@ -1,6 +1,9 @@
 class_name MainCharacterController
 extends CharacterBody2D
 
+const STANDING_WALL_CONTACT_TOLERANCE: float = 0.75
+const BLOCK_VISUAL_INSET: float = 2.0
+
 ## [역할 / C++ 대응]
 ## 플레이어 캐릭터의 물리, 입력, 스태미나, 공격, 매달리기, 피해, 애니메이션을
 ## 한 physics-frame 상태 기계로 묶은 컨트롤러다. CharacterBody2D의 `velocity`,
@@ -17,7 +20,7 @@ extends CharacterBody2D
 ## GDScript 핵심: 들여쓰기가 C++의 `{}` 블록을 대신하고, `var x: Type`은 지역/멤버 변수,
 ## `func f(a: T) -> R`은 함수 시그니처, `and/or/not`은 `&&/||/!`에 해당한다.
 
-signal stats_changed # 생명/stamina/charge/cooldown 변경을 GameView에 알린다.
+signal stats_changed # 생명/stamina/cooldown 변경을 GameView에 알린다.
 signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
 signal binding_started
 signal binding_ended
@@ -46,7 +49,7 @@ const RESPAWN_BODY_SIZE: Vector2 = Vector2( # 프레임과 무관한 재스폰 �
 	28.0 * MainLayout.DISPLAY_SCALE,
 	64.0 * MainLayout.DISPLAY_SCALE
 )
-const MAX_LIVES: int = 3 # 게임 시작 시 생명 상한.
+const MAX_LIVES: int = 3 # 패시브 적용 전 게임 시작 시 생명 상한.
 const MOVE_SPEED: float = 150.0 * GIT_GRID_SCALE # 수평 목표 최고속도(px/s).
 const GROUND_ACCELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 가속도(px/s²).
 const GROUND_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 무입력 감속도(px/s²).
@@ -62,7 +65,10 @@ const JUMP_RELEASE_MULTIPLIER: float = 0.45 # 상승 중 키를 놓을 때 y속�
 const WALL_JUMP_HORIZONTAL_SPEED: float = 185.0 * GIT_GRID_SCALE # 벽 반대 x속도(px/s).
 const WALL_JUMP_VERTICAL_MULTIPLIER: float = 1.0 # 벽점프의 JUMP_VELOCITY 배율.
 const HANG_CLIMB_SPEED: float = 78.0 * GIT_GRID_SCALE # 매달린 상하 이동속도(px/s).
+const HANG_CORNER_CLIMB_SPEED: float = 115.0 * GIT_GRID_SCALE
 const HANG_HAND_OFFSET_Y: float = CHARACTER_HEIGHT / 3.0 # hang 스프라이트 손의 캐릭터 중심 기준 높이.
+const HANG_WALL_GAP: float = 0.0 # 공통 콜라이더 옆면과 실제 벽면 사이의 고정 간격.
+const IDLE_ANIMATION_SPEED_EPSILON: float = 0.5 # 정지로 간주해 대기 첫 프레임을 고정하는 속도.
 const HANG_REGRAB_COOLDOWN: float = 0.18 # 벽점프 직후 같은 벽 재매달림 금지 초.
 const HANG_JUMP_GRACE_TIME: float = 0.15 # grab을 놓은 뒤에도 벽점프 가능한 초.
 const WALL_JUMP_STEER_TIME: float = 0.65 # 벽점프 뒤 원래 벽 방향 공중 조향 보정 초.
@@ -79,7 +85,7 @@ const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무�
 const ATTACK_COOLDOWN: float = 0.48 # 새 펀치 sequence 시작 간격(초).
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
 const SPECIAL_ANIMATION_DURATION: float = 0.8 # 8 frame 특수 스킬 표시 초.
-const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # X release 뒤 주먹 판정을 유지하는 시간.
+const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # 공격 시작 뒤 주먹 판정을 유지하는 시간.
 const BOXER_SPECIAL_HIT_TIME: float = 0.25
 const SHIELD_SPECIAL_HIT_TIME: float = 0.25
 const FIREFIGHTER_SPECIAL_HIT_TIME: float = 0.6
@@ -87,6 +93,8 @@ const CLEANER_SPECIAL_HIT_TIME: float = 0.4
 const CHEF_SPECIAL_HIT_TIME: float = 0.3
 const CLOCKMAKER_SPECIAL_HIT_TIME: float = 0.4
 const NINJA_SPECIAL_HIT_TIME: float = 0.25
+const CHEF_MEAT_DURATION: float = 3.0
+const CHEF_MEAT_MOVE_MULTIPLIER: float = 1.2
 
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
@@ -98,20 +106,16 @@ const SFX_JUMP: AudioStream = preload("res://assets/sfx/04_jump.wav")
 const SFX_MEDITATION_START: AudioStream = preload("res://assets/sfx/05a_meditation_start.wav")
 const SFX_MEDITATION_LOOP: AudioStream = preload("res://assets/sfx/05b_meditation_loop.wav")
 const SFX_MEDITATION_END: AudioStream = preload("res://assets/sfx/05c_meditation_end.wav")
-const SFX_CHARGE_START: AudioStream = preload("res://assets/sfx/06a_charge_start.wav")
-const SFX_CHARGE_LOOP: AudioStream = preload("res://assets/sfx/06b_charge_loop.wav")
-const SFX_CHARGE_TIER1: AudioStream = preload("res://assets/sfx/06c_charge_tier1.wav")
-const SFX_CHARGE_READY: AudioStream = preload("res://assets/sfx/06d_charge_ready.wav")
-const SFX_CHARGE_RELEASE: AudioStream = preload("res://assets/sfx/06e_charge_release.wav")
 const SFX_BLOCK_ELIMINATION: AudioStream = preload("res://assets/sfx/07_block_elimination.wav")
 const SFX_WALL_CLIMB: AudioStream = preload("res://assets/sfx/09_wall_climb.wav")
 
-# 0.4초/0.9초 hold 뒤 release하면 각각 2칸/3칸 차지 펀치를 실행한다.
-const PUNCH_STAGE_TIMES: Array[float] = [0.0, 0.4, 0.9] # charge 단계별 hold 임계 초.
-const PUNCH_TOTAL_COSTS: Array[float] = [0.0, 8.0, 18.0] # 단계별 누적 비용 조회표.
-const PUNCH_MAX_HOLD_TIME: float = 0.9 # charge_time이 증가할 수 있는 상한(초).
 const BASIC_ATTACK_FORWARD_REACH: float = CELL_SIZE # 무기 외형과 무관한 전방 한 블록 판정 길이.
 const ROTATION_KICK_BOSS_REACH: float = 27.2 # 기본 공격 확장의 영향을 받지 않는 기존 발차기 보스 판정.
+const SHURIKEN_SPEED: float = CELL_SIZE * 12.0
+const SHURIKEN_REACH_CELLS: int = 6
+const SHURIKEN_IMPACT_DURATION: float = 0.37
+const SHURIKEN_COLLISION_SIZE: Vector2 = Vector2(32.0, 32.0)
+const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
 const FRAME_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 표시 실루엣의 반투명 외곽 제외 경계.
 const CRUSH_CORE_SIZE: Vector2 = Vector2(
 	28.0 * MainLayout.DISPLAY_SCALE,
@@ -131,7 +135,6 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
 var _meditation_loop_player: AudioStreamPlayer
-var _charge_loop_player: AudioStreamPlayer
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
@@ -141,14 +144,13 @@ var is_hanging: bool = false # true면 일반 이동 대신 벽 추적/상하 �
 var is_meditating: bool = false # true면 정지하고 Controller 테트리스 시간을 2배로 함.
 var is_bound: bool = false
 var binding_timer: float = 0.0
-var charge_time: float = 0.0 # 현재 X hold 경과시간. release/reset 때 0.
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 블록 플립 입력 거부; 매 frame 감소.
 var special_cooldown_remaining: float = 0.0 # 고유 특수 스킬 재사용 대기시간.
 var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
+var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0] # 상점에서 구매한 전역 패시브 레벨.
 
 # 이 클래스 내부의 상태 기계용 변수. `_`는 C++의 private와 같은 강제 접근 제한은
 # 아니지만 외부에서 사용하지 말라는 GDScript 관례다.
-var _charging: bool = false # X를 누른 뒤 release 전이며 punch 단계를 진행 중인지.
 var _invulnerability_remaining: float = 0.0 # 0보다 크면 take_damage를 무시하고 깜빡임.
 var _feedback_remaining: float = 0.0 # 0이 되면 feedback_text를 지우는 countdown(초).
 var _spin_remaining: float = 0.0 # 블록 플립 sprite 회전을 계속할 countdown(초).
@@ -160,6 +162,13 @@ var _hang_body: Node2D # 매달린 실제 collider. 활성 피스면 움직임�
 var _hang_last_global_position: Vector2 # 붙은 body의 이전 frame 위치; 이동 delta 계산용.
 var _hang_top_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 상단.
 var _hang_bottom_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 하단.
+var _hang_face_global_x: float = 0.0 # 공통 콜라이더가 붙는 실제 벽면 X.
+var _hang_animation_direction: float = 0.0 # 매달림 이동 분기가 채택한 방향: 위 -1/정지 0/아래 +1.
+var _hang_corner_climb_active: bool = false
+var _hang_corner_climb_start_global: Vector2 = Vector2.ZERO
+var _hang_corner_climb_target_global: Vector2 = Vector2.ZERO
+var _hang_corner_climb_progress: float = 0.0
+var _hang_corner_climb_duration: float = 0.0
 var _coyote_remaining: float = 0.0 # 0보다 크면 발판을 떠났어도 지상점프 허용.
 var _jump_buffer_remaining: float = 0.0 # 0보다 크면 최근 jump press를 착지까지 기억.
 var _hang_regrab_remaining: float = 0.0 # 0보다 크면 새 매달리기 시작 금지.
@@ -174,27 +183,31 @@ var _special_animation_remaining: float = 0.0 # 0보다 크면 SPECIAL animation
 var _sprint_remaining: float = 0.0 # 일반인 전력 질주의 남은 시간.
 var _pending_special_id: String = ""
 var _pending_special_remaining: float = 0.0
-var _pending_special_vertical: int = -1
+var _pending_barrier_position: Vector2 = Vector2.ZERO
+var _pending_barrier_direction: int = 0
+var _pending_water_start_cell: Vector2i = Vector2i.ZERO
+var _pending_water_direction: int = 0
+var _pending_cleaner_center_below: Vector2i = Vector2i.ZERO
 var _barrier_remaining: float = 0.0
 var _barrier_direction: int = 0
-var _boxer_guard_remaining: float = 0.0
-var _boxer_guard_direction: int = 0
 var _water_remaining: float = 0.0
-var _special_visual_vertical: int = -1
+var _chef_meat_remaining: float = 0.0
+var _chef_meat_guard_available: bool = false
 var _last_special_succeeded: bool = true
 var _ninja_special_result: Dictionary = {}
+var _ninja_projectile: Dictionary = {}
 var _pending_punch_stage: int = 0 # 0이면 없음, 1~3이면 판정 대기 중인 펀치 거리.
-var _pending_punch_hit_remaining: float = 0.0 # release 뒤 남은 주먹 판정 시간.
+var _pending_punch_hit_remaining: float = 0.0 # 공격 시작 뒤 남은 주먹 판정 시간.
 var _ignore_initial_jump_until_released: bool = false # 메뉴 Z로 게임을 열었을 때 첫 점프를 막는다.
-var _charge_audio_started: bool = false # 차지 임계 도달 뒤 차지 사운드가 시작됐는지.
 var _animation_state: String = ANIMATION_DATA.IDLE # 현재 sprite frame table key.
 var _animation_time: float = 0.0 # 현재 animation_state에 머문 경과시간(초).
 var _respawn_airborne_pending: bool = false # 순간이동 직후 이전 바닥 접지 cache를 한 번 무시.
 var _was_grounded_for_stamina: bool = true # 비접지→접지 전환에서만 stamina를 완충하기 위한 이전 상태.
 var _self_respawn_hold_time: float = 0.0 # Q 또는 사용자 지정 키를 연속으로 누른 시간.
 var _self_respawn_requires_release: bool = false # 발동 뒤 같은 hold의 연속 생명 차감을 막는다.
+var _crush_mask_cache: Dictionary = {} # 상태/프레임별 화면 픽셀 몸통 마스크.
 var _frame_alpha_bounds_cache: Dictionary = {} # 캐릭터/프레임별 불투명 영역.
-var _animation_image_cache: Dictionary = {} # texture path별 표시 영역 검색용 Image.
+var _animation_image_cache: Dictionary = {} # texture path별 CPU alpha 판정용 Image.
 var _respawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # 캐릭터 X 전용 난수열.
 
 
@@ -210,9 +223,7 @@ func _ready() -> void:
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
 	_meditation_loop_player = _create_sfx_player()
-	_charge_loop_player = _create_sfx_player()
 	_meditation_loop_player.finished.connect(_restart_meditation_loop)
-	_charge_loop_player.finished.connect(_restart_charge_loop)
 	_respawn_random.randomize()
 	controller.game_restarted.connect(_reset_character)
 	controller.active_piece_descended.connect(handle_active_piece_descended)
@@ -227,6 +238,7 @@ func set_character_id(value: String) -> bool:
 	if character_id == value:
 		return true
 	character_id = value
+	_crush_mask_cache.clear()
 	_frame_alpha_bounds_cache.clear()
 	_animation_image_cache.clear()
 	_animation_state = ANIMATION_DATA.IDLE
@@ -238,6 +250,19 @@ func set_character_id(value: String) -> bool:
 	controller.clear_skill_effects()
 	_apply_animation_frame()
 	return true
+
+
+func set_passive_levels(values: Array) -> void:
+	passive_levels.clear()
+	for index: int in range(MainCharacterData.PASSIVE_COUNT):
+		var value: int = int(values[index]) if index < values.size() else 0
+		passive_levels.append(clampi(value, 0, MainCharacterData.PASSIVE_LEVEL_MAX))
+	lives = get_max_lives()
+	stats_changed.emit()
+
+
+func get_max_lives() -> int:
+	return MAX_LIVES + CHARACTER_DATA.health_life_bonus(passive_levels)
 
 
 ## 능력 코드가 추가되면 발동 직후 이 메서드를 호출한다.
@@ -272,20 +297,29 @@ func _attempt_special_skill() -> bool:
 			delay = BOXER_SPECIAL_HIT_TIME
 		"shield_guard":
 			delay = SHIELD_SPECIAL_HIT_TIME
-			_barrier_direction = facing
+			# Bind the barrier to the cast pose so turning during the wind-up cannot
+			# move it to the other side of the character.
+			_pending_barrier_position = position
+			_pending_barrier_direction = facing
 		"firefighter":
 			delay = FIREFIGHTER_SPECIAL_HIT_TIME
+			# The hose path belongs to the cast pose, just like the shield barrier.
+			# Turning or being displaced during the long wind-up must not redirect it.
+			_pending_water_start_cell = _front_board_cell()
+			_pending_water_direction = facing
 		"cleaner":
 			delay = CLEANER_SPECIAL_HIT_TIME
+			# Cleaning targets the three cells under the cast pose. Movement during
+			# the sweep animation must not relocate the affected row.
+			_pending_cleaner_center_below = _cell_below_feet()
 		"chef":
 			delay = CHEF_SPECIAL_HIT_TIME
-			_pending_special_vertical = 1 if Input.is_action_pressed(&"character_meditate") else -1
-			_special_visual_vertical = _pending_special_vertical
 		"clockmaker":
 			delay = CLOCKMAKER_SPECIAL_HIT_TIME
 		"ninja":
 			delay = NINJA_SPECIAL_HIT_TIME
 			_ninja_special_result.clear()
+			_ninja_projectile.clear()
 		_:
 			return false
 
@@ -305,7 +339,6 @@ func _can_use_special() -> bool:
 		_pending_special_id.is_empty()
 		and not is_hanging
 		and not is_meditating
-		and not _charging
 		and _attack_animation_remaining <= 0.0
 		and _spin_remaining <= 0.0
 	)
@@ -317,21 +350,29 @@ func _resolve_pending_special() -> void:
 	_pending_special_remaining = 0.0
 	match skill_id:
 		"boxer":
-			var moved: int = controller.push_front_target(_front_board_cell(), facing, 3, true)
+			var boxer_target: Variant = _boxer_special_target_cell()
+			var moved: int = 0
+			if boxer_target != null:
+				moved = controller.push_front_target(
+					boxer_target as Vector2i,
+					facing,
+					3,
+					true
+				)
 			_last_special_succeeded = moved > 0
 			if moved > 0:
-				_boxer_guard_remaining = 0.3
-				_boxer_guard_direction = facing
 				_set_feedback("가드 브레이크: %d칸" % moved)
 			else:
-				special_cooldown_remaining = current_special_cooldown() * 0.5
 				_set_feedback("가드 브레이크 실패")
 		"shield_guard":
-			_barrier_direction = facing
-			var barrier_cells: Array[Vector2i] = _barrier_cells()
-			if _cells_overlap_fixed_or_active(barrier_cells):
+			_barrier_direction = _pending_barrier_direction
+			var barrier_cells: Array[Vector2i] = _available_barrier_cells_from(
+				_barrier_cells_at(_pending_barrier_position, _pending_barrier_direction)
+			)
+			if barrier_cells.is_empty():
 				_last_special_succeeded = false
 				_barrier_remaining = 0.0
+				_barrier_direction = 0
 				controller.clear_transient_blockers()
 				_set_feedback("보호벽 생성 공간 부족")
 			else:
@@ -339,53 +380,55 @@ func _resolve_pending_special() -> void:
 				_barrier_remaining = 2.0
 				controller.set_transient_blockers(barrier_cells)
 				_set_feedback("전방 보호벽 발동")
+			_pending_barrier_position = Vector2.ZERO
+			_pending_barrier_direction = 0
 		"firefighter":
-			var created: bool = controller.create_water_path(_front_board_cell(), facing, 4)
+			var created: bool = controller.create_water_path(
+				_pending_water_start_cell,
+				_pending_water_direction,
+				3
+			)
 			_last_special_succeeded = created
 			_water_remaining = 4.0 if created else 0.0
 			_set_feedback("중력 물길 발동" if created else "물길 생성 실패")
+			_pending_water_start_cell = Vector2i.ZERO
+			_pending_water_direction = 0
 		"cleaner":
-			var removed: int = controller.clean_exposed_cells(_cell_below_feet())
+			var removed: int = controller.clean_exposed_cells(_pending_cleaner_center_below)
 			_last_special_succeeded = removed > 0
 			_set_feedback("대청소: %d개 제거" % removed if removed > 0 else "대청소 대상 없음")
+			_pending_cleaner_center_below = Vector2i.ZERO
 		"chef":
-			var direction := Vector2i(facing, _pending_special_vertical)
-			var succeeded: bool = controller.pan_toss(_front_board_cell(), direction)
-			_last_special_succeeded = succeeded
-			_set_feedback("팬 토스 성공" if succeeded else "팬 토스 경로 없음")
+			_chef_meat_remaining = CHEF_MEAT_DURATION
+			_chef_meat_guard_available = true
+			_last_special_succeeded = true
+			_set_feedback("고기 섭취: 3초 강화")
 		"clockmaker":
 			_last_special_succeeded = controller.freeze_falling_blocks(3.0)
 			_set_feedback("낙하 시간 3초 정지" if _last_special_succeeded else "정지 태엽 실패")
 		"ninja":
-			var throw_origin: Vector2i = _front_board_cell() - Vector2i(facing, 0)
-			_ninja_special_result = controller.throw_shuriken_at_active_piece(
-				throw_origin,
-				facing,
-				6,
-				_rotation_forbidden_cells()
-			)
-			_last_special_succeeded = bool(_ninja_special_result.get("success", false))
-			_set_feedback(
-				"표창으로 활성 블록 밀치기 성공"
-				if _last_special_succeeded
-				else "표창이 막혔거나 활성 블록 공간 없음"
-			)
-	_pending_special_vertical = -1
+			_start_ninja_projectile()
+			_last_special_succeeded = true
+			_set_feedback("표창 발사")
 	stats_changed.emit()
 
 
 func _cancel_character_skill_effects() -> void:
 	_pending_special_id = ""
 	_pending_special_remaining = 0.0
-	_pending_special_vertical = -1
+	_pending_barrier_position = Vector2.ZERO
+	_pending_barrier_direction = 0
+	_pending_water_start_cell = Vector2i.ZERO
+	_pending_water_direction = 0
+	_pending_cleaner_center_below = Vector2i.ZERO
 	_barrier_remaining = 0.0
 	_barrier_direction = 0
-	_boxer_guard_remaining = 0.0
-	_boxer_guard_direction = 0
 	_water_remaining = 0.0
-	_special_visual_vertical = -1
+	_chef_meat_remaining = 0.0
+	_chef_meat_guard_available = false
 	_last_special_succeeded = true
 	_ninja_special_result.clear()
+	_ninja_projectile.clear()
 	if is_instance_valid(controller):
 		controller.clear_fall_freeze()
 		controller.clear_transient_blockers()
@@ -394,13 +437,14 @@ func _cancel_character_skill_effects() -> void:
 
 ## 상황: Godot의 고정 physics timestep마다 호출되는 캐릭터 최상위 상태 기계다.
 ## 순서: 비PLAYING 조기 정지 → timers 감소 → 기존/신규 명상 branch
-##       → charge 처리 → hanging 또는 normal movement → 공통 시각/위치 검증.
+##       → punch 처리 → hanging 또는 normal movement → 공통 시각/위치 검증.
 ## 결과: 한 frame에 서로 배타적인 이동 상태 하나만 실행되고 모든 후처리는 공통 적용된다.
 func _physics_process(delta: float) -> void:
 	if controller.state != MainGameController.GameState.PLAYING:
 		_stop_for_inactive_game()
 		return
 	_update_timers(delta)
+	_advance_ninja_projectile(delta)
 	if is_bound:
 		_update_binding(delta)
 		_finish_physics_frame(delta)
@@ -422,7 +466,7 @@ func _physics_process(delta: float) -> void:
 		_finish_physics_frame(delta)
 		return
 
-	_handle_charge(delta)
+	_handle_punch()
 	if is_hanging:
 		_handle_hanging(delta)
 	else:
@@ -446,6 +490,8 @@ func _stop_for_inactive_game() -> void:
 
 func apply_binding(duration: float = 2.0) -> void:
 	if is_bound or controller.state != MainGameController.GameState.PLAYING:
+		return
+	if _consume_chef_meat_guard("고기 섭취: 기믹 무효"):
 		return
 	_set_meditating(false)
 	_exit_hang()
@@ -521,7 +567,7 @@ func _reset_self_respawn_input() -> void:
 
 
 ## 상황: 명상 중이 아닌 physics frame에서 새 명상 진입 가능성을 판단할 때 호출한다.
-## 순서: meditate hold, 접지, 비매달림, 비charging 네 조건을 AND 평가한다.
+## 순서: meditate hold, 접지, 비매달림 조건을 AND 평가한다.
 ## 결과: 모든 조건이 참일 때만 true이며 상태 자체는 변경하지 않는다.
 func _can_start_meditating() -> bool:
 	return (
@@ -529,7 +575,6 @@ func _can_start_meditating() -> bool:
 		and not Input.is_action_just_pressed(&"character_rotation_kick")
 		and is_on_floor()
 		and not is_hanging
-		and not _charging
 		and _pending_special_id.is_empty()
 		and _special_animation_remaining <= 0.0
 	)
@@ -578,7 +623,6 @@ func _handle_meditation(delta: float) -> void:
 ##       → 가변점프 → grab이면 hang 시도 → move_and_slide → 착지 완충 → signal.
 ## 결과: 입력이 실제 CharacterBody2D 이동과 행동으로 반영된다.
 func _handle_movement(delta: float) -> void:
-	var position_before_move: Vector2 = position
 	var horizontal_input: float = Input.get_axis(&"character_left", &"character_right") # -1~+1 이동축.
 	var grounded: bool = is_on_floor() and not _respawn_airborne_pending # 순간이동 전 접지 제외.
 	_respawn_airborne_pending = false
@@ -594,9 +638,6 @@ func _handle_movement(delta: float) -> void:
 		_try_start_hang()
 
 	move_and_slide()
-	if _barrier_remaining > 0.0 and _cells_overlap_fixed_or_active(_barrier_cells()):
-		position = position_before_move
-		velocity.x = 0.0
 	_handle_stamina_landing()
 	stats_changed.emit()
 
@@ -786,18 +827,26 @@ func _handle_hanging(delta: float) -> void:
 	_was_grounded_for_stamina = false
 	if _handle_hang_exit_conditions():
 		return
+	if _hang_corner_climb_active:
+		_advance_hang_corner_climb(delta)
+		return
 	_follow_hang_body()
 	if not is_hanging:
 		return
+	_snap_to_hang_face()
 	global_position.y = clampf(
 		global_position.y,
 		_hang_top_global_y,
 		_hang_bottom_global_y
 	)
+	if not _hang_surface_still_exists():
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return
 	if _has_fixed_support_underfoot():
 		_exit_hang()
 		return
-	if not _move_while_hanging():
+	if not _move_while_hanging(delta):
 		return
 	_finish_hanging_frame(delta)
 
@@ -825,37 +874,112 @@ func _handle_hang_exit_conditions() -> bool:
 ##       → 현재 위치를 다음 frame 기준값으로 저장.
 ## 결과: 상대 위치를 유지한 채 움직이는 블록과 함께 캐릭터가 이동한다.
 func _follow_hang_body() -> void:
+	if not is_instance_valid(_hang_body):
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return
 	if is_instance_valid(_hang_body):
 		var body_delta: Vector2 = _hang_body.global_position - _hang_last_global_position # body의 frame 이동량.
 		# ponytail: 2칸 초과 상향 이동은 다음 피스 스폰으로 간주한다; 큰 SRS kick이 필요하면 교체 signal로 바꾼다.
 		if body_delta.y < -CELL_SIZE * 2.0:
 			_exit_hang()
 			return
+		if _hang_follow_hits_fixed_geometry(body_delta):
+			_exit_hang()
+			velocity = Vector2.ZERO
+			return
+		var position_before_follow: Vector2 = global_position
 		global_position += body_delta
+		_hang_face_global_x += body_delta.x
 		_hang_top_global_y += body_delta.y
 		_hang_bottom_global_y += body_delta.y
+		if not _limit_hang_bounds_to_visible_board():
+			global_position = position_before_follow
+			_exit_hang()
+			velocity = Vector2.ZERO
+			return
+		var limited_follow_y: float = clampf(
+			global_position.y,
+			_hang_top_global_y,
+			_hang_bottom_global_y
+		)
+		if not is_equal_approx(limited_follow_y, global_position.y):
+			global_position = position_before_follow
+			_exit_hang()
+			velocity = Vector2.ZERO
+			return
 		_hang_last_global_position = _hang_body.global_position
+
+
+func _hang_follow_hits_fixed_geometry(body_delta: Vector2) -> bool:
+	if body_delta.is_zero_approx():
+		return false
+	var current_rect: Rect2 = _character_collider_rect()
+	var target_rect := Rect2(current_rect.position + body_delta, current_rect.size)
+	var board_size := Vector2(
+		MainBoardModel.WIDTH * CELL_SIZE,
+		MainBoardModel.VISIBLE_HEIGHT * CELL_SIZE
+	)
+	if (
+		target_rect.position.x < 0.0
+		or target_rect.end.x > board_size.x
+		or target_rect.end.y > board_size.y
+	):
+		return true
+	var swept_rect: Rect2 = current_rect.merge(target_rect)
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			if _rects_overlap_with_area(swept_rect, _board_cell_rect(Vector2i(x, y))):
+				return true
+	return false
+
+
+func _hang_surface_still_exists() -> bool:
+	if not is_instance_valid(_hang_body):
+		return false
+	var hang_ray: RayCast2D = left_ray if _hang_jump_facing < 0 else right_ray
+	hang_ray.force_raycast_update()
+	return hang_ray.is_colliding() and hang_ray.get_collider() == _hang_body
 
 
 ## 상황: 붙은 body를 따라간 뒤 사용자의 위/아래 매달림 이동을 적용할 때 호출한다.
 ## 순서: 방향 조회 → velocity 설정 → 무입력이면 true → move_and_slide
 ##       → 외부 옆면 범위 clamp → 양 RayCast 강제 갱신 → 붙은 쪽 충돌 확인.
 ## 결과: 벽을 따라 이동하되 끝을 벗어난 순간 일반 공중 상태로 전환된다.
-func _move_while_hanging() -> bool:
+func _move_while_hanging(delta: float = -1.0) -> bool:
 	var climb_direction: float = _hang_climb_direction() # 위 -1, 정지 0, 아래 +1.
-	velocity = Vector2(0.0, climb_direction * HANG_CLIMB_SPEED)
+	_hang_animation_direction = climb_direction
+	velocity = Vector2.ZERO
 	var hang_ray: RayCast2D = (
 		left_ray if _hang_jump_facing < 0 else right_ray
 	)
 	if is_zero_approx(climb_direction):
 		return true
 
-	move_and_slide()
-	global_position.y = clampf(
-		global_position.y,
+	var movement_delta: float = (
+		get_physics_process_delta_time() if delta < 0.0 else maxf(delta, 0.0)
+	)
+	var previous_global_position: Vector2 = global_position
+	var requested_global_y: float = clampf(
+		global_position.y + climb_direction * HANG_CLIMB_SPEED * movement_delta,
 		_hang_top_global_y,
 		_hang_bottom_global_y
 	)
+	var requested_global_position := Vector2(global_position.x, requested_global_y)
+	var requested_local_position: Vector2 = get_parent().to_local(requested_global_position)
+	if not _character_position_overlaps_solid(requested_local_position):
+		global_position.y = requested_global_y
+	else:
+		global_position = previous_global_position
+	_snap_to_hang_face()
+	if (
+		climb_direction < 0.0
+		and global_position.y <= _hang_top_global_y + 0.75
+		and _try_start_hang_corner_climb()
+	):
+		return true
 	left_ray.force_raycast_update()
 	right_ray.force_raycast_update()
 	var still_touching_wall: bool = ( # 최초 매달린 벽 방향 RayCast의 최신 충돌 상태.
@@ -871,6 +995,121 @@ func _move_while_hanging() -> bool:
 ## 상황: 매달린 상태에서 수직 입력을 속도 부호로 바꿀 때 호출한다.
 ## 순서: 0에서 시작 → 물리 위키면 -1 → meditate(아래) action이면 +1을 더함.
 ## 결과: 위/아래 동시 입력은 0, 위=-1, 아래=+1을 반환한다.
+func _try_start_hang_corner_climb() -> bool:
+	if _hang_body == boundaries or not is_instance_valid(_hang_body):
+		return false
+	if _hang_body.name != &"LockedBlocks":
+		return false
+	var surface_top_global_y: float = _hang_top_global_y - HANG_HAND_OFFSET_Y
+	var target_global_position := Vector2(
+		_hang_face_global_x
+		+ float(_hang_jump_facing) * CHARACTER_COLLIDER_WIDTH * 0.5,
+		surface_top_global_y
+		- CHARACTER_COLLIDER_OFFSET_Y
+		- CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
+	var target_local_position: Vector2 = get_parent().to_local(target_global_position)
+	if _character_position_overlaps_solid(target_local_position):
+		return false
+	if (
+		target_local_position.x < BOARD_MIN_X
+		or target_local_position.x > BOARD_MAX_X
+		or target_local_position.y < BOARD_MIN_Y
+		or target_local_position.y > BOARD_MAX_Y
+	):
+		return false
+	_hang_corner_climb_active = true
+	_hang_corner_climb_start_global = global_position
+	_hang_corner_climb_target_global = target_global_position
+	_hang_corner_climb_progress = 0.0
+	var path_length: float = (
+		absf(target_global_position.y - global_position.y)
+		+ absf(target_global_position.x - global_position.x)
+	)
+	_hang_corner_climb_duration = maxf(
+		path_length / maxf(HANG_CORNER_CLIMB_SPEED, 1.0),
+		0.18
+	)
+	return true
+
+
+func _advance_hang_corner_climb(delta: float) -> void:
+	_hang_animation_direction = -1.0 if Input.is_key_pressed(KEY_UP) else 0.0
+	if not Input.is_key_pressed(KEY_UP):
+		velocity = Vector2.ZERO
+		_finish_hanging_frame(delta)
+		return
+	_hang_corner_climb_progress = minf(
+		1.0,
+		_hang_corner_climb_progress
+		+ maxf(delta, 0.0) / maxf(_hang_corner_climb_duration, 0.001)
+	)
+	var progress: float = _hang_corner_climb_progress
+	var corner_position: Vector2
+	if progress < 0.72:
+		var vertical_progress: float = progress / 0.72
+		corner_position = Vector2(
+			_hang_corner_climb_start_global.x,
+			lerpf(
+				_hang_corner_climb_start_global.y,
+				_hang_corner_climb_target_global.y,
+				vertical_progress
+			)
+		)
+	else:
+		var horizontal_progress: float = (progress - 0.72) / 0.28
+		corner_position = Vector2(
+			lerpf(
+				_hang_corner_climb_start_global.x,
+				_hang_corner_climb_target_global.x,
+				horizontal_progress
+			),
+			_hang_corner_climb_target_global.y
+		)
+	global_position = corner_position
+	velocity = Vector2.ZERO
+	stamina = maxf(
+		0.0,
+		stamina
+		- HANG_STAMINA_DRAIN
+		* CHARACTER_DATA.stamina_drain_multiplier(character_id)
+		* maxf(delta, 0.0)
+	)
+	if _hang_corner_climb_progress >= 1.0:
+		var completed_local_position: Vector2 = get_parent().to_local(
+			_hang_corner_climb_target_global
+		)
+		_exit_hang()
+		position = completed_local_position
+		velocity = Vector2.ZERO
+	stats_changed.emit()
+
+
+func _character_position_overlaps_solid(candidate_position: Vector2) -> bool:
+	var collider_size := Vector2(
+		CHARACTER_COLLIDER_WIDTH,
+		CHARACTER_COLLIDER_HEIGHT
+	)
+	var collider_center: Vector2 = candidate_position + Vector2(
+		0.0,
+		CHARACTER_COLLIDER_OFFSET_Y
+	)
+	var candidate_rect := Rect2(collider_center - collider_size * 0.5, collider_size)
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			if _rects_overlap_with_area(candidate_rect, _board_cell_rect(Vector2i(x, y))):
+				return true
+	for local_cell: Vector2i in controller.active_local_cells():
+		if _rects_overlap_with_area(
+			candidate_rect,
+			_board_cell_rect(controller.active_origin + local_cell)
+		):
+			return true
+	return false
+
+
 func _hang_climb_direction() -> float:
 	var climb_direction: float = 0.0 # 상하 입력을 합산할 방향값.
 	if Input.is_key_pressed(KEY_UP):
@@ -891,7 +1130,7 @@ func _finish_hanging_frame(delta: float) -> void:
 		0.0,
 		stamina
 		- HANG_STAMINA_DRAIN
-		* CHARACTER_DATA.stamina_drain_multiplier(character_id)
+		* CHARACTER_DATA.stamina_drain_multiplier(character_id, passive_levels)
 		* delta
 	)
 	if Input.is_action_just_pressed(&"character_jump"):
@@ -923,31 +1162,11 @@ func _perform_wall_jump() -> void:
 	_set_feedback("벽 점프")
 
 
-## 상황: 명상이 아닌 모든 physics frame에서 X 펀치 hold 상태를 갱신할 때 호출한다.
-## 순서: just_pressed면 sequence 시작 → hold 중에는 charge_time만 누적
-##       → release 때 일반 또는 차지 펀치를 한 번 실행한다.
-## 결과: 짧은 탭은 일반 펀치, 0.4/0.9초 hold는 각각 2칸/3칸 차지 펀치가 된다.
-func _handle_charge(delta: float) -> void:
+## 상황: 명상이 아닌 physics frame에서 새 펀치 입력을 처리한다.
+## 결과: 입력 시간과 관계없이 전방 블록을 한 칸 미는 기본 공격을 시작한다.
+func _handle_punch() -> void:
 	if Input.is_action_just_pressed(&"character_punch"):
 		_perform_tap_punch()
-	# 기본 공격은 캐릭터와 입력 시간에 관계없이 항상 전방 1칸 밀치기다.
-	# delta는 기존 호출부와 테스트용 인터페이스를 유지하기 위해 받는다.
-	if delta < 0.0:
-		return
-
-
-## 상황: X가 새로 눌렸을 때 새 연속 펀치를 시작할 수 있는지 처리한다.
-## 순서: attack cooldown>0이면 종료 → charging=true → 시간/stage 초기화
-##       → 차지 사운드 상태 초기화.
-## 결과: 쿨다운 중 입력은 무시되고, release 전까지 일반/차지 동작을 유보한다.
-func _start_punch_sequence() -> void:
-	if _attack_cooldown_remaining > 0.0:
-		return
-	_charging = true
-	charge_time = 0.0
-	_charge_audio_started = false
-
-
 ## 상황: X를 짧게 눌렀다 놓았을 때 일반 펀치를 실행한다.
 ## 결과: 공격 animation을 표시하고 0.1초 주먹 판정 중 맞은 활성 블록을 1칸 민다.
 func _perform_tap_punch() -> void:
@@ -958,45 +1177,19 @@ func _perform_tap_punch() -> void:
 	):
 		return
 	_start_attack_animation()
-	_attack_cooldown_remaining = ATTACK_COOLDOWN
+	_attack_cooldown_remaining = current_attack_cooldown()
 	_play_sfx(SFX_PUNCH)
 	_begin_punch_hit_confirmation(1)
 	stats_changed.emit()
 
 
-## 상황: tap/charge 펀치가 시작되어 ATTACK sprite 상태를 처음부터 재생해야 할 때 호출한다.
+## 상황: 펀치가 시작되어 ATTACK sprite 상태를 처음부터 재생해야 할 때 호출한다.
 ## 순서: 남은 animation 시간을 전체 길이로 설정 → state를 ATTACK → frame 시간을 0으로 초기화.
 ## 결과: 기존 idle/jump/hang frame과 무관하게 공격 첫 frame부터 표시된다.
 func _start_attack_animation() -> void:
 	_attack_animation_remaining = ATTACK_ANIMATION_DURATION
 	_animation_state = ANIMATION_DATA.ATTACK
 	_animation_time = 0.0
-
-
-## 상황: charging 중 X가 더 이상 눌리지 않은 첫 frame에 호출한다.
-## 순서: charging=false → charge_time=0 → stats signal.
-## 결과: 현재 stage 표시가 0으로 돌아가고 다음 cooldown 이후 새 sequence가 가능하다.
-func _release_charge_punch() -> void:
-	_stop_charge_loop(_charge_audio_started)
-	_charging = false
-	charge_time = 0.0
-	_charge_audio_started = false
-	stats_changed.emit()
-
-
-## 상황: X release 때 hold 시간에 맞는 차지 펀치를 실행할 때 호출한다.
-## 순서: 비용 검사 → attack 시작 → 0.1초 주먹 판정을 예약한다.
-## 결과: 판정 중 블록을 맞춘 경우에만 2칸 또는 3칸을 한 번에 민다.
-func _perform_charge_punch(target_stage: int) -> void:
-	var stamina_cost: float = PUNCH_TOTAL_COSTS[target_stage - 1]
-	if stamina < stamina_cost:
-		_set_feedback("스태미나 부족")
-		return
-	_start_attack_animation()
-	_attack_cooldown_remaining = ATTACK_COOLDOWN
-	_play_sfx(SFX_PUNCH)
-	_begin_punch_hit_confirmation(target_stage)
-	stats_changed.emit()
 
 
 ## 상황: X를 놓은 순간 계산된 1~3단계 펀치를 짧은 hit 판정 창에 등록할 때 호출한다.
@@ -1015,6 +1208,7 @@ func _resolve_pending_punch(delta: float) -> void:
 	if _pending_punch_stage == 0:
 		return
 
+	var target_stage: int = _pending_punch_stage # 호환용 값. 기본 공격은 항상 1칸이다.
 	if controller.boss_hitbox_overlaps(_punch_hitbox_rect()):
 		_pending_punch_stage = 0
 		_pending_punch_hit_remaining = 0.0
@@ -1022,13 +1216,14 @@ func _resolve_pending_punch(delta: float) -> void:
 		take_thorn_damage("보스 가시 피해! 목숨 -1")
 		return
 	var target_cell: Variant = _basic_attack_target_cell()
-	var hits_active_piece: bool = (
-		target_cell != null
-		and (target_cell as Vector2i) in controller.active_board_cells()
-	)
+	var hits_active_piece: bool = target_cell != null
 	var moved: int = 0
-	if target_cell != null:
-		moved = controller.push_front_target(target_cell as Vector2i, facing, 1)
+	if hits_active_piece:
+		moved = 1 if controller.push_active_piece(
+			facing,
+			1,
+			_rotation_forbidden_cells()
+		) else 0
 	if hits_active_piece and controller.active_piece_has_visible_thorns():
 		take_thorn_damage()
 	if moved > 0:
@@ -1042,19 +1237,6 @@ func _resolve_pending_punch(delta: float) -> void:
 	if _pending_punch_hit_remaining <= 0.0:
 		_pending_punch_stage = 0
 		_set_feedback("공격이 빗나감")
-
-
-## 상황: 명상처럼 펀치와 배타적인 상태에 진입할 때 호출한다.
-## 순서: charging이 아니면 종료 → charging/time 초기화 → stats signal.
-## 결과: 이미 성공한 피스 이동은 유지하고 아직 진행 중인 hold 상태만 취소한다.
-func _cancel_punch_sequence() -> void:
-	if not _charging:
-		return
-	_stop_charge_loop(_charge_audio_started)
-	_charging = false
-	charge_time = 0.0
-	_charge_audio_started = false
-	stats_changed.emit()
 
 
 ## 상황: 명상 진입/종료, pause, 피해 또는 reset에서 명상 상태를 일관되게 바꿀 때 호출한다.
@@ -1077,7 +1259,6 @@ func _set_meditating(active: bool) -> void:
 	if is_meditating:
 		_play_sfx(SFX_MEDITATION_START)
 		_start_meditation_loop()
-		_cancel_punch_sequence()
 		_pending_rotation_launch_velocity = 0.0
 		_jump_buffer_remaining = 0.0
 		_hang_jump_grace_remaining = 0.0
@@ -1222,20 +1403,12 @@ func _try_start_hang() -> void:
 	if _has_fixed_support_underfoot():
 		return
 
-	left_ray.force_raycast_update()
-	right_ray.force_raycast_update()
-	var ray: RayCast2D # 우선순위 검사 끝에 실제 매달릴 충돌을 감지한 RayCast.
-	if facing < 0 and left_ray.is_colliding():
-		ray = left_ray
-	elif facing > 0 and right_ray.is_colliding():
-		ray = right_ray
-	elif left_ray.is_colliding():
-		ray = left_ray
-		facing = -1
-	elif right_ray.is_colliding():
-		ray = right_ray
-		facing = 1
-	else:
+	# A grab may only begin on the side the character is visibly facing. The
+	# previous opposite-ray fallback let a wall touching the character's back
+	# silently reverse `facing` and start a hang.
+	var ray: RayCast2D = left_ray if facing < 0 else right_ray
+	ray.force_raycast_update()
+	if not ray.is_colliding():
 		return
 
 	var collider: Object = ray.get_collider() # 벽 또는 활성 피스일 수 있는 런타임 객체.
@@ -1246,7 +1419,17 @@ func _try_start_hang() -> void:
 		if not _set_hang_vertical_bounds(ray):
 			_hang_body = null
 			return
+		var visible_center_range: Vector2 = _visible_board_character_center_range()
+		if (
+			global_position.y < visible_center_range.x
+			or global_position.y > visible_center_range.y
+		):
+			_hang_body = null
+			_clear_hang_vertical_bounds()
+			return
+		_snap_to_hang_face()
 		is_hanging = true
+		_hang_animation_direction = 0.0
 		_hang_last_global_position = _hang_body.global_position
 		_hang_jump_grace_remaining = 0.0
 		_pending_rotation_launch_velocity = 0.0
@@ -1261,9 +1444,14 @@ func _try_start_hang() -> void:
 ## 결과: 다음 physics frame은 일반 이동 branch를 실행하고 body를 더 이상 추적하지 않는다.
 func _exit_hang() -> void:
 	is_hanging = false
+	_hang_animation_direction = 0.0
+	_hang_corner_climb_active = false
+	_hang_corner_climb_start_global = Vector2.ZERO
+	_hang_corner_climb_target_global = Vector2.ZERO
+	_hang_corner_climb_progress = 0.0
+	_hang_corner_climb_duration = 0.0
 	_hang_body = null
-	_hang_top_global_y = 0.0
-	_hang_bottom_global_y = 0.0
+	_clear_hang_vertical_bounds()
 
 
 ## 상황: C로 잡은 충돌 지점에서 세로로 이어진 외부 옆면 범위를 저장할 때 호출한다.
@@ -1300,10 +1488,13 @@ func _set_hang_vertical_bounds(ray: RayCast2D) -> bool:
 	if not found_hit_face:
 		_clear_hang_vertical_bounds()
 		return false
+	_hang_face_global_x = (
+		hit_rect.position.x if _hang_jump_facing > 0 else hit_rect.end.x
+	)
 	if _hang_body == boundaries:
 		_hang_top_global_y = hit_rect.position.y + HANG_HAND_OFFSET_Y
 		_hang_bottom_global_y = hit_rect.end.y + HANG_HAND_OFFSET_Y
-		return true
+		return _limit_hang_bounds_to_visible_board()
 
 	var hang_face_x: float = (
 		hit_rect.position.x if _hang_jump_facing > 0 else hit_rect.end.x
@@ -1328,12 +1519,46 @@ func _set_hang_vertical_bounds(ray: RayCast2D) -> bool:
 
 	_hang_top_global_y = top_y + HANG_HAND_OFFSET_Y
 	_hang_bottom_global_y = bottom_y + HANG_HAND_OFFSET_Y
-	return true
+	return _limit_hang_bounds_to_visible_board()
+
+
+func _limit_hang_bounds_to_visible_board() -> bool:
+	var center_range: Vector2 = _visible_board_character_center_range()
+	_hang_top_global_y = maxf(_hang_top_global_y, center_range.x)
+	_hang_bottom_global_y = minf(_hang_bottom_global_y, center_range.y)
+	if _hang_top_global_y <= _hang_bottom_global_y:
+		return true
+	_clear_hang_vertical_bounds()
+	return false
+
+
+func _visible_board_character_center_range() -> Vector2:
+	var board_top: float = (
+		get_parent().global_position.y + MainLayout.BOARD_VISUAL_OFFSET.y
+	)
+	var board_bottom: float = board_top + MainLayout.BOARD_SIZE.y
+	return Vector2(
+		board_top + CHARACTER_COLLIDER_HEIGHT * 0.5 - CHARACTER_COLLIDER_OFFSET_Y,
+		board_bottom - CHARACTER_COLLIDER_HEIGHT * 0.5 - CHARACTER_COLLIDER_OFFSET_Y
+	)
 
 
 func _clear_hang_vertical_bounds() -> void:
 	_hang_top_global_y = 0.0
 	_hang_bottom_global_y = 0.0
+	_hang_face_global_x = 0.0
+
+
+## 감지선의 여유 거리와 관계없이 공통 42×90 콜라이더 옆면을 실제 벽면에 맞춘다.
+func _snap_to_hang_face() -> void:
+	if is_zero_approx(_hang_face_global_x):
+		return
+	global_position.x = (
+		_hang_face_global_x
+		- float(_hang_jump_facing) * (
+			CHARACTER_COLLIDER_WIDTH * 0.5 + HANG_WALL_GAP
+		)
+	)
 
 
 ## 상황: 후보 셀의 매달리는 쪽 면이 다른 셀로 막혔는지 확인할 때 호출한다.
@@ -1380,9 +1605,9 @@ func handle_active_piece_descended(
 		take_damage()
 
 
-## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸 충돌체에 닿는지 판정한다.
-## 순서: 고정 CharacterBody2D Rect와 네 셀 Rect의 실제 면적 교차를 검사한다.
-## 결과: 캐릭터 종류, 애니메이션 프레임, 투명 여백과 무관한 동일 판정을 반환한다.
+## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸통 픽셀에 닿는지 판정한다.
+## 순서: 현재 프레임의 캐시된 불투명 픽셀 → flip/rotation 변환 → 네 셀 Rect 포함 검사.
+## 결과: 알파 128 이상이면서 중앙 28×64px 안인 실제 표시 픽셀이 닿을 때만 true다.
 func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
 	var collider_rect: Rect2 = _character_collider_rect()
 	for local_cell: Vector2i in controller.active_local_cells():
@@ -1392,6 +1617,64 @@ func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
 		):
 			return true
 	return false
+
+
+## 상황: 현재 애니메이션 프레임의 압사 몸통 마스크가 필요할 때 호출한다.
+## 순서: 상태/region key 캐시 조회 → 화면 중앙 28×64 각 픽셀을 source region으로 역매핑
+##       → 원본 alpha가 128 이상인 화면 픽셀 중심만 저장.
+## 결과: 투명 여백과 뻗은 팔다리가 빠진 정확한 화면 픽셀 좌표 목록을 반환한다.
+func _current_crush_mask_points() -> Array[Vector2]:
+	var region: Rect2 = ANIMATION_DATA.region_for(
+		_animation_state,
+		_animation_time,
+		character_id
+	)
+	var cache_key: String = "%s:%s:%d:%d:%d:%d" % [
+		character_id,
+		_animation_state,
+		int(region.position.x),
+		int(region.position.y),
+		int(region.size.x),
+		int(region.size.y),
+	]
+	if _crush_mask_cache.has(cache_key):
+		return _crush_mask_cache[cache_key] as Array[Vector2]
+
+	var texture: Texture2D = ANIMATION_DATA.texture_for(_animation_state, character_id)
+	var image_key: String = texture.resource_path
+	var image: Image
+	if _animation_image_cache.has(image_key):
+		image = _animation_image_cache[image_key] as Image
+	else:
+		image = texture.get_image()
+		_animation_image_cache[image_key] = image
+
+	var target_size: Vector2 = _animation_target_size(_animation_state)
+	var points: Array[Vector2] = []
+	var half_core: Vector2 = CRUSH_CORE_SIZE * 0.5
+	for pixel_y: int in range(int(-half_core.y), int(half_core.y)):
+		for pixel_x: int in range(int(-half_core.x), int(half_core.x)):
+			var display_point: Vector2 = Vector2(
+				float(pixel_x) + 0.5,
+				float(pixel_y) + 0.5
+			)
+			var normalized: Vector2 = (display_point + target_size * 0.5) / target_size
+			if (
+				normalized.x < 0.0
+				or normalized.x >= 1.0
+				or normalized.y < 0.0
+				or normalized.y >= 1.0
+			):
+				continue
+			var source_pixel: Vector2i = Vector2i(
+				int(floor(region.position.x + normalized.x * region.size.x)),
+				int(floor(region.position.y + normalized.y * region.size.y))
+			)
+			if image.get_pixelv(source_pixel).a >= CRUSH_ALPHA_THRESHOLD:
+				points.append(display_point)
+
+	_crush_mask_cache[cache_key] = points
+	return points
 
 
 ## 상황: 낙하 블록과 겹친 순간 캐릭터가 아래 고정 지지면에 직접 붙어 있는지 검사한다.
@@ -1463,7 +1746,7 @@ func _is_below_board() -> bool:
 
 
 ## 상황: 자연 낙하 블록과 고정 지지면 사이의 직접 압착을 발견했을 때 호출한다.
-## 순서: 무적이면 종료 → 생명-1/무적 설정 → 명상/hang/jump/charge/속도 해제
+## 순서: 무적이면 종료 → 생명-1/무적 설정 → 명상/hang/jump/속도 해제
 ##       → feedback → 생명 0이면 end_game/return → 안전 위치 탐색 → 없으면 end_game,
 ##       있으면 상단 한 칸 아래의 무작위 안전 열로 이동 → stats signal.
 ## 결과: 같은 압착에서 연속 피해를 막고 살아 있으면 블록과 겹치지 않게 상단에서 재시작한다.
@@ -1473,14 +1756,13 @@ func take_damage() -> void:
 	if _barrier_remaining > 0.0 and _danger_is_from_direction(_barrier_direction):
 		_set_feedback("보호벽 방어")
 		return
-	if _boxer_guard_remaining > 0.0 and _danger_is_from_direction(_boxer_guard_direction):
-		_set_feedback("가드 브레이크 방어")
-		return
 	_lose_life_and_respawn("압착 피해! 목숨 -1")
 
 
 func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 -1") -> void:
 	if _invulnerability_remaining > 0.0:
+		return
+	if _consume_chef_meat_guard():
 		return
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
@@ -1489,6 +1771,19 @@ func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 
 	if lives <= 0:
 		controller.end_game()
 	stats_changed.emit()
+
+
+func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어") -> bool:
+	if (
+		character_id != "chef"
+		or _chef_meat_remaining <= 0.0
+		or not _chef_meat_guard_available
+	):
+		return false
+	_chef_meat_guard_available = false
+	_set_feedback(feedback_message)
+	stats_changed.emit()
+	return true
 
 
 ## 상황: 압착 또는 자력 재스폰이 실제 생명 하나를 소비하기로 확정했을 때 호출한다.
@@ -1505,9 +1800,6 @@ func _lose_life_and_respawn(feedback_message: String) -> void:
 	_hang_regrab_remaining = 0.0
 	_cancel_wall_jump_control()
 	_cancel_jump_intent()
-	_charging = false
-	_stop_charge_loop()
-	charge_time = 0.0
 	_attack_animation_remaining = 0.0
 	_special_animation_remaining = 0.0
 	_pending_punch_stage = 0
@@ -1548,22 +1840,6 @@ func self_respawn_hold_ratio() -> float:
 	return clampf(_self_respawn_hold_time / SELF_RESPAWN_HOLD_SECONDS, 0.0, 1.0)
 
 
-## 상황: GameView/테스트가 현재 연속 펀치 단계를 표시·검증할 때 호출한다.
-## 순서: charging이 아니면 0 조기 반환, 맞으면 현재 hold 시간의 단계를 계산한다.
-## 결과: 외부에서 내부 flag를 직접 읽지 않고 0~3 단계를 얻는다.
-func charge_level() -> int:
-	if not _charging:
-		return 0
-	return push_distance_for_charge(charge_time)
-
-
-## 상황: charge bar와 sprite glow가 펀치 hold 진행률을 요구할 때 호출한다.
-## 순서: charging이면 charge_time/0.9를 0~1 clamp, 아니면 0.
-## 결과: UI에 바로 쓸 수 있는 정규화 float를 반환한다.
-func charge_ratio() -> float:
-	return clampf(charge_time / 0.9, 0.0, 1.0) if _charging else 0.0
-
-
 ## 상황: GameView가 블록 플립 cooldown bar를 계산할 때 호출한다.
 ## 순서: 남은 초/전체 2초 → 0~1 clamp.
 ## 결과: 1은 방금 사용, 0은 즉시 사용 가능을 의미한다.
@@ -1588,21 +1864,33 @@ func special_display_name() -> String:
 
 
 func current_move_speed() -> float:
-	var speed: float = CHARACTER_DATA.move_speed(character_id) * GIT_GRID_SCALE
-	return speed * 1.6 if _sprint_remaining > 0.0 else speed
+	var speed: float = CHARACTER_DATA.move_speed(character_id, passive_levels) * GIT_GRID_SCALE
+	if _sprint_remaining > 0.0:
+		return speed * 1.6
+	if _chef_meat_remaining > 0.0:
+		return speed * CHEF_MEAT_MOVE_MULTIPLIER
+	return speed
 
 
 func current_jump_velocity() -> float:
-	var height: float = float(CHARACTER_DATA.jump_cells(character_id)) * CELL_SIZE
+	var height: float = (
+		float(CHARACTER_DATA.jump_cells(character_id))
+		* CELL_SIZE
+		* CHARACTER_DATA.jump_height_multiplier(passive_levels)
+	)
 	return -sqrt(2.0 * GRAVITY * height)
 
 
 func current_rotation_cooldown() -> float:
-	return CHARACTER_DATA.rotation_cooldown(character_id)
+	return CHARACTER_DATA.rotation_cooldown(character_id, passive_levels)
 
 
 func current_special_cooldown() -> float:
-	return CHARACTER_DATA.special_cooldown(character_id)
+	return CHARACTER_DATA.special_cooldown(character_id, passive_levels)
+
+
+func current_attack_cooldown() -> float:
+	return ATTACK_COOLDOWN * CHARACTER_DATA.passive_cooldown_multiplier(passive_levels, 0)
 
 
 func is_special_animating() -> bool:
@@ -1620,16 +1908,136 @@ func special_visual_elapsed() -> float:
 	return clampf(SPECIAL_ANIMATION_DURATION - _special_animation_remaining, 0.0, SPECIAL_ANIMATION_DURATION)
 
 
-func special_visual_vertical() -> int:
-	return _special_visual_vertical
-
-
 func last_special_succeeded() -> bool:
 	return _last_special_succeeded
 
 
 func ninja_special_result() -> Dictionary:
 	return _ninja_special_result.duplicate()
+
+
+func _start_ninja_projectile() -> void:
+	var start_cell: Vector2i = _front_board_cell() - Vector2i(facing, 0)
+	var start_position := Vector2(
+		(float(start_cell.x) + 0.5) * CELL_SIZE,
+		(float(start_cell.y - MainBoardModel.HIDDEN_ROWS) + 0.5) * CELL_SIZE
+	)
+	_ninja_projectile = {
+		"position": start_position,
+		"row": start_cell.y,
+		"direction": facing,
+		"travel_pixels": 0.0,
+		"active": true,
+	}
+	_ninja_special_result = {
+		"position": start_position,
+		"direction": facing,
+		"success": false,
+		"contact": MainGameController.SHURIKEN_CONTACT_NONE,
+		"in_flight": true,
+		"impact_elapsed": 0.0,
+		"flight_elapsed": 0.0,
+	}
+
+
+func _advance_ninja_projectile(delta: float) -> void:
+	if _ninja_projectile.is_empty():
+		if not _ninja_special_result.is_empty() and not bool(_ninja_special_result.get("in_flight", false)):
+			_ninja_special_result["impact_elapsed"] = (
+				float(_ninja_special_result.get("impact_elapsed", 0.0)) + maxf(delta, 0.0)
+			)
+			if float(_ninja_special_result["impact_elapsed"]) >= SHURIKEN_IMPACT_DURATION:
+				_ninja_special_result.clear()
+			stats_changed.emit()
+		return
+	if not bool(_ninja_projectile.get("active", false)):
+		return
+	var direction: int = int(_ninja_projectile["direction"])
+	var position_now: Vector2 = _ninja_projectile["position"] as Vector2
+	var traveled: float = float(_ninja_projectile["travel_pixels"])
+	_ninja_special_result["flight_elapsed"] = (
+		float(_ninja_special_result.get("flight_elapsed", 0.0)) + maxf(delta, 0.0)
+	)
+	var maximum_travel: float = float(SHURIKEN_REACH_CELLS) * CELL_SIZE
+	var step: float = minf(SHURIKEN_SPEED * maxf(delta, 0.0), maximum_travel - traveled)
+	var next_position := position_now + Vector2(float(direction) * step, 0.0)
+	var projectile_half_size: Vector2 = SHURIKEN_COLLISION_SIZE * 0.5
+	var sweep := Rect2(
+		Vector2(
+			minf(position_now.x, next_position.x) - projectile_half_size.x,
+			position_now.y - projectile_half_size.y
+		),
+		Vector2(
+			absf(next_position.x - position_now.x) + SHURIKEN_COLLISION_SIZE.x,
+			SHURIKEN_COLLISION_SIZE.y
+		)
+	)
+	var active_cells: Array[Vector2i] = controller.active_board_cells()
+	var hit_cell: Variant = null
+	var hit_contact: StringName = MainGameController.SHURIKEN_CONTACT_NONE
+	var hit_distance: float = INF
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			var cell := Vector2i(x, y)
+			var is_active_cell: bool = cell in active_cells
+			if not is_active_cell and controller.board.get_cell(cell) == MainBoardModel.EMPTY:
+				continue
+			var cell_rect: Rect2 = _board_cell_rect(cell)
+			if not sweep.intersects(cell_rect, true):
+				continue
+			var signed_distance: float = (cell_rect.get_center().x - position_now.x) * float(direction)
+			if signed_distance < -projectile_half_size.x or signed_distance >= hit_distance:
+				continue
+			hit_distance = maxf(signed_distance, 0.0)
+			hit_cell = cell
+			hit_contact = (
+				MainGameController.SHURIKEN_CONTACT_ACTIVE
+				if is_active_cell
+				else MainGameController.SHURIKEN_CONTACT_FIXED
+			)
+	if hit_cell != null:
+		var impact_cell: Vector2i = hit_cell as Vector2i
+		var impact_position: Vector2 = _board_cell_rect(impact_cell).get_center()
+		var succeeded: bool = false
+		if hit_contact == MainGameController.SHURIKEN_CONTACT_ACTIVE:
+			succeeded = controller.push_active_piece(
+				direction,
+				1,
+				_rotation_forbidden_cells()
+			)
+		_finish_ninja_projectile(impact_position, hit_contact, succeeded)
+		return
+	traveled += step
+	_ninja_projectile["position"] = next_position
+	_ninja_projectile["travel_pixels"] = traveled
+	_ninja_special_result["position"] = next_position
+	if traveled >= maximum_travel or next_position.x < 0.0 or next_position.x > MainLayout.BOARD_SIZE.x:
+		_finish_ninja_projectile(
+			next_position,
+			MainGameController.SHURIKEN_CONTACT_NONE,
+			false
+		)
+	stats_changed.emit()
+
+
+func _finish_ninja_projectile(
+	impact_position: Vector2,
+	contact: StringName,
+	succeeded: bool
+) -> void:
+	_ninja_projectile.clear()
+	_ninja_special_result["position"] = impact_position
+	_ninja_special_result["contact"] = contact
+	_ninja_special_result["success"] = succeeded
+	_ninja_special_result["in_flight"] = false
+	_ninja_special_result["impact_elapsed"] = 0.0
+	_last_special_succeeded = succeeded
+	_set_feedback(
+		"표창으로 활성 블록 밀치기 성공"
+		if succeeded
+		else "표창이 막혔거나 활성 블록 공간 없음"
+	)
+	stats_changed.emit()
 
 
 func sprint_remaining() -> float:
@@ -1640,22 +2048,30 @@ func barrier_remaining() -> float:
 	return _barrier_remaining
 
 
+## 기본 공격 전용으로 무기 그림과 무관한 전방 한 칸·몸 전체 높이 판정 영역을 반환한다.
 func water_remaining() -> float:
 	return _water_remaining
+
+
+func chef_meat_remaining() -> float:
+	return _chef_meat_remaining
+
+
+func chef_meat_guard_available() -> bool:
+	return _chef_meat_guard_available
 
 
 ## 상황: 테스트/비용 helper가 임의 hold 초의 이론적 펀치 단계를 구할 때 호출한다.
 ## 순서: stage index 1부터 임계시간과 비교 → seconds가 작아지는 첫 index 반환
 ##       → 모든 임계 이상이면 전체 stage 수 3 반환.
 ## 결과: runtime 상태와 무관한 1~3 정수 단계를 반환한다.
-static func push_distance_for_charge(seconds: float) -> int:
-	for stage_index: int in range(1, PUNCH_STAGE_TIMES.size()):
-		if seconds < PUNCH_STAGE_TIMES[stage_index]:
-			return stage_index
-	return PUNCH_STAGE_TIMES.size()
+## 상황: 펀치가 활성 블록을 실제로 때렸는지 확인할 때 호출한다.
+## 순서: 몸 바로 앞의 좁은 주먹 Rect를 만들고 활성 피스 셀과 양의 면적 교차를 검사한다.
+## 결과: 블록이 멀리 있으면 false이며, 몸에 닿은 전방 블록만 true다.
+func _punch_hits_active_piece() -> bool:
+	return _basic_attack_target_cell() != null
 
 
-## 기본 공격 전용으로 무기 그림과 무관한 전방 한 칸·몸 전체 높이 판정 영역을 반환한다.
 func _punch_hitbox_rect() -> Rect2:
 	return _forward_attack_rect(BASIC_ATTACK_FORWARD_REACH)
 
@@ -1671,34 +2087,26 @@ func _forward_attack_rect(forward_reach: float) -> Rect2:
 	)
 
 
-## 기본 공격 영역과 겹치는 활성/고정 블록 중 수평으로 가장 가깝고 몸 중심에 가까운 셀을 고른다.
 func _basic_attack_target_cell() -> Variant:
-	var attack_rect: Rect2 = _punch_hitbox_rect()
 	var active_cells: Array[Vector2i] = controller.active_board_cells()
-	var best_cell: Variant = null
-	var best_horizontal_distance: float = INF
-	var best_vertical_distance: float = INF
-	for y: int in range(MainBoardModel.HEIGHT):
-		for x: int in range(MainBoardModel.WIDTH):
-			var cell := Vector2i(x, y)
-			if cell not in active_cells and controller.board.get_cell(cell) == MainBoardModel.EMPTY:
-				continue
-			var cell_rect: Rect2 = _board_cell_rect(cell)
-			if not _rects_overlap_with_area(attack_rect, cell_rect):
-				continue
-			var horizontal_distance: float = absf(cell_rect.get_center().x - position.x)
-			var vertical_distance: float = absf(cell_rect.get_center().y - position.y)
-			if (
-				horizontal_distance < best_horizontal_distance
-				or (
-					is_equal_approx(horizontal_distance, best_horizontal_distance)
-					and vertical_distance < best_vertical_distance
-				)
-			):
-				best_cell = cell
-				best_horizontal_distance = horizontal_distance
-				best_vertical_distance = vertical_distance
-	return best_cell
+	for target_cell: Vector2i in _basic_attack_target_cells():
+		if target_cell in active_cells:
+			return target_cell
+	return null
+
+
+## X attacks only the two board cells immediately in front of the character's
+## lower occupied cell.  This discrete rule is intentionally independent from
+## the taller rectangular boss hitbox, whose behaviour remains unchanged.
+func _basic_attack_target_cells() -> Array[Vector2i]:
+	var lower_body_cell: Vector2i = _cell_below_feet() + Vector2i.UP
+	var front_x: int = lower_body_cell.x + signi(facing)
+	var target_cells: Array[Vector2i] = []
+	for y_offset: int in range(2):
+		var target_cell := Vector2i(front_x, lower_body_cell.y - y_offset)
+		if controller.board.is_inside(target_cell):
+			target_cells.append(target_cell)
+	return target_cells
 
 
 ## 상황: rotation kick이 활성 피스와 충분히 가까운지 검사할 때 호출한다.
@@ -1843,11 +2251,51 @@ func _front_board_cell() -> Vector2i:
 	)
 
 
+## Boxer guard break checks the two cells in front of the fixed gameplay
+## collider. The lower movable cell wins; the upper cell is the fallback.
+func _boxer_special_target_cell() -> Variant:
+	var active_cells: Array[Vector2i] = controller.active_board_cells()
+	for candidate: Vector2i in _boxer_special_target_cells():
+		if candidate in active_cells:
+			return candidate
+		if controller.board.get_cell(candidate) == MainBoardModel.EMPTY:
+			continue
+		var above: Vector2i = candidate + Vector2i.UP
+		if (
+			controller.board.is_inside(above)
+			and controller.board.get_cell(above) != MainBoardModel.EMPTY
+		):
+			continue
+		return candidate
+	return null
+
+
+func _boxer_special_target_cells() -> Array[Vector2i]:
+	var collider_rect: Rect2 = _character_collider_rect()
+	var front_x: int = floori(collider_rect.get_center().x / CELL_SIZE) + signi(facing)
+	var lower_y: int = clampi(
+		floori((collider_rect.end.y - 0.001) / CELL_SIZE) + MainBoardModel.HIDDEN_ROWS,
+		0,
+		MainBoardModel.HEIGHT - 1
+	)
+	var candidates: Array[Vector2i] = []
+	for y_offset: int in range(2):
+		var candidate := Vector2i(front_x, lower_y - y_offset)
+		if controller.board.is_inside(candidate):
+			candidates.append(candidate)
+	return candidates
+
+
 func _cell_below_feet() -> Vector2i:
+	var collider_bottom: float = (
+		position.y
+		+ CHARACTER_COLLIDER_OFFSET_Y
+		+ CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
 	return Vector2i(
 		clampi(floori(position.x / CELL_SIZE), 0, MainBoardModel.WIDTH - 1),
 		clampi(
-			floori((position.y + CHARACTER_HEIGHT * 0.5 + 1.0) / CELL_SIZE)
+			floori((collider_bottom + 1.0) / CELL_SIZE)
 			+ MainBoardModel.HIDDEN_ROWS,
 			0,
 			MainBoardModel.HEIGHT - 1
@@ -1856,31 +2304,48 @@ func _cell_below_feet() -> Vector2i:
 
 
 func _barrier_cells() -> Array[Vector2i]:
-	if _barrier_direction == 0:
+	return _barrier_cells_at(position, _barrier_direction)
+
+
+func _barrier_cells_at(cast_position: Vector2, direction: int) -> Array[Vector2i]:
+	if direction == 0:
 		return []
-	var foot_cell: Vector2i = _cell_below_feet() + Vector2i.UP
-	var front_x: int = foot_cell.x + _barrier_direction
+	var collider_center := cast_position + Vector2(0.0, CHARACTER_COLLIDER_OFFSET_Y)
+	var collider_bottom: float = collider_center.y + CHARACTER_COLLIDER_HEIGHT * 0.5
+	var lower_row: int = clampi(
+		floori((collider_bottom - 0.001) / CELL_SIZE) + MainBoardModel.HIDDEN_ROWS,
+		0,
+		MainBoardModel.HEIGHT - 1
+	)
+	var front_x: int = floori(collider_center.x / CELL_SIZE) + signi(direction)
 	var cells: Array[Vector2i] = []
 	for y_offset: int in range(3):
-		var cell := Vector2i(front_x, foot_cell.y - y_offset)
+		var cell := Vector2i(front_x, lower_row - y_offset)
 		if controller.board.is_inside(cell):
 			cells.append(cell)
 	return cells
 
 
-func _cells_overlap_fixed_or_active(cells: Array[Vector2i]) -> bool:
+func _available_barrier_cells() -> Array[Vector2i]:
+	return _available_barrier_cells_from(_barrier_cells())
+
+
+func _available_barrier_cells_from(candidate_cells: Array[Vector2i]) -> Array[Vector2i]:
 	var active_cells: Array[Vector2i] = controller.active_board_cells()
-	for cell: Vector2i in cells:
-		if controller.board.get_cell(cell) != MainBoardModel.EMPTY or cell in active_cells:
-			return true
-	return false
+	var available: Array[Vector2i] = []
+	for cell: Vector2i in candidate_cells:
+		if controller.board.get_cell(cell) != MainBoardModel.EMPTY:
+			continue
+		if cell in active_cells:
+			continue
+		available.append(cell)
+	return available
 
 
 func _sync_barrier_cells() -> void:
 	if _barrier_remaining <= 0.0:
 		controller.clear_transient_blockers()
-		return
-	controller.set_transient_blockers(_barrier_cells())
+	return
 
 
 func _danger_is_from_direction(direction: int) -> bool:
@@ -1916,10 +2381,7 @@ func _update_timers(delta: float) -> void:
 	_sprint_remaining = maxf(0.0, _sprint_remaining - delta)
 	_attack_cooldown_remaining = maxf(0.0, _attack_cooldown_remaining - delta)
 	_attack_animation_remaining = maxf(0.0, _attack_animation_remaining - delta)
-	var special_animation_before: float = _special_animation_remaining
 	_special_animation_remaining = maxf(0.0, _special_animation_remaining - delta)
-	if special_animation_before > 0.0 and _special_animation_remaining <= 0.0:
-		_ninja_special_result.clear()
 	var pending_before: float = _pending_special_remaining
 	_pending_special_remaining = maxf(0.0, _pending_special_remaining - delta)
 	if pending_before > 0.0 and _pending_special_remaining <= 0.0 and not _pending_special_id.is_empty():
@@ -1929,13 +2391,13 @@ func _update_timers(delta: float) -> void:
 	if barrier_before > 0.0 and _barrier_remaining <= 0.0:
 		controller.clear_transient_blockers()
 		_barrier_direction = 0
-	_boxer_guard_remaining = maxf(0.0, _boxer_guard_remaining - delta)
-	if _boxer_guard_remaining <= 0.0:
-		_boxer_guard_direction = 0
 	var water_before: float = _water_remaining
 	_water_remaining = maxf(0.0, _water_remaining - delta)
 	if water_before > 0.0 and _water_remaining <= 0.0:
 		controller.clear_water_path()
+	_chef_meat_remaining = maxf(0.0, _chef_meat_remaining - delta)
+	if _chef_meat_remaining <= 0.0:
+		_chef_meat_guard_available = false
 	_invulnerability_remaining = maxf(0.0, _invulnerability_remaining - delta)
 	_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
 	_coyote_remaining = maxf(0.0, _coyote_remaining - delta)
@@ -1949,7 +2411,7 @@ func _update_timers(delta: float) -> void:
 
 
 ## 상황: gameplay 처리가 끝난 활성 physics frame마다 sprite를 최신 상태로 만들 때 호출한다.
-## 순서: 블록 플립 spin → 명상/charge 색 → 피해 blink → frame animation.
+## 순서: 블록 플립 spin → 명상 색 → 피해 blink → frame animation.
 ## 결과: 서로 다른 시각 효과가 고정된 순서로 합성된다.
 func _update_visual_state(delta: float) -> void:
 	_update_spin_visual(delta)
@@ -1988,23 +2450,13 @@ func _seed_post_spin_animation() -> void:
 		_animation_state = ANIMATION_DATA.IDLE
 		_animation_time = 0.0
 	else:
-		var jump_frame_index: int
-		if velocity.y < -POST_SPIN_APEX_SPEED:
-			jump_frame_index = 4
-		elif velocity.y > POST_SPIN_APEX_SPEED:
-			jump_frame_index = 6
-		else:
-			jump_frame_index = 5
 		_animation_state = ANIMATION_DATA.JUMP
-		_animation_time = (
-			float(jump_frame_index)
-			* float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.JUMP])
-		)
+		_set_jump_animation_time_from_velocity()
 	_post_spin_animation_seeded = true
 
 
-## 상황: 현재 매달림/명상/punch charge 상태를 색으로 표시할 때 호출한다.
-## 순서: 매달림이면 stamina 기반 적색 점멸 → 명상이면 청색 pulse → 아니면 charge glow.
+## 상황: 현재 매달림/명상 상태를 색으로 표시할 때 호출한다.
+## 순서: 매달림이면 stamina 기반 적색 점멸 → 명상이면 청색 pulse → 아니면 기본색.
 ## 결과: sprite.modulate가 현재 상태의 우선 시각 효과를 반영한다.
 func _update_sprite_modulation() -> void:
 	if is_hanging:
@@ -2036,16 +2488,8 @@ func _update_sprite_modulation() -> void:
 			1.0
 		)
 	else:
-		var charge_glow: float = charge_ratio() # 0~1 punch hold 진행률.
-		sprite.modulate = Color(
-			1.0,
-			1.0 - charge_glow * 0.15,
-			1.0 - charge_glow * 0.35,
-			1.0
-		)
-
-
-## 상황: 피해 무적시간을 캐릭터 깜빡임으로 표현할 때 호출한다.
+		sprite.modulate = Color.WHITE
+	## 상황: 피해 무적시간을 캐릭터 깜빡임으로 표현할 때 호출한다.
 ## 순서: 무적 timer>0이면 `int(timer*12)%2`로 visible 토글 → 아니면 true.
 ## 결과: 무적 중에만 깜빡이고 종료 frame에는 반드시 다시 보인다.
 func _update_damage_blink() -> void:
@@ -2078,9 +2522,75 @@ func _advance_character_animation(delta: float) -> void:
 	if next_animation_state != _animation_state:
 		_animation_state = next_animation_state
 		_animation_time = 0.0
+	if next_animation_state == ANIMATION_DATA.HANG:
+		# Movement runs before rendering and records the accepted climb input.
+		# `_finish_hanging_frame()` clears velocity, so neither the
+		# cleared velocity nor a second raw-input read may drive this animation.
+		_advance_hang_animation_time(delta, _hang_animation_direction)
+	elif next_animation_state == ANIMATION_DATA.JUMP:
+		# Airborne art follows actual vertical motion.  A long drop therefore
+		# holds the extended terminal-fall frame instead of advancing into a
+		# grounded crouch or standing pose while the body is still in the air.
+		_set_jump_animation_time_from_velocity()
+	elif (
+		next_animation_state == ANIMATION_DATA.IDLE
+		and absf(velocity.x) <= IDLE_ANIMATION_SPEED_EPSILON
+	):
+		# 대기/이동은 같은 4프레임 계약을 유지하지만 정지 중에는
+		# 걷기 포즈를 순환하지 않아 캐릭터가 움찔거리지 않게 한다.
+		_animation_time = 0.0
 	else:
 		_animation_time += delta
 	_apply_animation_frame()
+
+
+## Map actual vertical speed to takeoff, rise, apex and four falling poses.
+## The final pose is safe to hold for an arbitrarily long fall.
+func _set_jump_animation_time_from_velocity() -> void:
+	var frame_index: int = _jump_animation_frame_for_velocity(velocity.y)
+	_animation_time = (
+		float(frame_index)
+		* float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.JUMP])
+		+ 0.001
+	)
+
+
+func _jump_animation_frame_for_velocity(vertical_speed: float) -> int:
+	var apex_speed: float = POST_SPIN_APEX_SPEED
+	if vertical_speed < -apex_speed:
+		var launch_speed: float = maxf(absf(current_jump_velocity()), 1.0)
+		var rise_ratio: float = clampf(-vertical_speed / launch_speed, 0.0, 1.0)
+		if rise_ratio > 0.66:
+			return 0
+		if rise_ratio > 0.33:
+			return 1
+		return 2
+	if vertical_speed <= apex_speed:
+		return 3
+	var fall_frame_step: float = maxf(GRAVITY * 0.14, 1.0)
+	return clampi(
+		4 + floori((vertical_speed - apex_speed) / fall_frame_step),
+		4,
+		7
+	)
+
+
+## Keep still hanging visually planted, and tie the foot cycle to climb intent.
+## Up plays the selected skin's climb poses forward; down plays the cycle in reverse.
+func _advance_hang_animation_time(delta: float, climb_direction: float) -> void:
+	if is_zero_approx(climb_direction):
+		_animation_time = 0.0
+		return
+	var frame_duration: float = float(
+		ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.HANG]
+	)
+	var cycle_duration: float = frame_duration * float(
+		ANIMATION_DATA.frame_count_for(ANIMATION_DATA.HANG, character_id)
+	)
+	if climb_direction < 0.0:
+		_animation_time = fposmod(_animation_time + delta, cycle_duration)
+	else:
+		_animation_time = fposmod(_animation_time - delta, cycle_duration)
 
 
 ## 상황: 겹칠 수 있는 gameplay flag 중 표시할 animation 하나를 고를 때 호출한다.
@@ -2114,6 +2624,16 @@ func _apply_animation_frame() -> void:
 	sprite.texture = ANIMATION_DATA.texture_for(_animation_state, character_id)
 	sprite.region_enabled = true
 	sprite.region_rect = region
+	if ANIMATION_DATA.uses_fixed_geometry(character_id):
+		sprite.scale = ANIMATION_DATA.fixed_scale_for(character_id)
+		var fixed_position: Vector2 = (
+			ANIMATION_DATA.display_offset_for(character_id)
+			+ MainLayout.BOARD_VISUAL_OFFSET
+			+ ANIMATION_DATA.fixed_offset_for(character_id)
+		)
+		fixed_position.x += _standing_wall_visual_offset_x(region)
+		sprite.position = fixed_position
+		return
 	var frame_bounds: Rect2 = _frame_alpha_bounds(region)
 	var visible_height: float = ANIMATION_DATA.visible_height_for(
 		_animation_state,
@@ -2129,6 +2649,7 @@ func _apply_animation_frame() -> void:
 	sprite.scale = Vector2.ONE * uniform_scale
 	sprite.position = (
 		ANIMATION_DATA.display_offset_for(character_id)
+		+ MainLayout.BOARD_VISUAL_OFFSET
 		+ Vector2(
 			-(visible_center_x - source_center.x) * uniform_scale,
 			ground_anchor_y - (visible_bottom - source_center.y) * uniform_scale
@@ -2139,6 +2660,95 @@ func _apply_animation_frame() -> void:
 ## 상황: 현재 atlas frame 안에서 실제로 보이는 픽셀 영역이 필요할 때 호출한다.
 ## 순서: 캐시 확인 → atlas Image 재사용 → alpha 경계값 이상인 픽셀의 최소 Rect 계산.
 ## 결과: 투명 공백을 제외한 source-local 경계를 반환하고 같은 frame은 다시 검색하지 않는다.
+## Align only standing art with a wall already touching the fixed collider.
+## The CharacterBody2D and its 42x90 collider never move for this correction.
+func _standing_wall_visual_offset_x(region: Rect2) -> float:
+	if _animation_state != ANIMATION_DATA.IDLE or is_hanging or not is_on_floor():
+		return 0.0
+	var wall_direction: int = _standing_wall_contact_direction()
+	if wall_direction == 0:
+		return 0.0
+
+	var frame_bounds: Rect2 = _frame_alpha_bounds(region)
+	var displayed_wall_edge: float
+	if wall_direction > 0:
+		displayed_wall_edge = (
+			ANIMATION_DATA.FRAME_SIZE - frame_bounds.position.x
+			if sprite.flip_h
+			else frame_bounds.end.x
+		) - ANIMATION_DATA.FRAME_SIZE * 0.5
+	else:
+		displayed_wall_edge = (
+			ANIMATION_DATA.FRAME_SIZE - frame_bounds.end.x
+			if sprite.flip_h
+			else frame_bounds.position.x
+		) - ANIMATION_DATA.FRAME_SIZE * 0.5
+
+	var visual_inset: float = _standing_wall_visual_inset(wall_direction)
+	var target_wall_edge: float = float(wall_direction) * (
+		CHARACTER_COLLIDER_WIDTH * 0.5 + visual_inset
+	)
+	return target_wall_edge - displayed_wall_edge
+
+
+## Use the full body height instead of the hang rays: while standing, the ray
+## origin can lie exactly on a seam between two adjacent block collision boxes.
+func _standing_wall_contact_direction() -> int:
+	var collider_rect: Rect2 = _character_collider_rect()
+	var board_width: float = float(MainBoardModel.WIDTH) * CELL_SIZE
+	var touching_left: bool = (
+		absf(collider_rect.position.x) <= STANDING_WALL_CONTACT_TOLERANCE
+		or _standing_collider_touches_block_face(collider_rect, -1)
+	)
+	var touching_right: bool = (
+		absf(collider_rect.end.x - board_width) <= STANDING_WALL_CONTACT_TOLERANCE
+		or _standing_collider_touches_block_face(collider_rect, 1)
+	)
+	if touching_left and touching_right:
+		return facing
+	if touching_left:
+		return -1
+	if touching_right:
+		return 1
+	return 0
+
+
+func _standing_wall_visual_inset(direction: int) -> float:
+	var collider_rect: Rect2 = _character_collider_rect()
+	var board_width: float = float(MainBoardModel.WIDTH) * CELL_SIZE
+	if direction < 0 and absf(collider_rect.position.x) <= STANDING_WALL_CONTACT_TOLERANCE:
+		return 0.0
+	if direction > 0 and absf(collider_rect.end.x - board_width) <= STANDING_WALL_CONTACT_TOLERANCE:
+		return 0.0
+	return BLOCK_VISUAL_INSET
+
+
+func _standing_collider_touches_block_face(collider_rect: Rect2, direction: int) -> bool:
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			if _standing_rect_touches_face(collider_rect, _board_cell_rect(Vector2i(x, y)), direction):
+				return true
+	for local_cell: Vector2i in controller.active_local_cells():
+		var active_cell: Vector2i = controller.active_origin + local_cell
+		if _standing_rect_touches_face(collider_rect, _board_cell_rect(active_cell), direction):
+			return true
+	return false
+
+
+func _standing_rect_touches_face(body_rect: Rect2, block_rect: Rect2, direction: int) -> bool:
+	var vertical_overlap: float = (
+		minf(body_rect.end.y, block_rect.end.y)
+		- maxf(body_rect.position.y, block_rect.position.y)
+	)
+	if vertical_overlap <= STANDING_WALL_CONTACT_TOLERANCE:
+		return false
+	var body_face_x: float = body_rect.end.x if direction > 0 else body_rect.position.x
+	var block_face_x: float = block_rect.position.x if direction > 0 else block_rect.end.x
+	return absf(body_face_x - block_face_x) <= STANDING_WALL_CONTACT_TOLERANCE
+
+
 func _frame_alpha_bounds(region: Rect2) -> Rect2:
 	var cache_key: String = "%s:%d:%d:%d:%d" % [
 		character_id,
@@ -2184,6 +2794,12 @@ func _frame_alpha_bounds(region: Rect2) -> Rect2:
 	return bounds
 
 
+## 상황: sprite 표시와 픽셀 마스크 역매핑이 같은 화면 크기를 사용해야 할 때 호출한다.
+## 결과: 블록 플립은 96×96px, 공격은 86.4×96px, 그 외 상태는 60×96px다.
+func _animation_target_size(_animation_state_value: String) -> Vector2:
+	return ANIMATION_DATA.display_size_for(character_id)
+
+
 ## 상황: 행동 성공/실패를 사용자에게 짧게 알려야 할 때 호출한다.
 ## 순서: text 대입 → 표시 timer=1.4초 → feedback_changed emit.
 ## 결과: View가 즉시 표시하고 `_update_timers()`가 나중에 자동 삭제한다.
@@ -2210,7 +2826,7 @@ func _play_sfx(stream: AudioStream) -> void:
 	_sfx_player.play()
 
 
-## 상황: 차지 단계·줄 삭제처럼 주 효과음과 겹쳐야 하는 보조 cue를 재생할 때 호출된다.
+## 상황: 줄 삭제처럼 주 효과음과 겹쳐야 하는 보조 cue를 재생할 때 호출된다.
 ## 결과: 별도 cue player를 사용하므로 `_play_sfx()` 재생을 끊지 않는다.
 func _play_sfx_cue(stream: AudioStream) -> void:
 	_sfx_cue_player.stream = stream
@@ -2243,50 +2859,15 @@ func _restart_meditation_loop() -> void:
 		_meditation_loop_player.play()
 
 
-## 상황: 펀치 hold가 차지 임계값을 넘어 지속음을 시작할 때 호출된다.
-## 결과: 차지 loop stream을 전용 player에 지정하고 반복 재생한다.
-func _start_charge_loop() -> void:
-	_charge_loop_player.stream = SFX_CHARGE_LOOP
-	_charge_loop_player.play()
-
-
-## 상황: 한 punch sequence에서 최초로 0.4초 차지 임계값을 넘었을 때 호출된다.
-## 순서: 중복 시작 guard → flag 설정 → 시작 원샷 → 지속 loop 시작.
-## 결과: 같은 hold 동안 차지 시작음은 정확히 한 번만 들린다.
-func _start_charge_audio() -> void:
-	if _charge_audio_started:
-		return
-	_charge_audio_started = true
-	_play_sfx(SFX_CHARGE_START)
-	_start_charge_loop()
-
-
-## 상황: X release·취소·피해로 차지 지속음을 종료할 때 호출된다.
-## 순서: loop stop → 요청된 경우 release 원샷 재생.
-## 결과: `play_release`로 정상 종료 피드백과 조용한 강제 정리를 구분한다.
-func _stop_charge_loop(play_release: bool = false) -> void:
-	_charge_loop_player.stop()
-	if play_release:
-		_play_sfx(SFX_CHARGE_RELEASE)
-
-
-## 상황: pause 해제 후 X hold 상태가 유지 중이면 차지 loop를 재개할 때 호출된다.
-## 결과: `_charging`이 true일 때만 전용 player를 다시 재생한다.
-func _restart_charge_loop() -> void:
-	if _charging:
-		_charge_loop_player.play()
-
-
 ## 상황: 캐릭터 최초 준비 또는 GameController.reset_game()의 restart signal에서 호출한다.
 ## 순서: 공개 stats/모든 timer·flag 초기화 → 시작 position/velocity
 ##       → sprite transform/color/visibility → 첫 animation frame → 두 signal.
-## 결과: 이전 게임의 hang body, charge, 무적, animation이 남지 않는 새 캐릭터가 된다.
+## 결과: 이전 게임의 hang body, 무적, animation이 남지 않는 새 캐릭터가 된다.
 func _reset_character() -> void:
 	if _meditation_loop_player:
 		_stop_meditation_loop()
-		_stop_charge_loop()
 	_cancel_character_skill_effects()
-	lives = MAX_LIVES
+	lives = get_max_lives()
 	stamina = MAX_STAMINA
 	facing = 1
 	is_hanging = false
@@ -2296,12 +2877,9 @@ func _reset_character() -> void:
 	is_bound = false
 	binding_timer = 0.0
 	controller.set_meditation_active(false)
-	charge_time = 0.0
 	rotation_cooldown_remaining = 0.0
 	special_cooldown_remaining = 0.0
 	feedback_text = ""
-	_charging = false
-	_charge_audio_started = false
 	_invulnerability_remaining = 0.0
 	_feedback_remaining = 0.0
 	_spin_remaining = 0.0
@@ -2314,6 +2892,12 @@ func _reset_character() -> void:
 	_hang_regrab_remaining = 0.0
 	_hang_jump_grace_remaining = 0.0
 	_hang_jump_facing = 1
+	_hang_animation_direction = 0.0
+	_hang_corner_climb_active = false
+	_hang_corner_climb_start_global = Vector2.ZERO
+	_hang_corner_climb_target_global = Vector2.ZERO
+	_hang_corner_climb_progress = 0.0
+	_hang_corner_climb_duration = 0.0
 	_wall_jump_control_remaining = 0.0
 	_wall_jump_wall_facing = 1
 	_variable_jump_active = false

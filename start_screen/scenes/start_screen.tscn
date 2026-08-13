@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://djdbcwah3x75q"]
 
-[ext_resource type="Script" path="res://start_screen/scripts/start_screen.gd" id="1_start_screen"]
+[ext_resource type="Script" uid="uid://cvjg14srayjoy" path="res://start_screen/scripts/start_screen.gd" id="1_start_screen"]
 
-[node name="StartScreen" type="Control"]
+[node name="StartScreen" type="Control" unique_id=1227273148]
 texture_filter = 1
 layout_mode = 3
 anchors_preset = 15

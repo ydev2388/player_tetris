@@ -30,11 +30,28 @@ const CYAN: Color = Color("#2c8fd6")
 const ORANGE: Color = Color("#e47719")
 const PURPLE: Color = Color("#6f57c9")
 const DANGER: Color = Color("#d9485f")
+const SHOP_GOLD: Color = Color("#d8b23a")
+const _CHARACTER_SELECT_HINT: String = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
+const _CHARACTER_INSELECT_MODULATE: Color = Color(0.82, 0.85, 0.90, 0.88)
+const _SHOP_CARD_COLUMNS: int = 4
+const _SHOP_CARD_SIZE: Vector2 = Vector2(160.0, 158.0)
+const _SHOP_CARD_GAP: float = 16.0
+const _SHOP_GRID_WIDTH: float = 760.0
+const _SHOP_ICON_DIR: String = "res://assets/sprites/shop/"
+const _SHOP_ICON_FILES: Array[String] = [
+	"attack_speed.png",
+	"movement_speed.png",
+	"jump.png",
+	"stamina.png",
+	"special_attack.png",
+	"health.png",
+]
 
 enum Screen {
 	MAIN,
 	STAGE_SELECT,
 	CHARACTER,
+	SHOP,
 	TUTORIAL,
 	OPTIONS,
 	KEY_CUSTOM,
@@ -58,11 +75,24 @@ var _main_buttons: Array[Button] = []
 var _stage_buttons: Array[Button] = []
 var _stage_labels: Array[Label] = []
 var _stage_currency_label: Label
+var _shop_currency_label: Label
+var _shop_cards: Array[Button] = []
+var _shop_level_labels: Array[Label] = []
+var _shop_icon_textures: Array = []
+var _selected_shop_index: int = 0
+var _shop_detail_name: Label
+var _shop_detail_description: Label
+var _shop_detail_effect: Label
+var _shop_detail_cost: Label
+var _shop_reset_button: Button
+var _shop_back_button: Button
 var _character_buttons: Array[Button] = []
 var _character_confirm_button: Button
 var _character_back_button: Button
 var _character_detail_label: Label
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
+var _character_card_selected_style: StyleBoxFlat
+var _character_card_normal_style: StyleBoxFlat
 var _character_window_start: int = 0
 var _character_prev_button: Button
 var _character_next_button: Button
@@ -92,6 +122,8 @@ var _capture_slot: int = -1
 
 var _message_overlay: Control
 var _message_label: Label
+var _message_okay_button: Button
+var _message_previous_focus: Control
 var _stage_result_overlay: Control
 var _stage_result_label: Label
 var _stage_result_reward_label: Label
@@ -99,6 +131,9 @@ var _stage_result_button: Button
 var _progress_reset_overlay: Control
 var _progress_reset_yes_button: Button
 var _progress_reset_no_button: Button
+var _passive_reset_overlay: Control
+var _passive_reset_yes_button: Button
+var _passive_reset_no_button: Button
 
 
 func _ready() -> void:
@@ -113,6 +148,7 @@ func _ready() -> void:
 	settings.settings_error.connect(_show_message)
 	settings.bindings_changed.connect(_refresh_key_buttons)
 	settings.progress_changed.connect(_refresh_stage_select)
+	settings.progress_changed.connect(_refresh_shop)
 	add_child(settings)
 	_select_sfx_player = AudioStreamPlayer.new()
 	_select_sfx_player.bus = &"SFX"
@@ -163,6 +199,11 @@ func show_stage_select() -> void:
 func show_character_select() -> void:
 	_refresh_character_selection()
 	_show_screen(Screen.CHARACTER)
+
+
+func show_shop() -> void:
+	_refresh_shop()
+	_show_screen(Screen.SHOP)
 
 
 func show_tutorial() -> void:
@@ -224,6 +265,7 @@ func start_game(stage_number: int = -1) -> bool:
 	) as MainCharacterController
 	if selected_character != null:
 		selected_character.set_character_id(_selected_character_id)
+		selected_character.set_passive_levels(settings.get_passive_levels())
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
@@ -271,6 +313,8 @@ func _input(event: InputEvent) -> void:
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_progress_reset_prompt_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_passive_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_character_select_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -403,6 +447,11 @@ func _handle_menu_confirm_input(key_event: InputEventKey) -> bool:
 	if key_code != KEY_Z:
 		return false
 	var focused_button: Button = get_viewport().gui_get_focus_owner() as Button
+	if current_screen == Screen.SHOP:
+		var shop_index: int = _shop_cards.find(focused_button)
+		if shop_index >= 0:
+			_upgrade_passive(StartScreenSettings.PASSIVE_IDS[shop_index])
+			return true
 	if focused_button != null:
 		focused_button.pressed.emit()
 	return true
@@ -441,15 +490,50 @@ func _handle_progress_reset_prompt_input(key_event: InputEventKey) -> bool:
 	return false
 
 
+func _handle_passive_reset_prompt_input(key_event: InputEventKey) -> bool:
+	if _passive_reset_overlay == null or not _passive_reset_overlay.visible:
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code == KEY_LEFT or key_code == KEY_RIGHT:
+		if _passive_reset_yes_button.has_focus():
+			_passive_reset_no_button.grab_focus()
+		else:
+			_passive_reset_yes_button.grab_focus()
+		return true
+	if key_code == KEY_Z:
+		if _passive_reset_yes_button.has_focus():
+			_confirm_passive_reset()
+		else:
+			_hide_passive_reset_prompt()
+		return true
+	if _is_escape_key(key_event) or _is_x_key(key_event):
+		_hide_passive_reset_prompt()
+		return true
+	return false
+
+
 func _show_progress_reset_prompt() -> void:
 	_progress_reset_overlay.visible = true
 	_progress_reset_overlay.move_to_front()
 	_progress_reset_no_button.grab_focus.call_deferred()
 
 
+func _show_passive_reset_prompt() -> void:
+	_passive_reset_overlay.visible = true
+	_passive_reset_overlay.move_to_front()
+	_passive_reset_no_button.grab_focus.call_deferred()
+
+
 func _hide_progress_reset_prompt() -> void:
 	_progress_reset_overlay.visible = false
 	_options_first_button.grab_focus.call_deferred()
+
+
+func _hide_passive_reset_prompt() -> void:
+	_passive_reset_overlay.visible = false
+	_shop_reset_button.grab_focus.call_deferred()
 
 
 func _confirm_progress_reset() -> void:
@@ -458,6 +542,14 @@ func _confirm_progress_reset() -> void:
 		_show_message("진행 데이터를 삭제하지 못했습니다: %s" % error_string(reset_error))
 		return
 	_hide_progress_reset_prompt()
+
+
+func _confirm_passive_reset() -> void:
+	var result: Dictionary = settings.reset_passive_upgrades()
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "패시브를 초기화할 수 없습니다.")))
+		return
+	_hide_passive_reset_prompt()
 
 
 func _handle_back_navigation(key_event: InputEventKey) -> bool:
@@ -470,6 +562,8 @@ func _handle_back_navigation(key_event: InputEventKey) -> bool:
 		Screen.STAGE_SELECT:
 			show_main_menu()
 		Screen.CHARACTER:
+			show_stage_select()
+		Screen.SHOP:
 			show_stage_select()
 		Screen.TUTORIAL, Screen.OPTIONS:
 			show_main_menu()
@@ -490,6 +584,7 @@ func _build_interface() -> void:
 	_build_main_screen()
 	_build_stage_select_screen()
 	_build_character_screen()
+	_build_shop_screen()
 	_build_tutorial_screen()
 	_build_options_screen()
 	_build_key_screen()
@@ -497,6 +592,7 @@ func _build_interface() -> void:
 	_build_capture_overlay()
 	_build_message_overlay()
 	_build_progress_reset_overlay()
+	_build_passive_reset_overlay()
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 
@@ -591,7 +687,7 @@ func _build_stage_select_screen() -> void:
 	var character_button: Button = _create_button(
 		screen,
 		"캐릭터 선택",
-		Rect2(730.0, 104.0, 170.0, 46.0),
+		Rect2(700.0, 650.0, 200.0, 48.0),
 		PURPLE,
 		14
 	)
@@ -638,6 +734,17 @@ func _build_stage_select_screen() -> void:
 		stage_button.focus_entered.connect(_play_select_sfx)
 		_stage_buttons.append(stage_button)
 
+	var shop_button: Button = _create_button(
+		screen,
+		"상점",
+		Rect2(70.0, 650.0, 200.0, 48.0),
+		ORANGE,
+		14
+	)
+	shop_button.name = "ShopButton"
+	shop_button.pressed.connect(show_shop)
+	shop_button.focus_entered.connect(_play_select_sfx)
+
 	var back_button: Button = _create_button(
 		screen,
 		"메인으로",
@@ -647,6 +754,205 @@ func _build_stage_select_screen() -> void:
 	)
 	back_button.pressed.connect(show_main_menu)
 	_refresh_stage_select()
+
+
+func _build_shop_screen() -> void:
+	var screen: Control = _create_screen("ShopScreen", Screen.SHOP)
+	_create_label(
+		screen,
+		"상점 선택",
+		Rect2(0.0, 16.0, 960.0, 40.0),
+		30,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_shop_currency_label = _create_label(
+		screen,
+		"별 0개",
+		Rect2(700.0, 26.0, 220.0, 32.0),
+		18,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+	_create_panel(screen, Rect2(60.0, 64.0, 840.0, 44.0), PANEL, SHOP_GOLD, 8)
+	_create_label(
+		screen,
+		"전역 패시브 강화",
+		Rect2(60.0, 70.0, 840.0, 32.0),
+		19,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		screen,
+		"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.",
+		Rect2(180.0, 108.0, 600.0, 22.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+
+	_shop_icon_textures.clear()
+	for file_name: String in _SHOP_ICON_FILES:
+		var path: String = _SHOP_ICON_DIR + file_name
+		_shop_icon_textures.append(
+			load(path) if ResourceLoader.exists(path) else null
+		)
+
+	var grid_scroll: ScrollContainer = ScrollContainer.new()
+	grid_scroll.name = "ShopGridScroll"
+	grid_scroll.position = Vector2(100.0, 136.0)
+	grid_scroll.size = Vector2(_SHOP_GRID_WIDTH, 360.0)
+	grid_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	screen.add_child(grid_scroll)
+	var grid_content: Control = Control.new()
+	grid_content.name = "ShopGridContent"
+	grid_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grid_scroll.add_child(grid_content)
+	var row_count: int = ceili(
+		float(StartScreenSettings.PASSIVE_IDS.size()) / float(_SHOP_CARD_COLUMNS)
+	)
+	var content_height: float = 12.0 + float(row_count) * (_SHOP_CARD_SIZE.y + _SHOP_CARD_GAP)
+	grid_content.custom_minimum_size = Vector2(_SHOP_GRID_WIDTH, content_height)
+	grid_content.size = grid_content.custom_minimum_size
+
+	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
+		var col: int = index % _SHOP_CARD_COLUMNS
+		var row: int = index / _SHOP_CARD_COLUMNS
+		var row_width: float = (
+			_SHOP_CARD_SIZE.x * float(_SHOP_CARD_COLUMNS)
+			+ _SHOP_CARD_GAP * float(_SHOP_CARD_COLUMNS - 1)
+		)
+		var card_x: float = (_SHOP_GRID_WIDTH - row_width) / 2.0 + col * (_SHOP_CARD_SIZE.x + _SHOP_CARD_GAP)
+		var card_y: float = 12.0 + row * (_SHOP_CARD_SIZE.y + _SHOP_CARD_GAP)
+		var card: Button = _create_button(
+			grid_content,
+			"",
+			Rect2(card_x, card_y, _SHOP_CARD_SIZE.x, _SHOP_CARD_SIZE.y),
+			SHOP_GOLD,
+			13
+		)
+		card.name = "ShopCard_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		card.focus_entered.connect(_select_shop_item.bind(index))
+		card.focus_exited.connect(_clear_shop_card_selection.bind(index))
+		card.pressed.connect(_select_shop_item.bind(index))
+		_create_label(
+			card,
+			StartScreenSettings.PASSIVE_NAMES[index],
+			Rect2(6.0, 4.0, _SHOP_CARD_SIZE.x - 12.0, 26.0),
+			15,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		var icon_frame: Panel = _create_panel(
+			card,
+			Rect2(36.0, 32.0, 88.0, 88.0),
+			PANEL,
+			BORDER,
+			6
+		)
+		icon_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var texture: Texture2D = _shop_icon_textures[index] as Texture2D
+		if texture != null:
+			var icon: TextureRect = TextureRect.new()
+			icon.position = Vector2(8.0, 8.0)
+			icon.size = Vector2(72.0, 72.0)
+			icon.texture = texture
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon_frame.add_child(icon)
+		else:
+			var fallback: Label = _create_label(
+				icon_frame,
+				StartScreenSettings.PASSIVE_NAMES[index].left(1),
+				Rect2(0.0, 0.0, 88.0, 88.0),
+				34,
+				TEXT,
+				HORIZONTAL_ALIGNMENT_CENTER
+			)
+			fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var level_label: Label = _create_label(
+			card,
+			"",
+			Rect2(6.0, 124.0, _SHOP_CARD_SIZE.x - 12.0, 30.0),
+			15,
+			SHOP_GOLD,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		level_label.name = "PassiveLevelLabel_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		_shop_cards.append(card)
+		_shop_level_labels.append(level_label)
+		_apply_shop_card_style(card, false)
+
+	var detail_panel: Panel = _create_panel(
+		screen,
+		Rect2(40.0, 512.0, 880.0, 132.0),
+		PANEL,
+		SHOP_GOLD,
+		10
+	)
+	detail_panel.name = "ShopDetailPanel"
+	_shop_detail_name = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 12.0, 560.0, 30.0),
+		21,
+		TEXT
+	)
+	_shop_detail_description = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 43.0, 580.0, 28.0),
+		13,
+		MUTED
+	)
+	_shop_detail_effect = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 76.0, 580.0, 28.0),
+		15,
+		TEXT
+	)
+	_shop_detail_cost = _create_label(
+		detail_panel,
+		"",
+		Rect2(630.0, 30.0, 226.0, 34.0),
+		16,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+	_create_label(
+		detail_panel,
+		"선택 후 Z로 강화",
+		Rect2(630.0, 68.0, 226.0, 28.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+	_shop_back_button = _create_button(
+		screen,
+		"스테이지 선택으로",
+		Rect2(70.0, 674.0, 220.0, 48.0),
+		PURPLE,
+		14
+	)
+	_shop_back_button.name = "ShopBackButton"
+	_shop_back_button.pressed.connect(show_stage_select)
+	_shop_reset_button = _create_button(
+		screen,
+		"패시브 초기화",
+		Rect2(670.0, 674.0, 220.0, 48.0),
+		DANGER,
+		14
+	)
+	_shop_reset_button.name = "PassiveResetButton"
+	_shop_reset_button.pressed.connect(_show_passive_reset_prompt)
+	_shop_reset_button.focus_entered.connect(_play_select_sfx)
+	_set_shop_card_neighbors()
+	_refresh_shop()
 
 
 func _build_tutorial_screen() -> void:
@@ -1104,14 +1410,14 @@ func _build_message_overlay() -> void:
 		MUTED,
 		HORIZONTAL_ALIGNMENT_CENTER
 	)
-	var okay_button: Button = _create_button(
+	_message_okay_button = _create_button(
 		panel,
 		"확인",
 		Rect2(180.0, 205.0, 180.0, 44.0),
 		CYAN,
 		14
 	)
-	okay_button.pressed.connect(_hide_message)
+	_message_okay_button.pressed.connect(_hide_message)
 
 
 func _build_progress_reset_overlay() -> void:
@@ -1166,6 +1472,60 @@ func _build_progress_reset_overlay() -> void:
 		15
 	)
 	_progress_reset_no_button.pressed.connect(_hide_progress_reset_prompt)
+
+
+func _build_passive_reset_overlay() -> void:
+	_passive_reset_overlay = Control.new()
+	_passive_reset_overlay.name = "PassiveResetOverlay"
+	_passive_reset_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_passive_reset_overlay.z_as_relative = false
+	_passive_reset_overlay.z_index = 150
+	_passive_reset_overlay.visible = false
+	add_child(_passive_reset_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_passive_reset_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_passive_reset_overlay,
+		Rect2(220.0, 270.0, 520.0, 260.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		panel,
+		"패시브를 초기화할까요?",
+		Rect2(40.0, 38.0, 440.0, 38.0),
+		24,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		panel,
+		"투자한 별을 모두 돌려받습니다.",
+		Rect2(40.0, 92.0, 440.0, 32.0),
+		15,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_passive_reset_yes_button = _create_button(
+		panel,
+		"초기화",
+		Rect2(72.0, 170.0, 180.0, 46.0),
+		DANGER,
+		15
+	)
+	_passive_reset_yes_button.pressed.connect(_confirm_passive_reset)
+	_passive_reset_no_button = _create_button(
+		panel,
+		"취소",
+		Rect2(268.0, 170.0, 180.0, 46.0),
+		CYAN,
+		15
+	)
+	_passive_reset_no_button.pressed.connect(_hide_passive_reset_prompt)
 
 
 ## 상황: 게임 중 Esc로 메인 메뉴 복귀 여부를 물을 modal UI를 준비한다.
@@ -1302,16 +1662,23 @@ func _complete_stage_for_debug() -> void:
 
 func _on_survival_stage_cleared(cleared_lines: int) -> void:
 	var game_controller: MainGameController = _loaded_game_controller()
-	var stars: int = (
-		3
-		if game_controller != null and game_controller.is_boss_stage()
-		else MainGameController.stage_stars_for_lines(cleared_lines)
+	var remaining_lives: int = -1
+	var stars: int = MainGameController.stage_stars_for_lines(cleared_lines)
+	if game_controller != null and game_controller.is_boss_stage():
+		var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+		remaining_lives = loaded_character.lives if loaded_character != null else 1
+		stars = clampi(remaining_lives, 1, 3)
+	_complete_stage(stars, remaining_lives)
+
+
+func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
+	var result: Dictionary = settings.complete_stage(
+		selected_stage_number,
+		stars,
+		remaining_lives
 	)
-	_complete_stage(stars)
-
-
-func _complete_stage(stars: int) -> void:
-	var result: Dictionary = settings.complete_stage(selected_stage_number, stars)
 	if not bool(result.get("ok", false)):
 		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
 		return
@@ -1350,6 +1717,14 @@ func _show_screen(screen_type: Screen) -> void:
 		Screen.OPTIONS:
 			if _options_first_button != null:
 				_options_first_button.grab_focus.call_deferred()
+		Screen.SHOP:
+			if not _shop_cards.is_empty():
+				var index: int = clampi(
+					_selected_shop_index,
+					0,
+					_shop_cards.size() - 1
+				)
+				_shop_cards[index].grab_focus.call_deferred()
 		_:
 			pass
 
@@ -1376,6 +1751,136 @@ func _refresh_stage_select() -> void:
 		]
 		_stage_buttons[index].disabled = not unlocked
 		_stage_buttons[index].text = "블록 깨러 가기" if unlocked else "잠김"
+
+
+func _refresh_shop() -> void:
+	if settings == null or _shop_cards.is_empty():
+		return
+	_shop_currency_label.text = "별 %d개" % settings.star_currency
+	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
+		var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
+		var level: int = settings.get_passive_level(passive_id)
+		var bars: String = ""
+		for bar_index: int in range(StartScreenSettings.MAX_PASSIVE_LEVEL):
+			bars += "■" if bar_index < level else "□"
+			bars += "  "
+		_shop_level_labels[index].text = bars.trim_suffix("  ")
+	_refresh_shop_detail()
+
+
+func _refresh_shop_detail() -> void:
+	if settings == null or _shop_cards.is_empty():
+		return
+	var index: int = clampi(_selected_shop_index, 0, _shop_cards.size() - 1)
+	var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
+	var level: int = settings.get_passive_level(passive_id)
+	var cost: int = settings.get_passive_cost(passive_id)
+	var effect_percent: int = roundi(MainCharacterData.PASSIVE_EFFECT_STEP * 100.0)
+	var effect_text: String = ""
+	if passive_id == "health":
+		effect_text = "현재 효과: 목숨 +%d · Lv. %d / %d" % [
+			level,
+			level,
+			StartScreenSettings.MAX_PASSIVE_LEVEL,
+		]
+	else:
+		var effect_sign: String = "-" if index in [0, 3, 4] else "+"
+		effect_text = "현재 효과: %s%d%% · Lv. %d / %d" % [
+			effect_sign,
+			level * effect_percent,
+			level,
+			StartScreenSettings.MAX_PASSIVE_LEVEL,
+		]
+	_shop_detail_name.text = StartScreenSettings.PASSIVE_NAMES[index]
+	_shop_detail_description.text = StartScreenSettings.PASSIVE_DESCRIPTIONS[index]
+	_shop_detail_effect.text = effect_text
+	_shop_detail_cost.text = (
+		"최대 레벨"
+		if level >= StartScreenSettings.MAX_PASSIVE_LEVEL
+		else "다음 비용 ★ %d" % cost
+	)
+
+
+func _select_shop_item(index: int) -> void:
+	if _shop_cards.is_empty():
+		return
+	_selected_shop_index = clampi(index, 0, _shop_cards.size() - 1)
+	for shop_index: int in range(_shop_cards.size()):
+		_apply_shop_card_style(_shop_cards[shop_index], shop_index == _selected_shop_index)
+	_refresh_shop_detail()
+
+
+func _clear_shop_card_selection(index: int) -> void:
+	if _shop_cards.is_empty():
+		return
+	_apply_shop_card_style(_shop_cards[clampi(index, 0, _shop_cards.size() - 1)], false)
+
+
+func _apply_shop_card_style(card: Button, selected: bool) -> void:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = Color("#fff8e6") if selected else PANEL
+	style.border_color = SHOP_GOLD if selected else Color("#5b6b7d")
+	style.set_border_width_all(3 if selected else 1)
+	style.set_corner_radius_all(8)
+	card.add_theme_stylebox_override("normal", style)
+	card.add_theme_stylebox_override("hover", style)
+	card.add_theme_stylebox_override("pressed", style)
+	card.add_theme_stylebox_override("focus", style)
+
+
+func _set_shop_card_neighbors() -> void:
+	var row_count: int = ceili(
+		float(_shop_cards.size()) / float(_SHOP_CARD_COLUMNS)
+	)
+	for index: int in range(_shop_cards.size()):
+		var card: Button = _shop_cards[index]
+		var col: int = index % _SHOP_CARD_COLUMNS
+		var row: int = index / _SHOP_CARD_COLUMNS
+		var left: int = index - 1 if col > 0 else index
+		var right: int = (
+			index + 1
+			if (col < _SHOP_CARD_COLUMNS - 1 and index + 1 < _shop_cards.size())
+			else index
+		)
+		var up: int = index - _SHOP_CARD_COLUMNS if row > 0 else index
+		card.focus_neighbor_left = card.get_path_to(_shop_cards[left])
+		card.focus_neighbor_right = card.get_path_to(_shop_cards[right])
+		card.focus_neighbor_top = card.get_path_to(_shop_cards[up])
+		if row + 1 < row_count:
+			var next_row_start: int = (row + 1) * _SHOP_CARD_COLUMNS
+			var next_row_count: int = mini(
+				_SHOP_CARD_COLUMNS,
+				_shop_cards.size() - next_row_start
+			)
+			var down: int = next_row_start + mini(col, next_row_count - 1)
+			card.focus_neighbor_bottom = card.get_path_to(_shop_cards[down])
+		elif _shop_back_button != null and _shop_reset_button != null:
+			card.focus_neighbor_bottom = card.get_path_to(
+				_shop_back_button if col == 0 else _shop_reset_button
+			)
+
+	if _shop_cards.size() < 2 or _shop_back_button == null or _shop_reset_button == null:
+		return
+	_shop_back_button.focus_neighbor_left = _shop_back_button.get_path_to(_shop_back_button)
+	_shop_back_button.focus_neighbor_right = _shop_back_button.get_path_to(_shop_reset_button)
+	_shop_back_button.focus_neighbor_top = _shop_back_button.get_path_to(
+		_shop_cards[_shop_cards.size() - 2]
+	)
+	_shop_back_button.focus_neighbor_bottom = _shop_back_button.get_path_to(_shop_back_button)
+	_shop_reset_button.focus_neighbor_left = _shop_reset_button.get_path_to(_shop_back_button)
+	_shop_reset_button.focus_neighbor_right = _shop_reset_button.get_path_to(_shop_reset_button)
+	_shop_reset_button.focus_neighbor_top = _shop_reset_button.get_path_to(
+		_shop_cards[_shop_cards.size() - 1]
+	)
+	_shop_reset_button.focus_neighbor_bottom = _shop_reset_button.get_path_to(_shop_reset_button)
+
+
+func _upgrade_passive(passive_id: String) -> void:
+	if settings.get_passive_level(passive_id) >= StartScreenSettings.MAX_PASSIVE_LEVEL:
+		return
+	var result: Dictionary = settings.upgrade_passive(passive_id)
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "패시브를 강화할 수 없습니다.")))
 
 
 func _on_stage_selected(stage_number: int) -> void:
@@ -1443,13 +1948,26 @@ func _is_enter_key(key_event: InputEventKey) -> bool:
 func _show_message(message: String) -> void:
 	if _message_overlay == null:
 		return
+	if not _message_overlay.visible:
+		_message_previous_focus = get_viewport().gui_get_focus_owner()
 	_message_label.text = message
 	_message_overlay.visible = true
 	_message_overlay.move_to_front()
+	if _message_okay_button != null:
+		_message_okay_button.grab_focus.call_deferred()
 
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+	var previous_focus: Control = _message_previous_focus
+	_message_previous_focus = null
+	if (
+		previous_focus != null
+		and is_instance_valid(previous_focus)
+		and previous_focus.is_visible_in_tree()
+		and previous_focus.focus_mode != Control.FOCUS_NONE
+	):
+		previous_focus.grab_focus.call_deferred()
 
 
 ## 결과: modal을 최상단에 표시하고 게임 입력을 잠근 뒤 No에 초점을 둔다.
@@ -1620,11 +2138,7 @@ func _build_character_screen() -> void:
 			MainCharacterAnimationData.IDLE,
 			character_id
 		)
-		portrait_texture.region = MainCharacterAnimationData.visible_region_for(
-			MainCharacterAnimationData.IDLE,
-			0.0,
-			character_id
-		)
+		portrait_texture.region = PORTRAIT_SOURCE
 		var portrait := TextureRect.new()
 		portrait.position = Vector2(47.0, 12.0)
 		portrait.size = Vector2(176.0, 158.0)
@@ -1636,16 +2150,20 @@ func _build_character_screen() -> void:
 		card.add_child(portrait)
 
 		var stat_text: String = (
-			"%s  [%s]\n%s\n\n공속 %d   이동 %d   점프 %d\n스태미나 %d   특수스킬 %d\n\n무기: %s"
+			"%s  [%s]\n%s\n\n공속 %d (S %.1f초)\n이동 %d (%.0fpx/s)  점프 %d (%d칸)\n스태미나 %d   특수 %d (%.1f초)\n무기: %s"
 			% [
 				profile["display_name"],
 				profile["unlock_text"],
 				profile["role"],
 				profile["attack_speed"],
+				MainCharacterData.rotation_cooldown(character_id),
 				profile["move"],
+				MainCharacterData.move_speed(character_id) * MainLayout.DISPLAY_SCALE,
 				profile["jump"],
+				MainCharacterData.jump_cells(character_id),
 				profile["stamina"],
 				profile["special_skill"],
+				MainCharacterData.special_cooldown(character_id),
 				profile["weapon"],
 			]
 		)
@@ -1654,7 +2172,7 @@ func _build_character_screen() -> void:
 			stat_text,
 			Rect2(12.0, 168.0, 246.0, 174.0),
 			14,
-			TEXT,
+			Color.WHITE,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
 		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
@@ -1705,6 +2223,11 @@ func _build_character_screen() -> void:
 	_character_back_button = back_button
 	back_button.pressed.connect(show_stage_select)
 	back_button.focus_entered.connect(_play_select_sfx)
+	back_button.focus_neighbor_left = back_button.get_path_to(back_button)
+	back_button.focus_neighbor_right = back_button.get_path_to(back_button)
+	back_button.focus_neighbor_bottom = back_button.get_path_to(back_button)
+	_character_card_selected_style = _character_card_style(true)
+	_character_card_normal_style = _character_card_style(false)
 	_refresh_character_selection()
 
 
@@ -1758,9 +2281,11 @@ func _refresh_character_selection() -> void:
 					MainCharacterData.special_cooldown(_selected_character_id),
 				]
 			)
-		_character_detail_label.text = detail_text
+		if _character_detail_label.text != detail_text:
+			_character_detail_label.text = detail_text
 	else:
-		_character_detail_label.text = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
+		if _character_detail_label.text != _CHARACTER_SELECT_HINT:
+			_character_detail_label.text = _CHARACTER_SELECT_HINT
 	_character_confirm_button.disabled = not has_selection
 	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
 	_character_prev_button.disabled = _character_window_start <= 0
@@ -1768,9 +2293,14 @@ func _refresh_character_selection() -> void:
 	for index: int in range(_character_buttons.size()):
 		var button: Button = _character_buttons[index]
 		var visible_slot: int = index - _character_window_start
-		button.visible = visible_slot >= 0 and visible_slot < 3
-		if button.visible:
-			button.position = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+		var is_visible: bool = visible_slot >= 0 and visible_slot < 3
+		if button.visible != is_visible:
+			button.visible = is_visible
+		if not is_visible:
+			continue
+		var target_position: Vector2 = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
+		if button.position != target_position:
+			button.position = target_position
 			var left_button: Button = (
 				_character_buttons[index - 1] if visible_slot > 0 else button
 			)
@@ -1781,19 +2311,14 @@ func _refresh_character_selection() -> void:
 			button.focus_neighbor_right = button.get_path_to(right_button)
 			button.focus_neighbor_bottom = button.get_path_to(_character_back_button)
 			button.focus_neighbor_top = button.get_path_to(button)
-		var selected: bool = button.name == "Character_%s" % _selected_character_id
-		button.add_theme_stylebox_override("normal", _character_card_style(selected))
-		button.modulate = Color.WHITE if selected else Color(0.82, 0.85, 0.90, 0.88)
-		for child: Node in button.get_children():
-			if child is Label:
-				(child as Label).add_theme_color_override(
-					"font_color",
-					Color.WHITE if selected else TEXT
-				)
-	if _character_back_button != null:
-		_character_back_button.focus_neighbor_left = _character_back_button.get_path_to(_character_back_button)
-		_character_back_button.focus_neighbor_right = _character_back_button.get_path_to(_character_back_button)
-		_character_back_button.focus_neighbor_bottom = _character_back_button.get_path_to(_character_back_button)
+	for index: int in range(_character_buttons.size()):
+		var button: Button = _character_buttons[index]
+		if not button.visible:
+			continue
+		_apply_card_style(
+			button,
+			MainCharacterData.CHARACTER_ORDER[index] == _selected_character_id
+		)
 
 
 func _character_card_style(selected: bool) -> StyleBoxFlat:
@@ -1805,6 +2330,17 @@ func _character_card_style(selected: bool) -> StyleBoxFlat:
 	style.content_margin_left = 12.0
 	style.content_margin_right = 12.0
 	return style
+
+
+func _apply_card_style(button: Button, selected: bool) -> void:
+	button.add_theme_stylebox_override(
+		"normal",
+		_character_card_selected_style if selected else _character_card_normal_style
+	)
+	button.modulate = Color.WHITE if selected else _CHARACTER_INSELECT_MODULATE
+	for child: Node in button.get_children():
+		if child is Label:
+			(child as Label).modulate = Color.WHITE if selected else TEXT
 
 
 ## 상황: 게임 설명의 canvas·탐색 버튼·counter·뒤로가기를 최초 조립할 때 호출된다.

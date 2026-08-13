@@ -19,6 +19,7 @@ signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 res
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
 signal stage_cleared(cleared_lines: int)
+signal stage_failed
 signal boss_attacked # 플레이어의 직접 공격에 보스가 가시로 반격할 때 알린다.
 
 enum GameState {
@@ -42,6 +43,7 @@ const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙�
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
 const SURVIVAL_TIME_SECONDS: float = 90.0
+const BOSS_TIME_SECONDS: float = 180.0
 const THORN_ON_SECONDS: float = 1.0
 const THORN_OFF_SECONDS: float = 2.0
 const BINDING_CHECK_INTERVAL_SECONDS: float = 10.0
@@ -57,11 +59,15 @@ const BOSS_SEED_FALL_SPEED: float = MainLayout.CELL_SIZE * 6.0
 const BOSS_SEED_SIZE: Vector2 = Vector2(MainLayout.CELL_SIZE, MainLayout.CELL_SIZE)
 const BOSS_SEED_SPAWN_MARGIN: float = 12.0
 const BOSS_MAX_HEALTH: int = 3
-const BOSS_POSITION: Vector2 = Vector2(240.0, 84.0)
 const BOSS_DISPLAY_SIZE: Vector2 = Vector2(72.0, 192.0)
 const BOSS_ATTACK_HITBOX_SIZE: Vector2 = Vector2(54.0, 132.0)
 const BOSS_ATTACK_HITBOX_OFFSET: Vector2 = Vector2(0.0, -16.0)
 const BOSS_DOWN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 184.3125)
+const BOSS_TOP_MARGIN: float = 6.0
+const BOSS_POSITION: Vector2 = Vector2(
+	MainLayout.BOARD_SIZE.x * 0.5,
+	BOSS_DISPLAY_SIZE.y * 0.5 + BOSS_TOP_MARGIN
+)
 const BOSS_DOWN_DURATION_SECONDS: float = 0.72
 const BOSS_FALL_SPEED: float = MainLayout.CELL_SIZE * 10.0
 const BOSS_FALLEN_HOLD_SECONDS: float = 0.5
@@ -69,13 +75,21 @@ const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd") # action
 
 # 스테이지 기믹 규칙은 이 표에서만 선택한다.
 const STAGE_GIMMICKS: Dictionary = {
-	1: {"thorn_probability": 0.0, "binding_enabled": false},
-	2: {"thorn_probability": 0.15, "binding_enabled": false},
-	3: {"thorn_probability": 0.25, "binding_enabled": false},
-	4: {"thorn_probability": 0.25, "binding_enabled": true},
+	1: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
+	2: {"time_limit": 90.0, "thorn_probability": 0.15, "binding_enabled": false},
+	3: {"time_limit": 90.0, "thorn_probability": 0.25, "binding_enabled": false},
+	4: {
+		"time_limit": 90.0,
+		"thorn_probability": 0.25,
+		"binding_enabled": true,
+		"binding_first_delay": 10.0,
+	},
 	5: {
+		"time_limit": 180.0,
 		"thorn_probability": 0.33,
-		"binding_enabled": false,
+		"binding_enabled": true,
+		"binding_first_delay": 5.0,
+		"boss_seed_enabled": true,
 	},
 }
 
@@ -109,6 +123,7 @@ var bag: MainPieceBag # 아직 나오지 않은 7-bag 피스 순서를 소유한
 var state: GameState = GameState.PLAYING # 입력/시간 진행 허용 여부를 결정한다.
 var meditation_active: bool = false # true면 테트리스 시간만 2배로 진행된다.
 var fall_freeze_remaining: float = 0.0 # 시계공 특수 스킬로 피스 입력·낙하·고정을 멈추는 시간.
+var future_gimmick_freeze_remaining: float = 0.0 # 새 가시/결박/씨앗 발동만 늦추는 시간.
 
 var active_type: int = MainTetrominoData.Type.T # 현재 낙하 중인 Type enum 정수.
 var active_rotation: int = 0 # 활성 피스 회전 상태 0/1/2/3 = 0/90/180/270도.
@@ -153,8 +168,8 @@ var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x
 var _gimmick_random: RandomNumberGenerator = RandomNumberGenerator.new() # 기믹 전용 결정론 난수 엔진.
 var _gimmick_roll_overrides: Array[bool] = [] # 자동 테스트가 확률 결과만 주입하는 내부 훅.
 var binding_check_timer: float = 0.0 # 속박 적용 스테이지의 10초 주기 accumulator.
-var binding_pending: bool = false # 공중에서 성공한 속박의 단일 pending 상태.
 var binding_probability: float = BINDING_PROBABILITY # 다음 속박 판정에 사용할 누적 확률.
+var binding_first_check_pending: bool = true
 var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
 @onready var character: MainCharacterController = get_node_or_null("../BoardPhysics/Character") as MainCharacterController
 
@@ -189,6 +204,12 @@ func _physics_process(delta: float) -> void:
 		return
 	if fall_freeze_remaining > 0.0:
 		fall_freeze_remaining = maxf(0.0, fall_freeze_remaining - delta)
+		future_gimmick_freeze_remaining = maxf(
+			0.0,
+			future_gimmick_freeze_remaining - delta
+		)
+		_advance_stage_gimmicks(delta, true)
+		_advance_stage_timer(delta)
 		game_changed.emit()
 		return
 
@@ -210,10 +231,12 @@ func _advance_gravity(effective_delta: float) -> void:
 	var interval: float = GRAVITY_INTERVAL_SECONDS # 한 셀 내려가는 데 필요한 초.
 	while _fall_accumulator >= interval:
 		_fall_accumulator -= interval
+		# Water is evaluated once for this automatic fall step and before the
+		# vertical move. A blocked side move never cancels the normal descent.
+		_apply_water_slide_if_needed()
 		if can_place_active(active_origin + Vector2i.DOWN):
 			var previous_origin: Vector2i = active_origin
 			active_origin += Vector2i.DOWN
-			_apply_water_slide_if_needed()
 			game_changed.emit()
 			active_piece_descended.emit(previous_origin, active_origin)
 		else:
@@ -260,15 +283,19 @@ func reset_game(seed_value: int = -1) -> void:
 	boss_down = false
 	boss_falling = false
 	boss_fallen = false
-	stage_time_remaining = SURVIVAL_TIME_SECONDS
-	_shown_stage_seconds = ceili(SURVIVAL_TIME_SECONDS)
+	stage_time_remaining = stage_time_limit()
+	_shown_stage_seconds = ceili(stage_time_remaining)
 	state = GameState.PLAYING
 	meditation_active = false
 	fall_freeze_remaining = 0.0
+	future_gimmick_freeze_remaining = 0.0
 	clear_skill_effects()
 	boss_seeds.clear()
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
+	binding_check_timer = 0.0
+	binding_probability = BINDING_PROBABILITY
+	binding_first_check_pending = true
 	_reset_piece_timers()
 	next_type = bag.next_piece()
 	spawn_next_piece()
@@ -350,35 +377,47 @@ func get_stage_gimmick_config() -> Dictionary:
 	return STAGE_GIMMICKS.get(stage_number, STAGE_GIMMICKS[1]) as Dictionary
 
 
-func _advance_stage_gimmicks(delta: float) -> void:
+func stage_time_limit() -> float:
+	return float(get_stage_gimmick_config().get(
+		"time_limit",
+		BOSS_TIME_SECONDS if is_boss_stage() else SURVIVAL_TIME_SECONDS
+	))
+
+
+func _advance_stage_gimmicks(delta: float, future_triggers_frozen: bool = false) -> void:
 	if state != GameState.PLAYING:
 		return
 	var config: Dictionary = get_stage_gimmick_config()
 	if float(config.get("thorn_probability", 0.0)) > 0.0:
-		_advance_thorn_timer(delta)
+		_advance_thorn_timer(delta, future_triggers_frozen)
 	else:
 		_reset_active_piece_gimmick()
-	if is_boss_stage():
-		binding_check_timer = 0.0
-		binding_pending = false
-		binding_probability = BINDING_PROBABILITY
-		_advance_boss_seed_skill(delta)
-		return
 	if not bool(config.get("binding_enabled", false)):
 		binding_check_timer = 0.0
-		binding_pending = false
 		binding_probability = BINDING_PROBABILITY
-		return
-	binding_check_timer += delta
-	while binding_check_timer >= BINDING_CHECK_INTERVAL_SECONDS:
-		binding_check_timer -= BINDING_CHECK_INTERVAL_SECONDS
-		_attempt_binding_roll()
+		binding_first_check_pending = true
+	elif not future_triggers_frozen:
+		binding_check_timer += delta
+		var check_interval: float = (
+			float(config.get("binding_first_delay", BINDING_CHECK_INTERVAL_SECONDS))
+			if binding_first_check_pending
+			else BINDING_CHECK_INTERVAL_SECONDS
+		)
+		while binding_check_timer >= check_interval:
+			binding_check_timer -= check_interval
+			binding_first_check_pending = false
+			_attempt_binding_roll()
+			check_interval = BINDING_CHECK_INTERVAL_SECONDS
+	if bool(config.get("boss_seed_enabled", false)):
+		_advance_boss_seed_skill(delta, not future_triggers_frozen)
 
 
-func _advance_thorn_timer(delta: float) -> void:
+func _advance_thorn_timer(delta: float, future_triggers_frozen: bool = false) -> void:
 	if not active_piece_has_thorns:
 		thorn_visible = false
 		thorn_phase_timer = 0.0
+		return
+	if future_triggers_frozen and not thorn_visible:
 		return
 	thorn_phase_timer += delta
 	var changed: bool = false
@@ -414,7 +453,7 @@ func active_piece_has_visible_thorns() -> bool:
 
 
 func _attempt_binding_roll() -> void:
-	if binding_pending or _character_is_bound():
+	if _character_is_bound():
 		return
 	if not _next_gimmick_roll():
 		binding_probability = minf(
@@ -423,27 +462,13 @@ func _attempt_binding_roll() -> void:
 		)
 		return
 	binding_probability = BINDING_PROBABILITY
-	if _character_has_surface_contact():
-		if is_instance_valid(character):
-			character.apply_binding(get_binding_duration_seconds())
-	else:
-		binding_pending = true
+	if is_instance_valid(character):
+		character.apply_binding(get_binding_duration_seconds())
 
 
 func notify_binding_surface_contact(surface_contact: bool) -> void:
-	if (
-		not binding_pending
-		or not surface_contact
-		or not bool(get_stage_gimmick_config().get("binding_enabled", false))
-	):
-		return
-	if _character_is_bound():
-		binding_pending = false
-		return
-	if not is_instance_valid(character):
-		return
-	binding_pending = false
-	character.apply_binding(get_binding_duration_seconds())
+	# 7차는 공중에서도 즉시 결박하므로 landing-pending 호환 호출은 필요 없다.
+	return
 
 
 func get_binding_duration_seconds() -> float:
@@ -464,10 +489,14 @@ func _next_gimmick_roll() -> bool:
 	return _gimmick_random.randf() < binding_probability
 
 
-func _advance_boss_seed_skill(delta: float) -> void:
+func _advance_boss_seed_skill(delta: float, allow_new_casts: bool = true) -> void:
 	if not is_boss_alive():
 		return
 	var changed: bool = _advance_boss_seeds(maxf(delta, 0.0))
+	if not allow_new_casts:
+		if changed:
+			game_changed.emit()
+		return
 	boss_seed_timer += maxf(delta, 0.0)
 	var cast_interval: float = (
 		BOSS_SEED_INTERVAL_SECONDS
@@ -511,6 +540,9 @@ func _advance_boss_seeds(delta: float) -> bool:
 		var position: Vector2 = seed["position"] as Vector2
 		var previous_y: float = position.y
 		var settled: bool = bool(seed["settled"])
+		if _boss_seed_overlaps_cells(_boss_seed_rect(position), transient_blocker_cells):
+			changed = true
+			continue
 		if settled:
 			seed["remaining"] = float(seed["remaining"]) - delta
 			if float(seed["remaining"]) <= 0.0:
@@ -540,6 +572,12 @@ func _advance_boss_seeds(delta: float) -> bool:
 			changed = changed or delta > 0.0
 		if _boss_seed_overlaps_active_piece(
 			_boss_seed_sweep_rect(position.x, previous_y, next_y)
+		):
+			changed = true
+			continue
+		if _boss_seed_overlaps_cells(
+			_boss_seed_sweep_rect(position.x, previous_y, next_y),
+			transient_blocker_cells
 		):
 			changed = true
 			continue
@@ -638,8 +676,6 @@ func _remove_boss_seeds_overlapping_cells(locked_cells: Array[Vector2i]) -> bool
 
 
 func _advance_stage_timer(delta: float) -> void:
-	if not is_survival_stage():
-		return
 	stage_time_remaining = maxf(stage_time_remaining - delta, 0.0)
 	var shown_seconds: int = ceili(stage_time_remaining)
 	if shown_seconds != _shown_stage_seconds:
@@ -647,8 +683,11 @@ func _advance_stage_timer(delta: float) -> void:
 		game_changed.emit()
 	if stage_time_remaining > 0.0:
 		return
-	if total_lines < 1:
+	if is_boss_stage():
+		if boss_health <= 0:
+			return
 		end_game()
+		stage_failed.emit()
 		return
 	state = GameState.PAUSED
 	meditation_active = false
@@ -691,14 +730,16 @@ func freeze_falling_blocks(seconds: float) -> bool:
 	if state != GameState.PLAYING or seconds <= 0.0:
 		return false
 	fall_freeze_remaining = maxf(fall_freeze_remaining, seconds)
+	future_gimmick_freeze_remaining = maxf(future_gimmick_freeze_remaining, seconds)
 	game_changed.emit()
 	return true
 
 
 func clear_fall_freeze() -> void:
-	if fall_freeze_remaining <= 0.0:
+	if fall_freeze_remaining <= 0.0 and future_gimmick_freeze_remaining <= 0.0:
 		return
 	fall_freeze_remaining = 0.0
+	future_gimmick_freeze_remaining = 0.0
 	game_changed.emit()
 
 
@@ -749,6 +790,7 @@ func clear_transient_blockers() -> void:
 
 func clear_skill_effects() -> void:
 	fall_freeze_remaining = 0.0
+	future_gimmick_freeze_remaining = 0.0
 	transient_blocker_cells.clear()
 	water_path_cells.clear()
 	water_path_direction = 0
@@ -757,7 +799,7 @@ func clear_skill_effects() -> void:
 
 
 ## 소방관의 물길을 고정 블록과 바닥만 기준으로 계산한다.
-func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 4) -> bool:
+func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 3) -> bool:
 	water_path_cells.clear()
 	water_path_direction = signi(direction)
 	water_path_serial += 1
@@ -786,7 +828,6 @@ func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int 
 		if board.get_cell(next) != MainBoardModel.EMPTY:
 			break
 		cursor = next
-	_apply_water_slide_if_needed()
 	game_changed.emit()
 	return not water_path_cells.is_empty()
 
@@ -802,7 +843,7 @@ func clear_water_path() -> void:
 
 
 func _apply_water_slide_if_needed() -> void:
-	if water_path_cells.is_empty() or _water_triggered_serial == water_path_serial:
+	if water_path_cells.is_empty():
 		return
 	var touches_water: bool = false
 	for cell: Vector2i in active_board_cells():
@@ -811,15 +852,12 @@ func _apply_water_slide_if_needed() -> void:
 			break
 	if not touches_water:
 		return
-	_water_triggered_serial = water_path_serial
 	var was_grounded: bool = is_grounded()
-	for distance: int in range(2, 0, -1):
-		var target := active_origin + Vector2i(water_path_direction * distance, 0)
-		if can_place_active(target):
-			active_origin = target
-			_reset_lock_after_transform(was_grounded)
-			break
-	game_changed.emit()
+	var target := active_origin + Vector2i(water_path_direction, 0)
+	if can_place_active(target):
+		active_origin = target
+		_reset_lock_after_transform(was_grounded)
+		game_changed.emit()
 
 
 ## 전방 한 칸의 활성 도형 또는 고정 블록을 가능한 거리만큼 민다.
@@ -872,75 +910,26 @@ func clean_exposed_cells(center_below: Vector2i) -> int:
 	if state != GameState.PLAYING:
 		return 0
 	var removed: int = 0
-	for x_offset: int in range(-1, 2):
+	var active_cells: Array[Vector2i] = active_board_cells()
+	var ordered_offsets: Array[int] = [0, -1, 1]
+	for x_offset: int in ordered_offsets:
 		var cell := center_below + Vector2i(x_offset, 0)
 		if not board.is_inside(cell) or board.get_cell(cell) == MainBoardModel.EMPTY:
 			continue
 		var above := cell + Vector2i.UP
-		if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
+		if (
+			board.is_inside(above)
+			and (
+				board.get_cell(above) != MainBoardModel.EMPTY
+				or above in active_cells
+			)
+		):
 			continue
 		if board.remove_cell(cell):
 			removed += 1
 	if removed > 0:
 		game_changed.emit()
 	return removed
-
-
-## 요리사의 대각선 팬 토스. 활성 미노는 분리해 즉시 고정하고 고정 블록은 이동한다.
-func pan_toss(target_cell: Vector2i, direction: Vector2i) -> bool:
-	if state != GameState.PLAYING or absi(direction.x) != 1 or absi(direction.y) != 1:
-		return false
-	var destination := target_cell + direction
-	var horizontal := target_cell + Vector2i(direction.x, 0)
-	var vertical := target_cell + Vector2i(0, direction.y)
-	for path_cell: Vector2i in [destination, horizontal, vertical]:
-		if not board.is_inside(path_cell) or board.get_cell(path_cell) != MainBoardModel.EMPTY:
-			return false
-		if path_cell in active_board_cells() and path_cell != target_cell:
-			return false
-
-	var active_cells: Array[Vector2i] = active_board_cells()
-	var active_index: int = active_cells.find(target_cell)
-	if active_index >= 0:
-		if active_cell_indices.size() <= 1:
-			return false
-		var removed_index: int = active_cell_indices[active_index]
-		if not board.place_cell(destination, active_type):
-			return false
-		active_cell_indices.erase(removed_index)
-		_resolve_immediate_line_clear()
-		_resolve_active_overlap_upward()
-		game_changed.emit()
-		return true
-
-	if board.get_cell(target_cell) == MainBoardModel.EMPTY:
-		return false
-	var above := target_cell + Vector2i.UP
-	if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
-		return false
-	if not board.move_cell(target_cell, destination):
-		return false
-	_resolve_immediate_line_clear()
-	game_changed.emit()
-	return true
-
-
-func _resolve_immediate_line_clear() -> void:
-	var cleared: int = board.clear_full_lines()
-	if cleared <= 0:
-		return
-	_apply_line_clear_rewards(cleared)
-
-
-func _resolve_active_overlap_upward() -> void:
-	if can_place_active(active_origin, active_rotation, false):
-		return
-	for offset: int in range(1, MainBoardModel.HEIGHT + 1):
-		var candidate := active_origin + Vector2i.UP * offset
-		if can_place_active(candidate, active_rotation, false):
-			active_origin = candidate
-			return
-	end_game()
 
 
 ## 청소부의 대청소. 화면 하단 세 줄에서 위 블록을 받치지 않는 고정 블록을 제거한다.
@@ -1217,8 +1206,8 @@ func end_game() -> void:
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
 	binding_check_timer = 0.0
-	binding_pending = false
 	binding_probability = BINDING_PROBABILITY
+	binding_first_check_pending = true
 	game_changed.emit()
 
 
@@ -1254,7 +1243,7 @@ static func stage_stars_for_lines(lines: int) -> int:
 		return 3
 	if cleared_lines >= 2:
 		return 2
-	return 1 if cleared_lines >= 1 else 0
+	return 1
 
 
 ## 상황: 새 게임 또는 새 피스가 시작되어 이전 피스의 시간 상태를 버릴 때 호출한다.
@@ -1289,8 +1278,8 @@ func damage_boss(cleared_lines: int) -> void:
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
 	binding_check_timer = 0.0
-	binding_pending = false
 	binding_probability = BINDING_PROBABILITY
+	binding_first_check_pending = true
 	boss_fall_position = Vector2(
 		BOSS_POSITION.x,
 		BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5

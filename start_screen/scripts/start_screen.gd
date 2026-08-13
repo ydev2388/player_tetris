@@ -1302,16 +1302,23 @@ func _complete_stage_for_debug() -> void:
 
 func _on_survival_stage_cleared(cleared_lines: int) -> void:
 	var game_controller: MainGameController = _loaded_game_controller()
-	var stars: int = (
-		3
-		if game_controller != null and game_controller.is_boss_stage()
-		else MainGameController.stage_stars_for_lines(cleared_lines)
+	var remaining_lives: int = -1
+	var stars: int = MainGameController.stage_stars_for_lines(cleared_lines)
+	if game_controller != null and game_controller.is_boss_stage():
+		var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+		remaining_lives = loaded_character.lives if loaded_character != null else 1
+		stars = clampi(remaining_lives, 1, 3)
+	_complete_stage(stars, remaining_lives)
+
+
+func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
+	var result: Dictionary = settings.complete_stage(
+		selected_stage_number,
+		stars,
+		remaining_lives
 	)
-	_complete_stage(stars)
-
-
-func _complete_stage(stars: int) -> void:
-	var result: Dictionary = settings.complete_stage(selected_stage_number, stars)
 	if not bool(result.get("ok", false)):
 		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
 		return
@@ -1620,11 +1627,7 @@ func _build_character_screen() -> void:
 			MainCharacterAnimationData.IDLE,
 			character_id
 		)
-		portrait_texture.region = MainCharacterAnimationData.visible_region_for(
-			MainCharacterAnimationData.IDLE,
-			0.0,
-			character_id
-		)
+		portrait_texture.region = PORTRAIT_SOURCE
 		var portrait := TextureRect.new()
 		portrait.position = Vector2(47.0, 12.0)
 		portrait.size = Vector2(176.0, 158.0)
@@ -1636,16 +1639,20 @@ func _build_character_screen() -> void:
 		card.add_child(portrait)
 
 		var stat_text: String = (
-			"%s  [%s]\n%s\n\n공속 %d   이동 %d   점프 %d\n스태미나 %d   특수스킬 %d\n\n무기: %s"
+			"%s  [%s]\n%s\n\n공속 %d (S %.1f초)\n이동 %d (%.0fpx/s)  점프 %d (%d칸)\n스태미나 %d   특수 %d (%.1f초)\n무기: %s"
 			% [
 				profile["display_name"],
 				profile["unlock_text"],
 				profile["role"],
 				profile["attack_speed"],
+				MainCharacterData.rotation_cooldown(character_id),
 				profile["move"],
+				MainCharacterData.move_speed(character_id) * MainLayout.DISPLAY_SCALE,
 				profile["jump"],
+				MainCharacterData.jump_cells(character_id),
 				profile["stamina"],
 				profile["special_skill"],
+				MainCharacterData.special_cooldown(character_id),
 				profile["weapon"],
 			]
 		)

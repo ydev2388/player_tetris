@@ -173,7 +173,7 @@ func is_stage_unlocked(stage_number: int) -> bool:
 	return get_stage_best_stars(stage_number - 1) > 0
 
 
-func complete_stage(stage_number: int, stars: int) -> Dictionary:
+func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) -> Dictionary:
 	if stage_number < 1 or stage_number > STAGE_COUNT:
 		return _failure("알 수 없는 스테이지입니다.")
 	if stars < 1:
@@ -199,6 +199,7 @@ func complete_stage(stage_number: int, stars: int) -> Dictionary:
 		"stage_number": stage_number,
 		"previous_stars": previous_stars,
 		"stars": get_stage_best_stars(stage_number),
+		"remaining_lives": remaining_lives,
 		"reward": reward,
 		"star_currency": star_currency,
 	}

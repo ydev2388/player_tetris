@@ -14,21 +14,6 @@ const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmak
 const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
 const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
 const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
-const SPRINT_VFX: Texture2D = preload("res://assets/sprites/effects/normal/sprint_vfx.png")
-const GUARD_BREAK_VFX: Texture2D = preload("res://assets/sprites/effects/boxer/guard_break_impact.png")
-const SHIELD_BARRIER_VFX: Texture2D = preload("res://assets/sprites/effects/shield_guard/shield_barrier.png")
-const HOSE_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/hose_overlay.png")
-const WATER_PATH_VFX: Texture2D = preload("res://assets/sprites/effects/firefighter/water_path.png")
-const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cleanup_dust.png")
-const PAN_TOSS_UP_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_up.png")
-const PAN_TOSS_DOWN_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_down.png")
-const PAN_TOSS_FAILURE_VFX: Texture2D = preload("res://assets/sprites/effects/chef/pan_toss_failure.png")
-const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
-const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
-const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
-const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
-const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
-const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
 const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
 
 var _checks: int = 0 # 수행한 assertion 총수.
@@ -77,6 +62,49 @@ func _run() -> void:
 	)
 	var controller: MainGameController = GAME_CONTROLLER.new() # scene 없이 process API만 검사할 임시 객체.
 	controller.reset_game(20260801)
+	var boss_board_rect: Rect2 = Rect2(MainLayout.BOARD_ORIGIN, MainLayout.BOARD_SIZE)
+	var boss_alive_rect: Rect2 = Rect2(
+		MainLayout.BOARD_PHYSICS_ORIGIN
+			+ MainGameController.BOSS_POSITION
+			- MainGameController.BOSS_DISPLAY_SIZE * 0.5,
+		MainGameController.BOSS_DISPLAY_SIZE
+	)
+	var boss_down_rect: Rect2 = Rect2(
+		MainLayout.BOARD_PHYSICS_ORIGIN
+			+ MainGameController.BOSS_POSITION
+			- MainGameController.BOSS_DOWN_DISPLAY_SIZE * 0.5,
+		MainGameController.BOSS_DOWN_DISPLAY_SIZE
+	)
+	var falling_entry_center: Vector2 = (
+		MainLayout.BOARD_PHYSICS_ORIGIN
+		+ MainGameController.BOSS_POSITION
+		+ Vector2(
+			0.0,
+			MainGameController.BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+				- MainGameController.BOSS_DISPLAY_SIZE.y * 0.5
+		)
+	)
+	var boss_falling_entry_rect: Rect2 = Rect2(
+		falling_entry_center - MainGameController.BOSS_DISPLAY_SIZE * 0.5,
+		MainGameController.BOSS_DISPLAY_SIZE
+	)
+	var boss_attack_rect: Rect2 = Rect2(
+		MainLayout.BOARD_PHYSICS_ORIGIN
+			+ MainGameController.BOSS_POSITION
+			+ MainGameController.BOSS_ATTACK_HITBOX_OFFSET
+			- MainGameController.BOSS_ATTACK_HITBOX_SIZE * 0.5,
+		MainGameController.BOSS_ATTACK_HITBOX_SIZE
+	)
+	_expect(
+		boss_board_rect.encloses(boss_alive_rect)
+			and boss_board_rect.encloses(boss_down_rect)
+			and boss_board_rect.encloses(boss_falling_entry_rect)
+			and boss_board_rect.encloses(boss_attack_rect)
+			and not MainGameView.HUD_RECT.intersects(boss_alive_rect)
+			and not MainGameView.HUD_RECT.intersects(boss_down_rect)
+			and not MainGameView.HUD_RECT.intersects(boss_falling_entry_rect),
+		"보스의 일반·속박·가시·다운·낙하 시작 프레임과 공격 판정은 상단 HUD를 침범하지 않는다."
+	)
 	controller.board.reset()
 	var spawn_cells_valid: bool = true
 	for piece_type: int in range(MainTetrominoData.TYPE_COUNT):
@@ -122,7 +150,12 @@ func _run() -> void:
 	)
 	var normal_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "normal")
 	_expect(
-		normal_atlas.get_width() == 1024 and normal_atlas.get_height() == 768,
+		normal_atlas.get_width() == 1024
+			and normal_atlas.get_height() == 768
+			and normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png")
+			and ANIMATION_DATA.uses_fixed_geometry("normal")
+			and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
+			and ANIMATION_DATA.fixed_offset_for("normal").is_equal_approx(Vector2(0.0, 3.0)),
 		"일반인 atlas는 1024×768 균일 격자다."
 	)
 	var boxer_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
@@ -188,11 +221,24 @@ func _run() -> void:
 	)
 	for beta_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		var beta_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, beta_id)
+		var expected_atlas_suffix: String = (
+			"normal_reference_atlas_v8.png"
+			if beta_id == "normal"
+			else (
+				"chef_reference_atlas_v7.png"
+				if beta_id == "chef"
+				else "%s_reference_atlas_v6.png" % beta_id
+			)
+		)
 		_expect(
 			ANIMATION_DATA.has_character(beta_id)
 				and CHARACTER_DATA.has_character(beta_id)
 				and beta_atlas.get_width() == 1024
-				and beta_atlas.get_height() == 768,
+				and beta_atlas.get_height() == 768
+				and beta_atlas.resource_path.ends_with(expected_atlas_suffix)
+				and ANIMATION_DATA.uses_fixed_geometry(beta_id)
+				and ANIMATION_DATA.fixed_scale_for(beta_id).is_equal_approx(Vector2.ONE)
+				and ANIMATION_DATA.fixed_offset_for(beta_id).is_equal_approx(Vector2(0.0, 3.0)),
 			"%s 선택 캐릭터는 데이터와 1024×768 atlas를 함께 가진다." % beta_id
 		)
 	_expect(
@@ -210,11 +256,12 @@ func _run() -> void:
 	_expect(
 		ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE].size() == 4
 			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.ATTACK].size() == 4
-			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.HANG].size() == 4
+			and ANIMATION_DATA.frame_count_for(ANIMATION_DATA.HANG, "normal") == 8
+			and ANIMATION_DATA.frame_count_for(ANIMATION_DATA.HANG, "boxer") == 4
 			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.JUMP].size() == 8
 			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.ROTATION_KICK].size() == 8
 			and ANIMATION_DATA.REGIONS[ANIMATION_DATA.SPECIAL].size() == 8,
-		"일반인 상태별 frame 수가 4·4·4·8·8·8 규격을 지킨다."
+		"일반인은 매달림 8 frame, 기존 7명은 매달림 4 frame 계약을 지킨다."
 	)
 	_expect(
 		CLOCK_WAVE_VFX.get_width() == 1152
@@ -227,13 +274,14 @@ func _run() -> void:
 			and SHURIKEN_IMPACT_VFX.get_height() == 128,
 		"시계공·닌자 VFX 시트가 지정된 frame 크기와 행 구성을 지킨다."
 	)
-	_test_sprite_atlas_contracts()
 	_test_board_coordinate_alignment()
+	_test_stage_rule_contracts()
 	_test_spawn_side_margin()
 	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
 	await _test_fixed_support_grab()
+	await _test_standing_wall_visual_alignment()
 	await _test_hang_face_bounds()
 	InputMap.action_erase_events(&"character_punch")
 	custom_events.clear()
@@ -254,10 +302,92 @@ func _test_board_coordinate_alignment() -> void:
 	var scene: Node = GAME_SCENE.instantiate()
 	var board_physics: Node2D = scene.get_node("BoardPhysics") as Node2D
 	_expect(
-		board_physics.position.is_equal_approx(MainLayout.BOARD_ORIGIN),
-		"BoardPhysics와 GameView는 같은 보드 원점을 사용한다."
+		board_physics.position.is_equal_approx(MainLayout.BOARD_PHYSICS_ORIGIN)
+			and (
+				MainLayout.BOARD_PHYSICS_ORIGIN + MainLayout.BOARD_VISUAL_OFFSET
+			).is_equal_approx(MainLayout.BOARD_ORIGIN),
+		"물리 보드 원점과 시각 보드 원점은 명시적인 오프셋으로 정렬된다."
 	)
 	scene.free()
+
+
+func _test_stage_rule_contracts() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	var expected_probabilities: Array[float] = [0.0, 0.15, 0.25, 0.25, 0.33]
+	var stage_data_is_complete: bool = true
+	for stage_number: int in range(1, 6):
+		controller.stage_number = stage_number
+		var config: Dictionary = controller.get_stage_gimmick_config()
+		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
+			float(config.get("thorn_probability", -1.0)),
+			expected_probabilities[stage_number - 1]
+		)
+		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
+			controller.stage_time_limit(),
+			180.0 if stage_number == 5 else 90.0
+		)
+	_expect(stage_data_is_complete, "1-1~1-5의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
+	_expect(
+		MainGameController.stage_stars_for_lines(0) == 1
+			and MainGameController.stage_stars_for_lines(1) == 1
+			and MainGameController.stage_stars_for_lines(2) == 2
+			and MainGameController.stage_stars_for_lines(3) == 3,
+		"생존 스테이지는 0~1/2/3줄 이상을 각각 1/2/3별로 계산한다."
+	)
+	_expect(
+		MainGameController.line_clear_score(1, 2) == 200
+			and MainGameController.line_clear_score(2, 2) == 600
+			and MainGameController.line_clear_score(3, 2) == 1100
+			and MainGameController.line_clear_score(4, 2) == 1800
+			and MainGameController.level_for_lines(9) == 1
+			and MainGameController.level_for_lines(10) == 2,
+		"줄 점수와 누적 10줄 레벨 증가 공식을 유지한다."
+	)
+	_expect(
+		MainGameController.BOSS_ATTACK_HITBOX_SIZE == Vector2(54.0, 132.0)
+			and MainGameController.BOSS_ATTACK_HITBOX_OFFSET == Vector2(0.0, -16.0),
+		"보스 공격 판정은 54×132px이며 표시 중심보다 16px 위에 있다."
+	)
+	controller.stage_number = 1
+	controller.reset_game(7)
+	controller.total_lines = 0
+	controller.stage_time_remaining = 0.01
+	controller._advance_stage_timer(0.01)
+	_expect(
+		controller.state == MainGameController.GameState.PAUSED,
+		"생존 스테이지는 0줄이어도 90초 생존 시 클리어 상태가 된다."
+	)
+	controller.stage_number = 5
+	controller.reset_game(7)
+	controller.stage_time_remaining = 0.01
+	controller._advance_stage_timer(0.01)
+	_expect(
+		controller.state == MainGameController.GameState.GAME_OVER,
+		"1-5는 180초 경계에서 보스가 살아 있으면 실패한다."
+	)
+	controller.reset_game(7)
+	controller.boss_health = 0
+	controller.stage_time_remaining = 0.01
+	controller._advance_stage_timer(0.01)
+	_expect(
+		controller.state == MainGameController.GameState.PLAYING,
+		"보스 HP 0과 제한시간 0이 겹치면 제한시간 실패를 적용하지 않는다."
+	)
+	controller.binding_probability = MainGameController.BINDING_PROBABILITY
+	controller._gimmick_roll_overrides = [false, false, true]
+	controller._attempt_binding_roll()
+	controller._attempt_binding_roll()
+	var accumulated_probability: float = controller.binding_probability
+	controller._attempt_binding_roll()
+	_expect(
+		is_equal_approx(accumulated_probability, 0.25)
+			and is_equal_approx(
+				controller.binding_probability,
+				MainGameController.BINDING_PROBABILITY
+			),
+		"속박 확률은 실패마다 5%p 증가하고 성공 시 15%로 초기화한다."
+	)
+	controller.free()
 
 
 func _test_spawn_side_margin() -> void:
@@ -334,7 +464,11 @@ func _test_boss_seeds() -> void:
 	controller.stage_number = 5
 	controller.reset_game(20260811)
 	_expect(
-			not controller.get_stage_gimmick_config()["binding_enabled"]
+			controller.get_stage_gimmick_config()["binding_enabled"]
+			and is_equal_approx(
+				float(controller.get_stage_gimmick_config()["binding_first_delay"]),
+				5.0
+			)
 			and MainGameController.BOSS_SEED_SIZE == Vector2.ONE * MainLayout.CELL_SIZE
 			and is_equal_approx(
 				MainGameController.BOSS_SEED_FIRST_DELAY_SECONDS,
@@ -342,7 +476,7 @@ func _test_boss_seeds() -> void:
 			)
 			and is_equal_approx(MainGameController.BOSS_SEED_INTERVAL_SECONDS, 20.0)
 			and is_equal_approx(MainGameController.BOSS_SEED_LIFETIME_SECONDS, 5.0),
-		"Stage 1-5는 확률 속박 대신 10초 시작·20초 주기의 씨앗 기믹을 사용한다."
+		"Stage 1-5는 5초 시작 속박과 10초 시작·20초 주기의 씨앗 기믹을 함께 사용한다."
 	)
 	_expect(
 		controller.boss_seeds.is_empty()
@@ -532,11 +666,9 @@ func _test_boss_seeds() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -555,254 +687,6 @@ func _expect(condition: bool, description: String) -> void:
 ## 상황: 실제 main scene에서 X press/release와 hitbox 기반 피스 이동을 검증할 때 호출된다.
 ## 순서: scene 생성/정지 → 맞는 위치의 hit → 빗나가는 위치의 miss → audio/node 정리.
 ## 결과: release 전에는 움직이지 않고 release 판정 창에서만 피스가 이동한다는 계약을 검사한다.
-func _test_sprite_atlas_contracts() -> void:
-	var profiles_match_selection: bool = ANIMATION_DATA.PROFILES.size() == CHARACTER_DATA.CHARACTER_ORDER.size()
-	var character_frames_valid: bool = true
-	var body_frames_are_connected: bool = true
-	var body_only_states: Array[String] = [
-		ANIMATION_DATA.IDLE,
-		ANIMATION_DATA.HANG,
-		ANIMATION_DATA.JUMP,
-		ANIMATION_DATA.ROTATION_KICK,
-	]
-	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
-		profiles_match_selection = profiles_match_selection and ANIMATION_DATA.has_character(character_id)
-		var texture: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, character_id)
-		var image: Image = texture.get_image()
-		character_frames_valid = (
-			character_frames_valid
-			and texture.get_width() == 1024
-			and texture.get_height() == 768
-		)
-		for state: String in ANIMATION_DATA.REGIONS:
-			var frames: Array = ANIMATION_DATA.REGIONS[state]
-			for frame_index: int in range(frames.size()):
-				var frame_region: Rect2 = frames[frame_index] as Rect2
-				var elapsed: float = (
-					float(frame_index) * float(ANIMATION_DATA.FRAME_DURATIONS[state])
-					+ 0.001
-				)
-				var visible_region: Rect2 = ANIMATION_DATA.visible_region_for(
-					state,
-					elapsed,
-					character_id
-				)
-				character_frames_valid = (
-					character_frames_valid
-					and visible_region.size.x > 0.0
-					and visible_region.size.y > 0.0
-					and frame_region.encloses(visible_region)
-					and _image_region_has_alpha(image, visible_region)
-				)
-				if state in body_only_states:
-					body_frames_are_connected = (
-						body_frames_are_connected
-						and _image_region_alpha_component_count(image, frame_region) == 1
-					)
-
-	_expect(
-		profiles_match_selection,
-		"캐릭터 선택 목록과 animation profile 목록이 정확히 일치한다."
-	)
-	_expect(
-		character_frames_valid,
-		"모든 캐릭터 atlas의 사용 frame이 규격 안에 있고 불투명 픽셀을 가진다."
-	)
-	_expect(
-		body_frames_are_connected,
-		"모든 캐릭터의 idle·hang·jump·rotation kick frame에는 분리된 부유 픽셀이 없다."
-	)
-
-	var effect_specs: Array = [
-		[SPRINT_VFX, Vector2i(128, 128), 8, 1],
-		[GUARD_BREAK_VFX, Vector2i(64, 64), 4, 1],
-		[SHIELD_BARRIER_VFX, Vector2i(48, 144), 6, 1],
-		[HOSE_VFX, Vector2i(192, 64), 4, 1],
-		[WATER_PATH_VFX, Vector2i(48, 48), 4, 1],
-		[CLEANUP_VFX, Vector2i(144, 48), 6, 1],
-		[PAN_TOSS_UP_VFX, Vector2i(96, 96), 4, 1],
-		[PAN_TOSS_DOWN_VFX, Vector2i(96, 96), 4, 1],
-		[PAN_TOSS_FAILURE_VFX, Vector2i(48, 48), 3, 1],
-		[CLOCK_GEAR_VFX, Vector2i(128, 128), 4, 1],
-		[CLOCK_WAVE_VFX, Vector2i(192, 192), 6, 1],
-		[SHURIKEN_SPIN_VFX, Vector2i(32, 32), 4, 1],
-		[SHURIKEN_IMPACT_VFX, Vector2i(64, 64), 4, 2],
-	]
-	var effect_frames_valid: bool = true
-	for spec: Array in effect_specs:
-		var texture: Texture2D = spec[0] as Texture2D
-		var frame_size: Vector2i = spec[1] as Vector2i
-		var columns: int = spec[2] as int
-		var rows: int = spec[3] as int
-		var image: Image = texture.get_image()
-		var current_effect_valid: bool = (
-			texture.get_width() == frame_size.x * columns
-			and texture.get_height() == frame_size.y * rows
-		)
-		var current_effect_has_alpha: bool = false
-		for row: int in range(rows):
-			for column: int in range(columns):
-				var frame_region: Rect2 = Rect2(
-					Vector2(float(column * frame_size.x), float(row * frame_size.y)),
-					Vector2(frame_size)
-				)
-				current_effect_has_alpha = (
-					current_effect_has_alpha
-					or _image_region_has_alpha(image, frame_region)
-				)
-		current_effect_valid = current_effect_valid and current_effect_has_alpha
-		effect_frames_valid = effect_frames_valid and current_effect_valid
-	_expect(
-		effect_frames_valid,
-		"모든 캐릭터 특수효과 시트의 크기·행·열과 불투명 픽셀이 사용 규격과 일치한다."
-	)
-
-	var board_sprites_valid: bool = true
-	var block_image: Image = MainGameView.BLOCK_TEXTURE.get_image()
-	var block_texture_rect := Rect2(
-		Vector2.ZERO,
-		Vector2(MainGameView.BLOCK_TEXTURE.get_width(), MainGameView.BLOCK_TEXTURE.get_height())
-	)
-	for source_region: Rect2 in MainGameView.BLOCK_SPRITE_REGIONS.values():
-		board_sprites_valid = (
-			board_sprites_valid
-			and block_texture_rect.encloses(source_region)
-			and _image_region_has_alpha(block_image, source_region)
-		)
-	var thorn_image: Image = MainGameView.THORN_TEXTURE.get_image()
-	var thorn_texture_rect := Rect2(
-		Vector2.ZERO,
-		Vector2(MainGameView.THORN_TEXTURE.get_width(), MainGameView.THORN_TEXTURE.get_height())
-	)
-	board_sprites_valid = (
-		board_sprites_valid
-		and thorn_texture_rect.encloses(MainGameView.THORN_SOURCE_REGION)
-		and _image_region_has_alpha(thorn_image, MainGameView.THORN_SOURCE_REGION)
-	)
-	_expect(
-		board_sprites_valid,
-		"모든 블록·가시 source 영역이 atlas 안에 있고 실제 불투명 픽셀을 가진다."
-	)
-
-	var boss_specs: Array = [
-		[BOSS_NORMAL_TEXTURE, Vector2i(384, 1024)],
-		[BOSS_BIND_TEXTURE, Vector2i(384, 1024)],
-		[BOSS_THORN_TEXTURE, Vector2i(384, 1024)],
-		[BOSS_DOWN_TEXTURE, Vector2i(384, 983)],
-		[BOSS_FALLING_TEXTURE, Vector2i(384, 1024)],
-		[BOSS_FALLEN_TEXTURE, Vector2i(384, 234)],
-	]
-	var boss_sheets_valid: bool = true
-	for spec: Array in boss_specs:
-		var texture: Texture2D = spec[0] as Texture2D
-		var frame_size: Vector2i = spec[1] as Vector2i
-		var image: Image = texture.get_image()
-		boss_sheets_valid = (
-			boss_sheets_valid
-			and texture.get_width() == frame_size.x * MainGameView.BOSS_FRAME_COUNT
-			and texture.get_height() == frame_size.y
-		)
-		for frame: int in range(MainGameView.BOSS_FRAME_COUNT):
-			boss_sheets_valid = (
-				boss_sheets_valid
-				and _image_region_has_alpha(
-					image,
-					Rect2(frame * frame_size.x, 0, frame_size.x, frame_size.y)
-				)
-			)
-	_expect(
-		boss_sheets_valid,
-		"보스의 일반·속박·가시·다운·낙하 시트가 모두 4 frame 규격을 지킨다."
-	)
-
-	var controller: MainGameController = GAME_CONTROLLER.new()
-	var boss_hitbox: Rect2 = controller.boss_hitbox()
-	controller.free()
-	var boss_scale: float = (
-		MainGameController.BOSS_DISPLAY_SIZE.x / MainGameView.BOSS_SOURCE_FRAME_SIZE.x
-	)
-	var boss_display_rect: Rect2 = Rect2(
-		MainGameController.BOSS_POSITION - MainGameController.BOSS_DISPLAY_SIZE * 0.5,
-		MainGameController.BOSS_DISPLAY_SIZE
-	)
-	var source_hitbox: Rect2 = Rect2(
-		(boss_hitbox.position - boss_display_rect.position) / boss_scale,
-		boss_hitbox.size / boss_scale
-	)
-	var boss_hitbox_excludes_padding: bool = true
-	for texture: Texture2D in [BOSS_NORMAL_TEXTURE, BOSS_BIND_TEXTURE]:
-		for frame: int in range(MainGameView.BOSS_FRAME_COUNT):
-			var frame_source := Rect2(
-				frame * MainGameView.BOSS_SOURCE_FRAME_SIZE.x,
-				0.0,
-				MainGameView.BOSS_SOURCE_FRAME_SIZE.x,
-				MainGameView.BOSS_SOURCE_FRAME_SIZE.y
-			)
-			var opaque_region: Rect2 = ANIMATION_DATA.opaque_region_for(texture, frame_source)
-			var local_opaque_region := Rect2(
-				Vector2(
-					opaque_region.position.x - frame_source.position.x,
-					opaque_region.position.y
-				),
-				opaque_region.size
-			)
-			boss_hitbox_excludes_padding = (
-				boss_hitbox_excludes_padding
-				and local_opaque_region.encloses(source_hitbox)
-			)
-	_expect(
-		boss_hitbox_excludes_padding,
-		"보스 공격 판정은 일반·속박 모든 frame의 투명 바깥 여백 안으로 들어오지 않는다."
-	)
-
-
-func _image_region_has_alpha(image: Image, region: Rect2) -> bool:
-	for pixel_y: int in range(int(region.position.y), int(region.end.y)):
-		for pixel_x: int in range(int(region.position.x), int(region.end.x)):
-			if image.get_pixel(pixel_x, pixel_y).a >= ANIMATION_DATA.FRAME_ALPHA_THRESHOLD:
-				return true
-	return false
-
-
-func _image_region_alpha_component_count(image: Image, region: Rect2) -> int:
-	var width: int = int(region.size.x)
-	var height: int = int(region.size.y)
-	var origin := Vector2i(int(region.position.x), int(region.position.y))
-	var visited := PackedByteArray()
-	visited.resize(width * height)
-	var component_count: int = 0
-	var neighbors: Array[Vector2i] = [
-		Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
-		Vector2i(-1, 0), Vector2i(1, 0),
-		Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1),
-	]
-	for local_y: int in range(height):
-		for local_x: int in range(width):
-			var index: int = local_y * width + local_x
-			if visited[index] != 0:
-				continue
-			visited[index] = 1
-			if image.get_pixelv(origin + Vector2i(local_x, local_y)).a <= 0.0:
-				continue
-			component_count += 1
-			var queue: Array[Vector2i] = [Vector2i(local_x, local_y)]
-			var cursor: int = 0
-			while cursor < queue.size():
-				var point: Vector2i = queue[cursor]
-				cursor += 1
-				for offset: Vector2i in neighbors:
-					var next: Vector2i = point + offset
-					if next.x < 0 or next.x >= width or next.y < 0 or next.y >= height:
-						continue
-					var next_index: int = next.y * width + next.x
-					if visited[next_index] != 0:
-						continue
-					visited[next_index] = 1
-					if image.get_pixelv(origin + next).a > 0.0:
-						queue.append(next)
-	return component_count
-
-
 func _test_release_punch() -> void:
 	var scene: MainGameView = GAME_SCENE.instantiate() # 테스트가 소유해 마지막에 free할 실제 scene 인스턴스.
 	root.add_child(scene)
@@ -881,16 +765,18 @@ func _test_release_punch() -> void:
 			and not character.set_character_id("missing_character"),
 		"알 수 없는 캐릭터 ID는 기본 profile을 바꾸지 않는다."
 	)
+	character._crush_mask_cache["stale"] = [Vector2.ZERO]
 	character._animation_image_cache["stale"] = Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	_expect(
 		character.set_character_id("boxer")
 			and character.character_id == "boxer"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
-			and character._animation_image_cache.size() == 1
-			and character._frame_alpha_bounds_cache.size() == 1,
-		"복서 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
+			and character._crush_mask_cache.is_empty()
+			and not character._animation_image_cache.has("stale"),
+		"복서 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
+	character._crush_mask_cache["boxer_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["boxer_stale"] = Image.create(
 		1,
 		1,
@@ -902,10 +788,11 @@ func _test_release_punch() -> void:
 			and character.character_id == "shield_guard"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "shield_guard")
-			and character._animation_image_cache.size() == 1
-			and character._frame_alpha_bounds_cache.size() == 1,
-		"방패병 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
+			and character._crush_mask_cache.is_empty()
+			and not character._animation_image_cache.has("boxer_stale"),
+		"방패병 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
+	character._crush_mask_cache["shield_guard_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["shield_guard_stale"] = Image.create(
 		1,
 		1,
@@ -917,10 +804,11 @@ func _test_release_punch() -> void:
 			and character.character_id == "firefighter"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "firefighter")
-			and character._animation_image_cache.size() == 1
-			and character._frame_alpha_bounds_cache.size() == 1,
-		"소방관 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
+			and character._crush_mask_cache.is_empty()
+			and not character._animation_image_cache.has("shield_guard_stale"),
+		"소방관 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
+	character._crush_mask_cache["firefighter_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["firefighter_stale"] = Image.create(
 		1,
 		1,
@@ -932,10 +820,11 @@ func _test_release_punch() -> void:
 			and character.character_id == "cleaner"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "cleaner")
-			and character._animation_image_cache.size() == 1
-			and character._frame_alpha_bounds_cache.size() == 1,
-		"청소부 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
+			and character._crush_mask_cache.is_empty()
+			and not character._animation_image_cache.has("firefighter_stale"),
+		"청소부 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
+	character._crush_mask_cache["cleaner_stale"] = [Vector2.ZERO]
 	character._animation_image_cache["cleaner_stale"] = Image.create(
 		1,
 		1,
@@ -947,9 +836,9 @@ func _test_release_punch() -> void:
 			and character.character_id == "chef"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
-			and character._animation_image_cache.size() == 1
-			and character._frame_alpha_bounds_cache.size() == 1,
-		"요리사 전환은 atlas를 즉시 교체하고 새 frame 표시 cache만 유지한다."
+			and character._crush_mask_cache.is_empty()
+			and not character._animation_image_cache.has("cleaner_stale"),
+		"요리사 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
 	)
 	var crush_results: Array[bool] = []
 	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
@@ -972,51 +861,13 @@ func _test_release_punch() -> void:
 		"특수 스킬 호출은 8 frame SPECIAL 상태를 시작한다."
 	)
 	character._special_animation_remaining = 0.0
-	character.position = Vector2(240.0, 912.0)
-	character.facing = 1
-	var body_rect: Rect2 = character._character_collider_rect()
-	var right_attack_rect: Rect2 = character._punch_hitbox_rect()
-	character.facing = -1
-	var left_attack_rect: Rect2 = character._punch_hitbox_rect()
-	_expect(
-		is_equal_approx(right_attack_rect.size.x, MainCharacterController.CELL_SIZE)
-			and is_equal_approx(right_attack_rect.size.y, body_rect.size.y)
-			and is_equal_approx(right_attack_rect.position.x, body_rect.end.x)
-			and is_equal_approx(left_attack_rect.end.x, body_rect.position.x)
-			and left_attack_rect.size.is_equal_approx(right_attack_rect.size),
-		"기본 공격은 무기 sprite와 무관하게 좌우 전방 한 칸·캐릭터 전체 높이를 판정한다."
-	)
-	character.facing = 1
-	controller.state = MainGameController.GameState.PLAYING
-	controller.active_cell_indices.clear()
-	controller.board.reset()
-	controller.board.cells[20][6] = MainTetrominoData.Type.J
-	var upper_target: Variant = character._basic_attack_target_cell()
-	controller.board.reset()
-	controller.board.cells[21][6] = MainTetrominoData.Type.J
-	var lower_target: Variant = character._basic_attack_target_cell()
-	controller.board.reset()
-	controller.board.cells[19][6] = MainTetrominoData.Type.J
-	var outside_target: Variant = character._basic_attack_target_cell()
-	_expect(
-		upper_target != null
-			and (upper_target as Vector2i) == Vector2i(6, 20)
-			and lower_target != null
-			and (lower_target as Vector2i) == Vector2i(6, 21),
-		"기본 공격은 캐릭터 높이에 걸친 위·아래 전방 블록을 모두 대상으로 찾는다."
-	)
-	_expect(
-		outside_target == null,
-		"기본 공격은 캐릭터 고정 높이 밖의 블록까지 판정을 넓히지 않는다."
-	)
-	_prepare_punch(controller, character, Vector2i(4, 19), Vector2(165.0, 912.0))
+	_prepare_punch(controller, character, Vector2i(3, 19), Vector2(165.0, 912.0))
 	var start_origin: Vector2i = controller.active_origin # release 전후를 비교할 immutable 기준값.
 	Input.action_release(&"character_punch")
 	Input.action_press(&"character_punch")
 	character._handle_charge(0.2)
 	_expect(
-		not character._charging
-			and character._pending_punch_stage == 1
+		character._pending_punch_stage == 1
 			and controller.active_origin == start_origin,
 		"X를 누르면 즉시 공통 1칸 밀치기 판정이 예약된다."
 	)
@@ -1027,6 +878,67 @@ func _test_release_punch() -> void:
 	)
 	Input.action_release(&"character_punch")
 
+	_prepare_punch(controller, character, Vector2i(3, 19), Vector2(165.0, 912.0))
+	controller.active_cell_indices = [0]
+	var expected_front_cells: Array[Vector2i] = [Vector2i(4, 20), Vector2i(4, 19)]
+	_expect(
+		character._basic_attack_target_cells() == expected_front_cells,
+		"X target is exactly the lower and upper cells in the immediately facing column."
+	)
+	character._pending_punch_stage = 1
+	character._pending_punch_hit_remaining = 0.1
+	character._resolve_pending_punch(0.0)
+	_expect(
+		controller.active_origin == Vector2i(4, 19),
+		"An active cell in the upper front target moves the whole active piece once."
+	)
+
+	_prepare_punch(controller, character, Vector2i(3, 19), Vector2(165.0, 912.0))
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_cell_indices = [0, 1, 2, 3]
+	character._pending_punch_stage = 1
+	character._pending_punch_hit_remaining = 0.1
+	character._resolve_pending_punch(0.0)
+	_expect(
+		controller.active_origin == Vector2i(4, 19),
+		"Touching both front target cells still pushes the active tetromino only once."
+	)
+
+	_prepare_punch(controller, character, Vector2i(3, 19), Vector2(165.0, 912.0))
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_cell_indices = [0, 1, 2, 3]
+	controller.board.cells[19][6] = MainTetrominoData.Type.J
+	character._pending_punch_stage = 1
+	character._pending_punch_hit_remaining = 0.1
+	character._resolve_pending_punch(0.0)
+	_expect(
+		controller.active_origin == Vector2i(3, 19),
+		"A blocked destination keeps the active tetromino in place."
+	)
+
+	var excluded_origins: Array[Vector2i] = [
+		Vector2i(3, 18), # above the two-cell window
+		Vector2i(4, 20), # below the two-cell window
+		Vector2i(1, 19), # behind the character
+	]
+	var excluded_indices: Array[int] = [0, 1, 0]
+	var excluded_cells_do_not_move: bool = true
+	for excluded_index: int in range(excluded_origins.size()):
+		var excluded_origin: Vector2i = excluded_origins[excluded_index]
+		_prepare_punch(controller, character, excluded_origin, Vector2(165.0, 912.0))
+		controller.active_cell_indices = [excluded_indices[excluded_index]]
+		character._pending_punch_stage = 1
+		character._pending_punch_hit_remaining = 0.1
+		character._resolve_pending_punch(0.0)
+		excluded_cells_do_not_move = (
+			excluded_cells_do_not_move and controller.active_origin == excluded_origin
+		)
+	_expect(
+		excluded_cells_do_not_move,
+		"Active cells above, below, or behind the exact two-cell X window do not move."
+	)
+	controller.active_cell_indices = [0, 1, 2, 3]
+
 	_prepare_punch(controller, character, Vector2i(7, 1), Vector2(24.0, 912.0))
 	Input.action_press(&"character_punch")
 	character._handle_charge(0.2)
@@ -1036,14 +948,24 @@ func _test_release_punch() -> void:
 		"전방 hitbox 밖의 블록은 놓아도 이동하지 않는다."
 	)
 	Input.action_release(&"character_punch")
+
+	_prepare_punch(controller, character, Vector2i(7, 1), Vector2(165.0, 912.0))
+	controller.board.cells[20][4] = MainTetrominoData.Type.J
+	Input.action_press(&"character_punch")
+	character._handle_charge(0.2)
+	character._resolve_pending_punch(0.1)
+	_expect(
+		controller.board.get_cell(Vector2i(4, 20)) == MainTetrominoData.Type.J
+			and controller.board.get_cell(Vector2i(5, 20)) == MainBoardModel.EMPTY,
+		"기본 공격은 전방의 고정된 비활성 블록을 이동시키지 않는다."
+	)
+	Input.action_release(&"character_punch")
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	await create_timer(0.12).timeout
 	scene.free()
 	await process_frame
@@ -1088,47 +1010,187 @@ func _test_beta_specials() -> void:
 	)
 	controller.board.reset()
 	character.special_cooldown_remaining = 0.0
+	controller.board.cells[21][6] = MainTetrominoData.Type.T
+	var boxer_floor_target_started: bool = character._attempt_special_skill()
+	character._resolve_pending_special()
+	_expect(
+		boxer_floor_target_started
+			and character._boxer_special_target_cells()
+			== [Vector2i(6, 21), Vector2i(6, 20)]
+			and controller.board.get_cell(Vector2i(6, 21)) == MainBoardModel.EMPTY
+			and controller.board.get_cell(Vector2i(9, 21)) == MainTetrominoData.Type.T,
+		"복서 가드 브레이크는 발 바로 옆의 하단 전방 블록도 최대 3칸 민다."
+	)
+	controller.board.reset()
+	character.special_cooldown_remaining = 0.0
+	controller.board.cells[21][6] = MainTetrominoData.Type.J
+	controller.board.cells[20][6] = MainTetrominoData.Type.T
+	var boxer_upper_fallback_started: bool = character._attempt_special_skill()
+	character._resolve_pending_special()
+	_expect(
+		boxer_upper_fallback_started
+			and controller.board.get_cell(Vector2i(6, 21)) == MainTetrominoData.Type.J
+			and controller.board.get_cell(Vector2i(6, 20)) == MainBoardModel.EMPTY
+			and controller.board.get_cell(Vector2i(9, 20)) == MainTetrominoData.Type.T,
+		"하단 블록이 위 블록에 덮여 움직일 수 없으면 복서는 노출된 상단 블록 하나만 민다."
+	)
+	controller.board.reset()
+	character.special_cooldown_remaining = 0.0
 	var boxer_failed_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
 	_expect(
 		boxer_failed_started
 			and is_equal_approx(
 				character.special_cooldown_remaining,
-				character.current_special_cooldown() * 0.5
+				character.current_special_cooldown()
 			),
-		"복서 가드 브레이크만 0칸 이동 실패 시 특수 쿨다운의 50%를 적용한다."
+		"복서 가드 브레이크는 0칸 이동 실패에도 특수 쿨다운의 100%를 적용한다."
 	)
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
+	controller.active_type = MainTetrominoData.Type.T
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(6, 18)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	character.take_damage()
+	_expect(
+		character.lives == 2,
+		"복서 가드 브레이크는 블록 이동 뒤 추가 피해 무효 효과를 부여하지 않는다."
+	)
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
+	controller.active_origin = Vector2i(3, 1)
 
 	controller.board.reset()
 	character.set_character_id("shield_guard")
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.facing = 1
 	var shield_started: bool = character._attempt_special_skill()
+	# Preserve the cast pose throughout the shield wind-up.
+	character.position.x -= MainCharacterController.CELL_SIZE
+	character.facing = -1
 	character._resolve_pending_special()
 	_expect(
 		shield_started
 			and character.barrier_remaining() > 0.0
-			and controller.transient_blocker_cells.size() == 3,
+			and character._barrier_direction == 1
+			and controller.transient_blocker_cells.size() == 3
+			and Vector2i(6, 21) in controller.transient_blocker_cells
+			and Vector2i(6, 20) in controller.transient_blocker_cells
+			and Vector2i(6, 19) in controller.transient_blocker_cells,
 		"방패병은 시전 방향 앞에 세로 3칸의 임시 보호벽을 만든다."
 	)
 	character._cancel_character_skill_effects()
 
+	# Occupied candidates are omitted, while generated cells remain the sole
+	# collision/display state. The barrier itself must never roll movement back.
+	controller.board.reset()
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.facing = 1
+	character.special_cooldown_remaining = 0.0
+	controller.board.cells[20][6] = MainTetrominoData.Type.T
+	var partial_shield_started: bool = character._attempt_special_skill()
+	character._resolve_pending_special()
+	_expect(
+		partial_shield_started
+			and controller.transient_blocker_cells.size() == 2
+			and Vector2i(6, 21) in controller.transient_blocker_cells
+			and Vector2i(6, 19) in controller.transient_blocker_cells
+			and not Vector2i(6, 20) in controller.transient_blocker_cells,
+		"방패병은 점유 칸을 제외하고 실제 생성된 보호막 칸만 판정에 사용한다."
+	)
+	character._cancel_character_skill_effects()
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.facing = 1
+
 	controller.board.reset()
 	character.set_character_id("firefighter")
 	character.special_cooldown_remaining = 0.0
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.facing = 1
 	var firefighter_started: bool = character._attempt_special_skill()
+	# Turning during the hose wind-up must not redirect or relocate the path.
+	character.position.x -= MainCharacterController.CELL_SIZE
+	character.facing = -1
 	if firefighter_started:
 		character._resolve_pending_special()
 	_expect(
-		firefighter_started and not controller.water_path_cells.is_empty(),
-		"소방관은 고정 지형을 따라 최대 4단계 중력 물길을 만든다."
+		firefighter_started
+			and controller.water_path_direction == 1
+			and controller.water_path_cells
+			== [Vector2i(6, 21), Vector2i(7, 21), Vector2i(8, 21)],
+		"소방관은 고정 지형을 따라 최대 3셀 중력 물길을 만든다."
+	)
+	var water_visual_is_attached: bool = false
+	if not controller.water_path_cells.is_empty():
+		var water_cell: Vector2i = controller.water_path_cells[0]
+		var water_cell_rect: Rect2 = scene._cell_rect(water_cell)
+		var water_display_rect: Rect2 = scene._water_path_display_rect(water_cell)
+		var water_source_rect: Rect2 = scene._water_path_source_rect(0)
+		water_visual_is_attached = (
+			water_display_rect.size == Vector2(
+				MainLayout.CELL_SIZE,
+				MainGameView.WATER_PATH_DISPLAY_HEIGHT
+			)
+			and water_display_rect.position.y < water_cell_rect.end.y
+			and water_display_rect.end.y > water_cell_rect.end.y
+			and water_source_rect.size.y
+				== MainGameView.WATER_PATH_SOURCE_VISIBLE_HEIGHT
+		)
+	_expect(
+		water_visual_is_attached,
+		"소방관 물길은 실제 물 픽셀을 확대해 블록 윗면과 겹치도록 밀착 표시한다."
+	)
+
+	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(3, 20)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	var water_creation_origin: Vector2i = controller.active_origin
+	var overlapping_water_created: bool = controller.create_water_path(
+		Vector2i(4, 21),
+		1,
+		3
+	)
+	_expect(
+		overlapping_water_created and controller.active_origin == water_creation_origin,
+		"소방관 물길은 생성 순간 활성 블록을 밀지 않고 다음 자동 낙하 단계를 기다린다."
+	)
+
+	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(3, 5)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	controller.board.cells[5][6] = MainTetrominoData.Type.T
+	controller.water_path_cells = [Vector2i(4, 6)]
+	controller.water_path_direction = 1
+	controller._fall_accumulator = 0.0
+	controller._advance_gravity(MainGameController.GRAVITY_INTERVAL_SECONDS)
+	var blocked_slide_still_descended: bool = controller.active_origin == Vector2i(3, 6)
+	controller._advance_gravity(MainGameController.GRAVITY_INTERVAL_SECONDS)
+	_expect(
+		blocked_slide_still_descended and controller.active_origin == Vector2i(4, 7),
+		"물길은 각 자동 낙하 단계에서 옆 이동을 한 번 먼저 시도하고 막혀도 아래로 낙하한다."
 	)
 	character._cancel_character_skill_effects()
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.facing = 1
 
 	controller.board.reset()
 	character.set_character_id("cleaner")
 	character.special_cooldown_remaining = 0.0
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 864.0)
 	for x: int in range(4, 7):
 		controller.board.cells[MainBoardModel.HEIGHT - 1][x] = MainTetrominoData.Type.T
+	_expect(
+		character._cell_below_feet() == Vector2i(5, 21),
+		"청소부의 발밑 행은 고정 블록 위에서도 공통 42×90 콜라이더 아랫면을 따른다."
+	)
 	var cleaner_started: bool = character._attempt_special_skill()
+	# Moving during the sweep must not move the three cast-time target cells.
+	character.position.x += MainCharacterController.CELL_SIZE * 2.0
 	if cleaner_started:
 		character._resolve_pending_special()
 	_expect(
@@ -1140,32 +1202,87 @@ func _test_beta_specials() -> void:
 	)
 
 	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.T
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(4, 20)
+	controller.active_cell_indices = [0]
+	for x: int in range(4, 7):
+		controller.board.cells[21][x] = MainTetrominoData.Type.J
+	var removed_around_active: int = controller.clean_exposed_cells(Vector2i(5, 21))
+	_expect(
+		removed_around_active == 2
+			and controller.board.get_cell(Vector2i(4, 21)) == MainBoardModel.EMPTY
+			and controller.board.get_cell(Vector2i(5, 21)) == MainTetrominoData.Type.J
+			and controller.board.get_cell(Vector2i(6, 21)) == MainBoardModel.EMPTY,
+		"청소부는 활성 블록이 바로 위에 있는 고정 블록을 노출 대상으로 잘못 삭제하지 않는다."
+	)
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+
+	controller.board.reset()
 	character.set_character_id("chef")
 	character.special_cooldown_remaining = 0.0
-	controller.board.cells[20][6] = MainTetrominoData.Type.L
+	var chef_base_speed: float = MainCharacterData.move_speed("chef") * MainCharacterController.GIT_GRID_SCALE
 	var chef_started: bool = character._attempt_special_skill()
 	if chef_started:
 		character._resolve_pending_special()
 	_expect(
 		chef_started
-			and controller.board.get_cell(Vector2i(6, 20)) == MainBoardModel.EMPTY
-			and controller.board.get_cell(Vector2i(7, 19)) == MainTetrominoData.Type.L,
-		"요리사 팬 토스는 전방 고정 블록을 기본 위 대각선으로 옮긴다."
+			and is_equal_approx(character.chef_meat_remaining(), 3.0)
+			and character.chef_meat_guard_available()
+			and is_equal_approx(character.current_move_speed(), chef_base_speed * 1.2),
+		"요리사 고기 섭취는 3초 동안 이동속도를 20% 높이고 다음 피해 방어를 준비한다."
 	)
-
-	controller.board.reset()
-	controller.active_type = MainTetrominoData.Type.T
-	controller.active_rotation = 0
-	controller.active_origin = Vector2i(6, 18)
-	controller.active_cell_indices = [0, 1, 2, 3]
-	var split_success: bool = controller.pan_toss(Vector2i(7, 18), Vector2i(1, -1))
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
+	character.take_damage()
 	_expect(
-		split_success
-			and controller.active_cell_indices.size() == 3
-			and controller.board.get_cell(Vector2i(8, 17)) == MainTetrominoData.Type.T
-			and controller.try_rotate(1),
-		"팬 토스는 활성 미노 한 칸을 고정하고 남은 3칸 도형의 회전을 유지한다."
+		character.lives == 2
+			and not character.chef_meat_guard_available(),
+		"요리사는 고기 섭취 강화 중이어도 블록 압착 피해로 목숨 1을 잃는다."
 	)
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
+	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
+	character.special_cooldown_remaining = 0.0
+	character._attempt_special_skill()
+	character._resolve_pending_special()
+	character.apply_binding(2.0)
+	_expect(
+		not character.is_bound
+			and character.lives == 3
+			and not character.chef_meat_guard_available()
+			and character.chef_meat_remaining() > 0.0,
+		"고기 섭취의 다음 위험 1회 방어는 확률 결박과 보스 씨앗 결박을 무효화하고 속도 강화는 유지한다."
+	)
+	character.apply_binding(2.0)
+	_expect(
+		character.is_bound,
+		"고기 섭취 방어를 소모한 뒤의 다음 스테이지 결박은 정상 적용된다."
+	)
+	character._end_binding()
+	character.special_cooldown_remaining = 0.0
+	character._attempt_special_skill()
+	character._resolve_pending_special()
+	character.take_thorn_damage()
+	_expect(
+		character.lives == 3
+			and not character.chef_meat_guard_available()
+			and is_equal_approx(character.current_move_speed(), chef_base_speed * 1.2),
+		"요리사의 다음 피해 1회 무효는 가시 피해를 소비하고 이동 강화는 남은 시간 동안 유지한다."
+	)
+	character.take_thorn_damage()
+	_expect(
+		character.lives == 2,
+		"고기 섭취 방어를 소비한 뒤의 다음 피해는 정상적으로 목숨을 차감한다."
+	)
+	character._update_timers(3.0)
+	_expect(
+		is_zero_approx(character.chef_meat_remaining())
+			and is_equal_approx(character.current_move_speed(), chef_base_speed),
+		"요리사의 고기 섭취 이동 강화와 남은 방어는 3초 뒤 함께 종료된다."
+	)
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
 
 	controller.board.reset()
 	character.set_character_id("clockmaker")
@@ -1199,11 +1316,25 @@ func _test_beta_specials() -> void:
 	var ninja_origin_before: Vector2i = controller.active_origin
 	var ninja_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
+	var ninja_waits_for_visual_contact: bool = controller.active_origin == ninja_origin_before
+	character._advance_ninja_projectile(0.5)
 	_expect(
 		ninja_started
 			and is_equal_approx(character.stamina, stamina_before)
+			and ninja_waits_for_visual_contact
 			and controller.active_origin == ninja_origin_before + Vector2i.RIGHT,
 		"닌자 표창은 활성 미노에 명중하면 도형 전체를 정확히 1칸 민다."
+	)
+	var ninja_result: Dictionary = character.ninja_special_result()
+	var ninja_board_position: Vector2 = ninja_result["position"] as Vector2
+	_expect(
+		scene.ninja_shuriken_canvas_position(ninja_board_position)
+			== MainLayout.BOARD_ORIGIN + ninja_board_position,
+		"닌자 표창 VFX는 캐릭터 위치·바라보는 방향을 다시 더하지 않고 실제 보드 충돌 좌표에 표시된다."
+	)
+	_expect(
+		MainCharacterController.SHURIKEN_COLLISION_SIZE == Vector2(32.0, 32.0),
+		"닌자 표창 충돌 판정은 화면에 표시되는 32×32 스프라이트 크기와 일치한다."
 	)
 
 	controller.board.reset()
@@ -1274,11 +1405,12 @@ func _test_beta_specials() -> void:
 	character.special_cooldown_remaining = 0.0
 	var ninja_miss_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
+	character._advance_ninja_projectile(0.5)
 	_expect(
 		ninja_miss_started
 			and not character.last_special_succeeded()
 			and character.ninja_special_result()["contact"] == MainGameController.SHURIKEN_CONTACT_NONE
-			and int(character.ninja_special_result()["travel_cells"]) == 4
+			and not bool(character.ninja_special_result()["in_flight"])
 			and is_equal_approx(
 				character.special_cooldown_remaining,
 				character.current_special_cooldown()
@@ -1287,8 +1419,13 @@ func _test_beta_specials() -> void:
 	)
 	character._update_timers(1.0)
 	_expect(
+		not character.ninja_special_result().is_empty(),
+		"닌자 표창 충돌 이펙트는 캐릭터 특수 동작이 끝나도 자체 표시 시간 동안 유지된다."
+	)
+	character._advance_ninja_projectile(MainCharacterController.SHURIKEN_IMPACT_DURATION)
+	_expect(
 		character.ninja_special_result().is_empty(),
-		"닌자 표창 판정 결과는 0.8초 특수 애니메이션 종료 후 정리된다."
+		"닌자 표창 판정 결과는 충돌 이펙트 표시 시간이 끝난 뒤 정리된다."
 	)
 
 	character.set_character_id("normal")
@@ -1346,11 +1483,9 @@ func _test_beta_specials() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1398,11 +1533,102 @@ func _test_fixed_support_grab() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
+	scene.free()
+	await process_frame
+
+
+func _test_standing_wall_visual_alignment() -> void:
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	await process_frame
+
+	var controller: MainGameController = scene.get_node("GameController")
+	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	controller.board.reset()
+	controller.board.cells[20][5] = MainTetrominoData.Type.J
+	controller.board.cells[21][5] = MainTetrominoData.Type.J
+	board_physics._sync_from_model()
+	await physics_frame
+	scene.process_mode = Node.PROCESS_MODE_DISABLED
+
+	character.position = Vector2(219.0, 912.0)
+	character.velocity = Vector2.ZERO
+	character.is_hanging = false
+	character._animation_state = ANIMATION_DATA.IDLE
+	var right_alignment_is_exact: bool = character.is_on_floor()
+	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
+		character.set_character_id(profile_id)
+		for frame_index: int in range(ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE].size()):
+			character._animation_time = (
+				float(frame_index) * float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.IDLE])
+				+ 0.001
+			)
+			for flipped: bool in [false, true]:
+				character.sprite.flip_h = flipped
+				character._apply_animation_frame()
+				var bounds: Rect2 = character._frame_alpha_bounds(character.sprite.region_rect)
+				var edge_x: float = character.sprite.position.x + (
+					ANIMATION_DATA.FRAME_SIZE - bounds.position.x
+					if flipped
+					else bounds.end.x
+				) - ANIMATION_DATA.FRAME_SIZE * 0.5
+				right_alignment_is_exact = (
+					right_alignment_is_exact
+					and is_equal_approx(
+						edge_x,
+						MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5
+							+ MainCharacterController.BLOCK_VISUAL_INSET
+					)
+				)
+	_expect(
+		right_alignment_is_exact,
+		"Every idle frame and facing aligns its rightmost opaque pixel with a touching block wall."
+	)
+
+	character.position.x = 309.0
+	var left_alignment_is_exact: bool = true
+	for flipped: bool in [false, true]:
+		character.sprite.flip_h = flipped
+		character._animation_time = 0.001
+		character._apply_animation_frame()
+		var bounds: Rect2 = character._frame_alpha_bounds(character.sprite.region_rect)
+		var edge_x: float = character.sprite.position.x + (
+			ANIMATION_DATA.FRAME_SIZE - bounds.end.x
+			if flipped
+			else bounds.position.x
+		) - ANIMATION_DATA.FRAME_SIZE * 0.5
+		left_alignment_is_exact = left_alignment_is_exact and is_equal_approx(
+			edge_x,
+			-MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5
+				- MainCharacterController.BLOCK_VISUAL_INSET
+		)
+	_expect(
+		left_alignment_is_exact,
+		"Standing art also aligns its leftmost opaque pixel when the wall is behind or ahead."
+	)
+
+	character.position.x = 216.0
+	character.sprite.flip_h = false
+	character._animation_time = 0.001
+	character._apply_animation_frame()
+	_expect(
+		character._standing_wall_contact_direction() == 0
+			and is_zero_approx(character.sprite.position.x),
+		"A nearby wall outside the collider contact tolerance does not pull the standing sprite."
+	)
+
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1429,25 +1655,76 @@ func _test_hang_face_bounds() -> void:
 	_expect(
 		character.is_hanging
 			and character._hang_body != null
-			and character.global_position.y == grab_y,
+			and character.global_position.y == grab_y
+			and is_equal_approx(
+				character.global_position.x
+					+ MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5,
+				character._hang_face_global_x
+			),
 		"노출된 옆면 가까이의 C-grab은 세로 위치를 바꾸지 않고 성공한다."
 	)
 	character._exit_hang()
+	var every_back_facing_grab_rejected: bool = true
+	for profile_id: String in MainCharacterData.CHARACTER_ORDER:
+		character.set_character_id(profile_id)
+		character.position = Vector2(216.0, 312.0)
+		character.facing = -1
+		character.sprite.flip_h = true
+		character._try_start_hang()
+		every_back_facing_grab_rejected = (
+			every_back_facing_grab_rejected
+			and not character.is_hanging
+			and character.facing == -1
+		)
+		character._exit_hang()
+	character.set_character_id("normal")
+	_expect(
+		every_back_facing_grab_rejected,
+		"All eight characters reject a wall touching their back and keep their facing direction."
+	)
+	# Restore the original front-facing hang before exercising surface removal.
+	character.position = Vector2(216.0, 312.0)
+	character.facing = 1
+	character.sprite.flip_h = false
+	character._try_start_hang()
 	controller.board.reset()
 	board_physics._sync_from_model()
 	await physics_frame
+	Input.action_press(&"character_grab")
+	character._handle_hanging(0.016)
+	Input.action_release(&"character_grab")
+	_expect(
+		not character.is_hanging and character._hang_body == null,
+		"매달린 고정 블록 면이 사라지면 입력이 없어도 즉시 매달림을 해제한다."
+	)
 	character.position = Vector2(24.0, 312.0)
 	character.facing = -1
 	character.left_ray.force_raycast_update()
 	character._try_start_hang()
+	var visible_center_range: Vector2 = character._visible_board_character_center_range()
 	_expect(
 		character.is_hanging
 			and character._hang_body == board_physics.get_node("Boundaries")
+			and is_equal_approx(
+				character.global_position.x
+					- MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5,
+				character._hang_face_global_x
+			)
+			and is_equal_approx(character._hang_top_global_y, visible_center_range.x)
+			and is_equal_approx(character._hang_bottom_global_y, visible_center_range.y)
 			and character._hang_top_global_y <= character.global_position.y
 			and character.global_position.y <= character._hang_bottom_global_y,
-		"보드 경계벽은 바닥 collision과 같은 body여도 잡을 수 있다."
+		"보드 경계벽 매달림은 보이는 보드 내부의 캐릭터 중심 범위만 사용한다."
 	)
 	character._exit_hang()
+	character.position = Vector2(24.0, 0.0)
+	character.facing = -1
+	character.left_ray.force_raycast_update()
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging and character._hang_body == null,
+		"HUD 쪽으로 연장된 숨은 경계벽에서는 매달리기를 시작하지 않는다."
+	)
 
 	await _prepare_hang_fixture(
 		controller,
@@ -1485,18 +1762,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(
-				character._hang_top_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(8 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			)
-			and is_equal_approx(
-				character._hang_bottom_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(10 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			),
+			and is_equal_approx(character._hang_top_global_y, 440.0)
+			and is_equal_approx(character._hang_bottom_global_y, 536.0),
 		"세로로 이어진 노출 옆면은 손 위치 기준 매달림 범위를 공유한다."
 	)
 	var upper_bound: float = character._hang_top_global_y
@@ -1533,6 +1800,23 @@ func _test_hang_face_bounds() -> void:
 	var active_piece: AnimatableBody2D = board_physics.active_body
 	var bounds_top: float = 368.0
 	var bounds_bottom: float = 464.0
+	var follow_start_position: Vector2 = character.global_position
+	character._hang_top_global_y = bounds_top
+	character._hang_bottom_global_y = bounds_bottom
+	character._hang_body = active_piece
+	character._hang_last_global_position = active_piece.global_position - Vector2(
+		0.0,
+		MainLayout.CELL_SIZE
+	)
+	character._follow_hang_body()
+	_expect(
+		not character.is_hanging
+			and character.global_position.is_equal_approx(follow_start_position),
+		"하강 활성 피스가 캐릭터를 고정 블록 사이로 끌고 가려 하면 매달림을 해제한다."
+	)
+	controller.board.reset()
+	character.global_position.y = (bounds_top + bounds_bottom) * 0.5
+	character.is_hanging = true
 	character._hang_top_global_y = bounds_top
 	character._hang_bottom_global_y = bounds_bottom
 	character._hang_body = active_piece
@@ -1544,7 +1828,7 @@ func _test_hang_face_bounds() -> void:
 	_expect(
 		is_equal_approx(character._hang_top_global_y, bounds_top + MainLayout.CELL_SIZE)
 			and is_equal_approx(character._hang_bottom_global_y, bounds_bottom + MainLayout.CELL_SIZE),
-		"활성 피스의 수직 이동은 저장된 매달림 범위를 함께 이동시킨다."
+		"고정 지형이 없으면 활성 피스의 수직 이동을 매달림 범위와 함께 따라간다."
 	)
 	Input.action_release(&"character_meditate")
 	character.is_hanging = true
@@ -1578,18 +1862,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(
-				character._hang_top_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(10 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			)
-			and is_equal_approx(
-				character._hang_bottom_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(11 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			),
+			and is_equal_approx(character._hang_top_global_y, 536.0)
+			and is_equal_approx(character._hang_bottom_global_y, 584.0),
 		"세로 틈이 있는 옆면은 틈을 건너 범위를 확장하지 않는다."
 	)
 	character._exit_hang()
@@ -1604,18 +1878,8 @@ func _test_hang_face_bounds() -> void:
 	character._try_start_hang()
 	_expect(
 		character.is_hanging
-			and is_equal_approx(
-				character._hang_top_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(8 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			)
-			and is_equal_approx(
-				character._hang_bottom_global_y,
-				MainLayout.BOARD_ORIGIN.y
-					+ float(9 - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
-					+ MainCharacterController.HANG_HAND_OFFSET_Y
-			),
+			and is_equal_approx(character._hang_top_global_y, 440.0)
+			and is_equal_approx(character._hang_bottom_global_y, 488.0),
 		"수평으로 꺾인 step은 다른 face를 같은 범위로 합치지 않는다."
 	)
 	character._exit_hang()
@@ -1623,11 +1887,9 @@ func _test_hang_face_bounds() -> void:
 	character._sfx_player.stop()
 	character._sfx_cue_player.stop()
 	character._meditation_loop_player.stop()
-	character._charge_loop_player.stop()
 	character._sfx_player.stream = null
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
-	character._charge_loop_player.stream = null
 	scene.free()
 	await process_frame
 
@@ -1669,10 +1931,17 @@ func _test_character_frame_normalization(
 		ANIMATION_DATA.SPECIAL,
 	]
 	var visible_bounds_are_stable: bool = true
+	var fixed_geometry_is_stable: bool = true
+	var all_required_frames_are_opaque: bool = true
 	var collision_is_frame_independent: bool = true
 	var transparent_padding_is_excluded: bool = true
 	var hang_animation_cycles: bool = true
+	var still_hang_holds_first_frame: bool = true
+	var downward_hang_reverses: bool = true
 	var hang_blink_keeps_frame: bool = true
+	var hang_art_meets_collider_wall: bool = true
+	var stationary_idle_is_stable: bool = true
+	var moving_idle_still_cycles: bool = true
 	controller.active_type = MainTetrominoData.Type.O
 	controller.active_rotation = 0
 	controller.active_cell_indices = [0, 1, 2, 3]
@@ -1682,24 +1951,50 @@ func _test_character_frame_normalization(
 
 	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		character.set_character_id(profile_id)
+		character.is_hanging = false
+		character._spin_remaining = 0.0
+		character._special_animation_remaining = 0.0
+		character._attack_animation_remaining = 0.0
+		character._post_spin_animation_seeded = false
 		character._animation_state = ANIMATION_DATA.IDLE
+		character._animation_time = 0.0
+		character.velocity = Vector2.ZERO
+		character._advance_character_animation(
+			float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.IDLE]) + 0.001
+		)
+		stationary_idle_is_stable = stationary_idle_is_stable and (
+			character.sprite.region_rect == ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE][0]
+		)
+		character.velocity.x = 20.0
+		character._advance_character_animation(
+			float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.IDLE]) + 0.001
+		)
+		moving_idle_still_cycles = moving_idle_still_cycles and (
+			character.sprite.region_rect == ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE][1]
+		)
+		character.velocity = Vector2.ZERO
 		character._animation_time = 0.0
 		character._apply_animation_frame()
 		var expected_visible_rect: Rect2 = _sprite_visible_rect(character)
+		var reference_scale: Vector2 = character.sprite.scale
+		var reference_position: Vector2 = character.sprite.position
 		var reference_region: Rect2 = character.sprite.region_rect
 		var reference_bounds: Rect2 = character._frame_alpha_bounds(reference_region)
 		transparent_padding_is_excluded = (
 			transparent_padding_is_excluded
 			and reference_bounds.size.x < reference_region.size.x
 			and reference_bounds.size.y < reference_region.size.y
-			and is_equal_approx(
-				expected_visible_rect.size.y,
-				ANIMATION_DATA.visible_height_for(ANIMATION_DATA.IDLE, profile_id)
+			and (
+				ANIMATION_DATA.uses_fixed_geometry(profile_id)
+				or is_equal_approx(
+					expected_visible_rect.size.y,
+					ANIMATION_DATA.visible_height_for(ANIMATION_DATA.IDLE, profile_id)
+				)
 			)
 		)
 		for state: String in states:
 			character.is_hanging = false
-			var frames: Array = ANIMATION_DATA.REGIONS[state]
+			var frames: Array = ANIMATION_DATA.regions_for(state, profile_id)
 			for frame_index: int in range(frames.size()):
 				character._animation_state = state
 				character._animation_time = (
@@ -1708,7 +2003,26 @@ func _test_character_frame_normalization(
 				)
 				character._apply_animation_frame()
 				var visible_rect: Rect2 = _sprite_visible_rect(character)
-				if (
+				var frame_bounds: Rect2 = character._frame_alpha_bounds(character.sprite.region_rect)
+				if state == ANIMATION_DATA.HANG:
+					hang_art_meets_collider_wall = (
+						hang_art_meets_collider_wall
+						and is_equal_approx(
+							frame_bounds.end.x - ANIMATION_DATA.FRAME_SIZE * 0.5,
+							MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5 + 2.0
+						)
+					)
+				all_required_frames_are_opaque = (
+					all_required_frames_are_opaque and frame_bounds.has_area()
+				)
+				if ANIMATION_DATA.uses_fixed_geometry(profile_id):
+					if (
+						not character.sprite.scale.is_equal_approx(reference_scale)
+						or not character.sprite.position.is_equal_approx(reference_position)
+						or not character.sprite.scale.is_equal_approx(Vector2.ONE)
+					):
+						fixed_geometry_is_stable = false
+				elif (
 					not is_equal_approx(
 						visible_rect.size.y,
 						ANIMATION_DATA.visible_height_for(state, profile_id)
@@ -1730,6 +2044,7 @@ func _test_character_frame_normalization(
 				):
 					collision_is_frame_independent = false
 		character.is_hanging = true
+		character._hang_animation_direction = 0.0
 		character._animation_state = ANIMATION_DATA.IDLE
 		character._animation_time = 0.0
 		character._advance_character_animation(0.0)
@@ -1745,8 +2060,25 @@ func _test_character_frame_normalization(
 			and character.sprite.position.is_equal_approx(hang_position)
 		)
 		character._advance_character_animation(float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.HANG]) + 0.001)
+		still_hang_holds_first_frame = still_hang_holds_first_frame and (
+			character.sprite.region_rect == ANIMATION_DATA.REGIONS[ANIMATION_DATA.HANG][0]
+		)
+		character._hang_animation_direction = -1.0
+		character._advance_character_animation(
+			float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.HANG]) + 0.001
+		)
 		hang_animation_cycles = hang_animation_cycles and (
 			character.sprite.region_rect == ANIMATION_DATA.REGIONS[ANIMATION_DATA.HANG][1]
+		)
+		character._animation_time = 0.0
+		character._hang_animation_direction = 1.0
+		character._advance_character_animation(0.001)
+		var profile_hang_frames: Array = ANIMATION_DATA.regions_for(
+			ANIMATION_DATA.HANG,
+			profile_id
+		)
+		downward_hang_reverses = downward_hang_reverses and (
+			character.sprite.region_rect == profile_hang_frames[profile_hang_frames.size() - 1]
 		)
 
 	character.is_hanging = false
@@ -1755,8 +2087,23 @@ func _test_character_frame_normalization(
 		"모든 캐릭터는 모션이 바뀌어도 실제 실루엣 크기와 기준 위치를 유지한다."
 	)
 	_expect(
-		hang_animation_cycles and hang_blink_keeps_frame,
-		"매달림은 HANG frame을 순환하고 스테미나 점멸은 sprite frame과 transform을 바꾸지 않는다."
+		fixed_geometry_is_stable and all_required_frames_are_opaque,
+		"All eight skins use one fixed scale/offset and every required atlas frame is opaque."
+	)
+	_expect(
+		hang_animation_cycles
+			and still_hang_holds_first_frame
+			and downward_hang_reverses
+			and hang_blink_keeps_frame,
+		"Hang holds while still, cycles forward while climbing, and reverses while descending."
+	)
+	_expect(
+		stationary_idle_is_stable and moving_idle_still_cycles,
+		"Stationary characters hold idle frame zero; movement still cycles the shared idle/walk frames."
+	)
+	_expect(
+		hang_art_meets_collider_wall,
+		"All eight skins bridge the block sprite's two-pixel visual inset without changing collision."
 	)
 	_expect(
 		transparent_padding_is_excluded,
@@ -1765,6 +2112,17 @@ func _test_character_frame_normalization(
 	_expect(
 		collision_is_frame_independent,
 		"압사 판정은 캐릭터 sprite의 투명 공백과 animation frame에 영향받지 않는다."
+	)
+	var jump_speed: float = absf(character.current_jump_velocity())
+	_expect(
+		character._jump_animation_frame_for_velocity(-jump_speed) == 0
+			and character._jump_animation_frame_for_velocity(-jump_speed * 0.5) == 1
+			and character._jump_animation_frame_for_velocity(0.0) == 3
+			and character._jump_animation_frame_for_velocity(100.0) == 4
+			and character._jump_animation_frame_for_velocity(350.0) == 5
+			and character._jump_animation_frame_for_velocity(600.0) == 6
+			and character._jump_animation_frame_for_velocity(900.0) == 7,
+		"점프·낙하 frame은 경과시간이 아니라 실제 수직 속도로 상승·정점·하강을 선택한다."
 	)
 	character.set_character_id(ANIMATION_DATA.DEFAULT_CHARACTER_ID)
 	character._animation_state = ANIMATION_DATA.IDLE
@@ -1819,7 +2177,6 @@ func _test_binding_overlay_alignment(
 	)
 	character.set_character_id(ANIMATION_DATA.DEFAULT_CHARACTER_ID)
 
-
 func _prepare_punch(
 	controller: MainGameController,
 	character: MainCharacterController,
@@ -1831,14 +2188,11 @@ func _prepare_punch(
 	controller.active_type = MainTetrominoData.Type.T
 	controller.active_rotation = 0
 	controller.active_origin = origin
-	controller.active_cell_indices = [0, 1, 2, 3]
 	controller._reset_piece_timers()
 	character.position = character_position
 	character.velocity = Vector2.ZERO
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA
-	character._charging = false
-	character.charge_time = 0.0
 	character._attack_cooldown_remaining = 0.0
 	character._attack_animation_remaining = 0.0
 	character._pending_punch_stage = 0

@@ -466,10 +466,14 @@ func _run() -> void:
 	screen.start_game(5)
 	await process_frame
 	var boss_controller: MainGameController = screen._loaded_game_controller()
+	var boss_timer_label: Label = screen.find_child("TimerLabel", true, false) as Label
 	_expect(
 		boss_controller != null
 			and boss_controller.is_boss_stage()
-			and boss_controller.boss_health == MainGameController.BOSS_MAX_HEALTH,
+			and boss_controller.boss_health == MainGameController.BOSS_MAX_HEALTH
+			and boss_timer_label != null
+			and boss_timer_label.visible
+			and boss_timer_label.text == "03:00",
 		"Stage 5 Enter 테스트에서 보스 체력 3으로 게임을 시작한다."
 	)
 	screen._input(debug_enter_event)

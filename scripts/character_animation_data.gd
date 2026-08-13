@@ -26,28 +26,28 @@ const VISIBLE_HEIGHTS: Dictionary = {
 	SPECIAL: 96.0,
 }
 const NORMAL_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/normal/normal_atlas.png"
+	"res://assets/sprites/characters/normal/normal_reference_atlas_v8.png"
 )
 const BOXER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/boxer/boxer_atlas.png"
+	"res://assets/sprites/characters/boxer/boxer_reference_atlas_v6.png"
 )
 const SHIELD_GUARD_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/shield_guard/shield_guard_atlas.png"
+	"res://assets/sprites/characters/shield_guard/shield_guard_reference_atlas_v6.png"
 )
 const FIREFIGHTER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/firefighter/firefighter_atlas.png"
+	"res://assets/sprites/characters/firefighter/firefighter_reference_atlas_v6.png"
 )
 const CLEANER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/cleaner/cleaner_atlas.png"
+	"res://assets/sprites/characters/cleaner/cleaner_reference_atlas_v6.png"
 )
 const CHEF_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/chef/chef_atlas.png"
+	"res://assets/sprites/characters/chef/chef_reference_atlas_v7.png"
 )
 const CLOCKMAKER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/clockmaker/clockmaker_atlas.png"
+	"res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v6.png"
 )
 const NINJA_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/ninja/ninja_atlas.png"
+	"res://assets/sprites/characters/ninja/ninja_reference_atlas_v6.png"
 )
 
 const PROFILES: Dictionary = {
@@ -57,6 +57,10 @@ const PROFILES: Dictionary = {
 		"texture": NORMAL_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
+		"hang_frame_count": 8,
 	},
 	"boxer": {
 		"character_id": "boxer",
@@ -64,6 +68,9 @@ const PROFILES: Dictionary = {
 		"texture": BOXER_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"shield_guard": {
 		"character_id": "shield_guard",
@@ -71,6 +78,9 @@ const PROFILES: Dictionary = {
 		"texture": SHIELD_GUARD_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"firefighter": {
 		"character_id": "firefighter",
@@ -78,6 +88,9 @@ const PROFILES: Dictionary = {
 		"texture": FIREFIGHTER_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"cleaner": {
 		"character_id": "cleaner",
@@ -85,6 +98,9 @@ const PROFILES: Dictionary = {
 		"texture": CLEANER_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"chef": {
 		"character_id": "chef",
@@ -92,6 +108,9 @@ const PROFILES: Dictionary = {
 		"texture": CHEF_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"clockmaker": {
 		"character_id": "clockmaker",
@@ -99,6 +118,9 @@ const PROFILES: Dictionary = {
 		"texture": CLOCKMAKER_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 	"ninja": {
 		"character_id": "ninja",
@@ -106,6 +128,9 @@ const PROFILES: Dictionary = {
 		"texture": NINJA_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
+		"geometry_mode": "fixed_reference",
+		"fixed_scale": Vector2.ONE,
+		"fixed_offset": Vector2(0.0, 3.0),
 	},
 }
 
@@ -127,6 +152,10 @@ const REGIONS: Dictionary = {
 		Rect2(128, 256, 128, 128),
 		Rect2(256, 256, 128, 128),
 		Rect2(384, 256, 128, 128),
+		Rect2(512, 256, 128, 128),
+		Rect2(640, 256, 128, 128),
+		Rect2(768, 256, 128, 128),
+		Rect2(896, 256, 128, 128),
 	],
 	JUMP: [
 		Rect2(0, 384, 128, 128),
@@ -192,6 +221,18 @@ static func display_size_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vec
 	return profile_for(character_id)["display_size"] as Vector2
 
 
+static func uses_fixed_geometry(character_id: String = DEFAULT_CHARACTER_ID) -> bool:
+	return str(profile_for(character_id).get("geometry_mode", "legacy_alpha_fit")) == "fixed_reference"
+
+
+static func fixed_scale_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vector2:
+	return profile_for(character_id).get("fixed_scale", Vector2.ONE) as Vector2
+
+
+static func fixed_offset_for(character_id: String = DEFAULT_CHARACTER_ID) -> Vector2:
+	return profile_for(character_id).get("fixed_offset", Vector2.ZERO) as Vector2
+
+
 static func visible_height_for(
 	state: String,
 	character_id: String = DEFAULT_CHARACTER_ID
@@ -211,16 +252,35 @@ static func texture_for(
 static func region_for(
 	state: String,
 	elapsed: float,
-	_character_id: String = DEFAULT_CHARACTER_ID
+	character_id: String = DEFAULT_CHARACTER_ID
 ) -> Rect2:
 	var resolved_state: String = state if REGIONS.has(state) else IDLE
-	var frames: Array = REGIONS[resolved_state]
+	var frames: Array = regions_for(resolved_state, character_id)
 	var frame_index: int = int(elapsed / float(FRAME_DURATIONS[resolved_state]))
 	if resolved_state == IDLE or resolved_state == HANG:
 		frame_index %= frames.size()
 	else:
 		frame_index = mini(frame_index, frames.size() - 1)
 	return frames[frame_index]
+
+
+static func regions_for(
+	state: String,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> Array:
+	var resolved_state: String = state if REGIONS.has(state) else IDLE
+	var frames: Array = REGIONS[resolved_state]
+	if resolved_state != HANG:
+		return frames
+	var requested_count: int = int(profile_for(character_id).get("hang_frame_count", 4))
+	return frames.slice(0, clampi(requested_count, 1, frames.size()))
+
+
+static func frame_count_for(
+	state: String,
+	character_id: String = DEFAULT_CHARACTER_ID
+) -> int:
+	return regions_for(state, character_id).size()
 
 
 static func visible_region_for(
@@ -245,7 +305,6 @@ static func opaque_region_for(texture: Texture2D, source_region: Rect2) -> Rect2
 		return _visible_region_cache[cache_key] as Rect2
 
 	var image: Image = texture.get_image()
-
 	var min_x: int = int(source_region.size.x)
 	var min_y: int = int(source_region.size.y)
 	var max_x: int = -1

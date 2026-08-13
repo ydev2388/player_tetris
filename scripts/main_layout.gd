@@ -12,6 +12,8 @@ const CELL_SIZE: float = BASE_CELL_SIZE * DISPLAY_SCALE # 실제 화면/물리�
 const BOARD_SIZE: Vector2 = Vector2(10.0, 20.0) * CELL_SIZE # 숨은 행을 제외한 보드 표시 크기.
 const GAME_VIEWPORT_SIZE: Vector2i = Vector2i(560, 1140) # feat/stage-system 게임 화면 규격.
 const BOARD_ORIGIN: Vector2 = Vector2(40.0, 120.0) # 상단 스테이지 HUD 아래 보드 좌표.
+const BOARD_PHYSICS_ORIGIN: Vector2 = BOARD_ORIGIN # 물리와 표시가 같은 Main 좌표계를 사용한다.
+const BOARD_VISUAL_OFFSET: Vector2 = BOARD_ORIGIN - BOARD_PHYSICS_ORIGIN
 
 
 ## 상황: 32px 기준 scalar를 5차 표시 좌표로 바꿀 때 호출된다.

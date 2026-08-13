@@ -46,7 +46,7 @@ const RESPAWN_BODY_SIZE: Vector2 = Vector2( # 프레임과 무관한 재스폰 �
 	28.0 * MainLayout.DISPLAY_SCALE,
 	64.0 * MainLayout.DISPLAY_SCALE
 )
-const MAX_LIVES: int = 3 # 게임 시작 시 생명 상한.
+const MAX_LIVES: int = 3 # 패시브 적용 전 게임 시작 시 생명 상한.
 const MOVE_SPEED: float = 150.0 * GIT_GRID_SCALE # 수평 목표 최고속도(px/s).
 const GROUND_ACCELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 가속도(px/s²).
 const GROUND_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 무입력 감속도(px/s²).
@@ -134,7 +134,7 @@ var binding_timer: float = 0.0
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 블록 플립 입력 거부; 매 frame 감소.
 var special_cooldown_remaining: float = 0.0 # 고유 특수 스킬 재사용 대기시간.
 var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
-var passive_levels: Array[int] = [0, 0, 0, 0, 0] # 상점에서 구매한 전역 패시브 레벨.
+var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0] # 상점에서 구매한 전역 패시브 레벨.
 
 # 이 클래스 내부의 상태 기계용 변수. `_`는 C++의 private와 같은 강제 접근 제한은
 # 아니지만 외부에서 사용하지 말라는 GDScript 관례다.
@@ -231,6 +231,12 @@ func set_passive_levels(values: Array) -> void:
 	for index: int in range(MainCharacterData.PASSIVE_COUNT):
 		var value: int = int(values[index]) if index < values.size() else 0
 		passive_levels.append(clampi(value, 0, MainCharacterData.PASSIVE_LEVEL_MAX))
+	lives = get_max_lives()
+	stats_changed.emit()
+
+
+func get_max_lives() -> int:
+	return MAX_LIVES + CHARACTER_DATA.health_life_bonus(passive_levels)
 
 
 ## 능력 코드가 추가되면 발동 직후 이 메서드를 호출한다.
@@ -2145,7 +2151,7 @@ func _reset_character() -> void:
 	if _meditation_loop_player:
 		_stop_meditation_loop()
 	_cancel_character_skill_effects()
-	lives = MAX_LIVES
+	lives = get_max_lives()
 	stamina = MAX_STAMINA
 	facing = 1
 	is_hanging = false

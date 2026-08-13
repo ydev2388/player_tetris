@@ -2,12 +2,13 @@ class_name MainCharacterData
 extends RefCounted
 
 ## 플레이 가능한 여덟 캐릭터의 선택 정보와 능력치 계산을 한곳에서 관리한다.
-## 능력치는 공속(회전킥 쿨다운), 이동, 점프, 스태미나, 특수스킬만 사용한다.
+## 능력치는 공속(회전킥 쿨다운), 이동, 점프, 스태미나, 특수스킬, 체력을 사용한다.
 
 const DEFAULT_CHARACTER_ID: String = "normal"
-const PASSIVE_COUNT: int = 5
+const PASSIVE_COUNT: int = 6
 const PASSIVE_LEVEL_MAX: int = 3
 const PASSIVE_EFFECT_STEP: float = 0.05
+const HEALTH_PASSIVE_INDEX: int = 5
 const CHARACTER_ORDER: Array[String] = [
 	"normal",
 	"boxer",
@@ -196,6 +197,10 @@ static func special_cooldown(character_id: String, passive_levels: Array = []) -
 
 static func jump_height_multiplier(passive_levels: Array = []) -> float:
 	return passive_speed_multiplier(passive_levels, 2)
+
+
+static func health_life_bonus(passive_levels: Array = []) -> int:
+	return _passive_level(passive_levels, HEALTH_PASSIVE_INDEX)
 
 
 static func passive_speed_multiplier(passive_levels: Array, index: int) -> float:

@@ -88,7 +88,9 @@ func _run() -> void:
 	reloaded_settings.free()
 	_expect(
 		screen.settings.get_passive_level("attack_speed") == 0
-			and screen.settings.get_passive_cost("attack_speed") == 1,
+			and screen.settings.get_passive_cost("attack_speed") == 1
+			and screen.settings.get_passive_level("health") == 0
+			and screen.settings.get_passive_cost("health") == 1,
 		"패시브는 처음에 0레벨이고 첫 강화 비용은 별 1개다."
 	)
 	var attack_level_one: Dictionary = screen.settings.upgrade_passive("attack_speed")
@@ -119,22 +121,30 @@ func _run() -> void:
 	)
 	var passive_reset: Dictionary = screen.settings.reset_passive_upgrades()
 	var move_upgrade: Dictionary = screen.settings.upgrade_passive("move")
+	var health_upgrade: Dictionary = screen.settings.upgrade_passive("health")
 	_expect(
 		bool(passive_reset.get("ok", false))
 			and int(passive_reset.get("refund", -1)) == 6
 			and bool(move_upgrade.get("ok", false))
+			and bool(health_upgrade.get("ok", false))
 			and screen.settings.get_passive_level("move") == 1
-			and screen.settings.star_currency == 5,
-		"패시브 초기화는 투자 별 6개를 전액 환급하고 새 강화도 구매할 수 있다."
+			and screen.settings.get_passive_level("health") == 1
+			and screen.settings.star_currency == 4,
+		"패시브 초기화는 투자 별을 전액 환급하고 체력 강화도 구매할 수 있다."
 	)
 	var passive_reloaded: StartScreenSettings = StartScreenSettings.new(TEST_SETTINGS_PATH)
 	passive_reloaded.load_settings()
 	_expect(
 		passive_reloaded.get_passive_level("move") == 1
-			and passive_reloaded.star_currency == 5,
+			and passive_reloaded.get_passive_level("health") == 1
+			and passive_reloaded.star_currency == 4,
 		"패시브 레벨과 남은 별이 설정 파일에 저장된다."
 	)
 	passive_reloaded.free()
+	_expect(
+		MainCharacterData.health_life_bonus([0, 0, 0, 0, 0, 2]) == 2,
+		"체력 패시브 레벨마다 캐릭터 목숨이 1개씩 증가한다."
+	)
 	var back_event: InputEventKey = InputEventKey.new()
 	back_event.pressed = true
 	back_event.physical_keycode = KEY_X
@@ -194,12 +204,70 @@ func _run() -> void:
 	)
 	if shop_button != null:
 		shop_button.pressed.emit()
+	var shop_cards_exist: bool = true
+	for passive_id: String in StartScreenSettings.PASSIVE_IDS:
+		if screen.find_child("ShopCard_%s" % passive_id, true, false) == null:
+			shop_cards_exist = false
 	_expect(
 		screen.current_screen == KungFuTetrisStartScreen.Screen.SHOP
-			and screen.find_child("PassiveUpgradeButton_attack_speed", true, false) != null
+			and shop_cards_exist
+			and screen.find_child("ShopDetailPanel", true, false) != null
 			and screen.find_child("PassiveResetButton", true, false) != null,
-		"상점에서 5개 패시브 강화 버튼과 초기화 버튼을 사용할 수 있다."
+		"상점에서 패시브 아이콘 카드와 하단 상세·초기화 UI를 사용할 수 있다."
 	)
+	await process_frame
+	var attack_card: Button = screen.find_child(
+		"ShopCard_attack_speed", true, false
+	) as Button
+	var icons_loaded: bool = screen._shop_icon_textures.size() == StartScreenSettings.PASSIVE_IDS.size()
+	for icon_variant: Variant in screen._shop_icon_textures:
+		icons_loaded = icons_loaded and icon_variant != null
+	_expect(icons_loaded, "상점 아이콘 파일 6개가 패시브 카드에 연결된다.")
+	var shop_z_event: InputEventKey = InputEventKey.new()
+	shop_z_event.pressed = true
+	shop_z_event.physical_keycode = KEY_Z
+	if attack_card != null:
+		screen.settings.star_currency = 7
+		screen._refresh_shop()
+		attack_card.grab_focus()
+		await process_frame
+		for _level: int in range(3):
+			screen._handle_menu_confirm_input(shop_z_event)
+			await process_frame
+		_expect(
+			screen.settings.get_passive_level("attack_speed") == 3
+				and attack_card.has_focus(),
+			"화살표로 선택한 패시브는 Z를 누르면 바로 강화된다."
+		)
+		screen._handle_menu_confirm_input(shop_z_event)
+		await process_frame
+		_expect(
+			not screen._message_overlay.visible,
+			"최대 레벨 패시브에 Z를 눌러도 안내 문구를 표시하지 않는다."
+		)
+	var health_card: Button = screen.find_child(
+		"ShopCard_health", true, false
+	) as Button
+	if health_card != null:
+		health_card.grab_focus()
+		screen._handle_menu_confirm_input(shop_z_event)
+		await process_frame
+		_expect(
+			screen.settings.get_passive_level("health") == 1,
+			"체력 카드를 선택하고 Z를 누르면 목숨 강화가 구매된다."
+		)
+	var jump_card: Button = screen.find_child(
+		"ShopCard_jump", true, false
+	) as Button
+	if jump_card != null:
+		jump_card.pressed.emit()
+		await process_frame
+		_expect(
+			screen._selected_shop_index == StartScreenSettings.PASSIVE_IDS.find("jump")
+				and screen._shop_detail_name.text == "점프"
+				and screen._shop_detail_description.text == StartScreenSettings.PASSIVE_DESCRIPTIONS[2],
+			"아이콘 카드를 선택하면 하단 상세 패널에 해당 패시브 정보가 표시된다."
+		)
 	screen.show_stage_select()
 	if character_select_button != null:
 		character_select_button.pressed.emit()
@@ -286,6 +354,10 @@ func _run() -> void:
 	await physics_frame
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
 	_expect(character.character_id == "boxer", "스테이지 게임이 선택한 복서로 시작한다.")
+	_expect(
+		character.lives == MainCharacterController.MAX_LIVES + 1,
+		"구매한 체력 패시브가 게임 시작 목숨에 적용된다."
+	)
 	_expect(character.velocity.y >= 0.0, "메뉴 Z를 누른 채 시작해도 캐릭터가 점프하지 않는다.")
 	Input.action_release(&"character_jump")
 	var controller: MainGameController = screen._loaded_game_controller()

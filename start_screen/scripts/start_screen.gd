@@ -30,8 +30,22 @@ const CYAN: Color = Color("#2c8fd6")
 const ORANGE: Color = Color("#e47719")
 const PURPLE: Color = Color("#6f57c9")
 const DANGER: Color = Color("#d9485f")
+const SHOP_GOLD: Color = Color("#d8b23a")
 const _CHARACTER_SELECT_HINT: String = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
 const _CHARACTER_INSELECT_MODULATE: Color = Color(0.82, 0.85, 0.90, 0.88)
+const _SHOP_CARD_COLUMNS: int = 4
+const _SHOP_CARD_SIZE: Vector2 = Vector2(160.0, 158.0)
+const _SHOP_CARD_GAP: float = 16.0
+const _SHOP_GRID_WIDTH: float = 760.0
+const _SHOP_ICON_DIR: String = "res://assets/sprites/shop/"
+const _SHOP_ICON_FILES: Array[String] = [
+	"attack_speed.png",
+	"movement_speed.png",
+	"jump.png",
+	"stamina.png",
+	"special_attack.png",
+	"health.png",
+]
 
 enum Screen {
 	MAIN,
@@ -62,10 +76,16 @@ var _stage_buttons: Array[Button] = []
 var _stage_labels: Array[Label] = []
 var _stage_currency_label: Label
 var _shop_currency_label: Label
+var _shop_cards: Array[Button] = []
 var _shop_level_labels: Array[Label] = []
-var _shop_cost_labels: Array[Label] = []
-var _shop_upgrade_buttons: Array[Button] = []
+var _shop_icon_textures: Array = []
+var _selected_shop_index: int = 0
+var _shop_detail_name: Label
+var _shop_detail_description: Label
+var _shop_detail_effect: Label
+var _shop_detail_cost: Label
 var _shop_reset_button: Button
+var _shop_back_button: Button
 var _character_buttons: Array[Button] = []
 var _character_confirm_button: Button
 var _character_back_button: Button
@@ -102,6 +122,8 @@ var _capture_slot: int = -1
 
 var _message_overlay: Control
 var _message_label: Label
+var _message_okay_button: Button
+var _message_previous_focus: Control
 var _stage_result_overlay: Control
 var _stage_result_label: Label
 var _stage_result_reward_label: Label
@@ -425,6 +447,11 @@ func _handle_menu_confirm_input(key_event: InputEventKey) -> bool:
 	if key_code != KEY_Z:
 		return false
 	var focused_button: Button = get_viewport().gui_get_focus_owner() as Button
+	if current_screen == Screen.SHOP:
+		var shop_index: int = _shop_cards.find(focused_button)
+		if shop_index >= 0:
+			_upgrade_passive(StartScreenSettings.PASSIVE_IDS[shop_index])
+			return true
 	if focused_button != null:
 		focused_button.pressed.emit()
 	return true
@@ -731,93 +758,199 @@ func _build_stage_select_screen() -> void:
 
 func _build_shop_screen() -> void:
 	var screen: Control = _create_screen("ShopScreen", Screen.SHOP)
-	_add_screen_title(screen, "상점", "스테이지에서 모은 별로 전역 패시브를 강화하세요")
+	_create_label(
+		screen,
+		"상점 선택",
+		Rect2(0.0, 16.0, 960.0, 40.0),
+		30,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
 	_shop_currency_label = _create_label(
 		screen,
 		"별 0개",
-		Rect2(680.0, 54.0, 210.0, 40.0),
+		Rect2(700.0, 26.0, 220.0, 32.0),
 		18,
 		ORANGE,
 		HORIZONTAL_ALIGNMENT_RIGHT
 	)
+	_create_panel(screen, Rect2(60.0, 64.0, 840.0, 44.0), PANEL, SHOP_GOLD, 8)
+	_create_label(
+		screen,
+		"전역 패시브 강화",
+		Rect2(60.0, 70.0, 840.0, 32.0),
+		19,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		screen,
+		"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.",
+		Rect2(180.0, 108.0, 600.0, 22.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
 
-	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
-	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
-		var card: Panel = _create_panel(
-			screen,
-			Rect2(32.0 + float(index) * 183.0, 155.0, 168.0, 405.0),
-			PANEL,
-			accents[index],
-			10
+	_shop_icon_textures.clear()
+	for file_name: String in _SHOP_ICON_FILES:
+		var path: String = _SHOP_ICON_DIR + file_name
+		_shop_icon_textures.append(
+			load(path) if ResourceLoader.exists(path) else null
 		)
+
+	var grid_scroll: ScrollContainer = ScrollContainer.new()
+	grid_scroll.name = "ShopGridScroll"
+	grid_scroll.position = Vector2(100.0, 136.0)
+	grid_scroll.size = Vector2(_SHOP_GRID_WIDTH, 360.0)
+	grid_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	screen.add_child(grid_scroll)
+	var grid_content: Control = Control.new()
+	grid_content.name = "ShopGridContent"
+	grid_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grid_scroll.add_child(grid_content)
+	var row_count: int = ceili(
+		float(StartScreenSettings.PASSIVE_IDS.size()) / float(_SHOP_CARD_COLUMNS)
+	)
+	var content_height: float = 12.0 + float(row_count) * (_SHOP_CARD_SIZE.y + _SHOP_CARD_GAP)
+	grid_content.custom_minimum_size = Vector2(_SHOP_GRID_WIDTH, content_height)
+	grid_content.size = grid_content.custom_minimum_size
+
+	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
+		var col: int = index % _SHOP_CARD_COLUMNS
+		var row: int = index / _SHOP_CARD_COLUMNS
+		var row_width: float = (
+			_SHOP_CARD_SIZE.x * float(_SHOP_CARD_COLUMNS)
+			+ _SHOP_CARD_GAP * float(_SHOP_CARD_COLUMNS - 1)
+		)
+		var card_x: float = (_SHOP_GRID_WIDTH - row_width) / 2.0 + col * (_SHOP_CARD_SIZE.x + _SHOP_CARD_GAP)
+		var card_y: float = 12.0 + row * (_SHOP_CARD_SIZE.y + _SHOP_CARD_GAP)
+		var card: Button = _create_button(
+			grid_content,
+			"",
+			Rect2(card_x, card_y, _SHOP_CARD_SIZE.x, _SHOP_CARD_SIZE.y),
+			SHOP_GOLD,
+			13
+		)
+		card.name = "ShopCard_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		card.focus_entered.connect(_select_shop_item.bind(index))
+		card.pressed.connect(_select_shop_item.bind(index))
 		_create_label(
 			card,
 			StartScreenSettings.PASSIVE_NAMES[index],
-			Rect2(10.0, 22.0, 148.0, 34.0),
-			21,
+			Rect2(6.0, 4.0, _SHOP_CARD_SIZE.x - 12.0, 26.0),
+			15,
 			TEXT,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
-		_create_label(
+		var icon_frame: Panel = _create_panel(
 			card,
-			StartScreenSettings.PASSIVE_DESCRIPTIONS[index],
-			Rect2(12.0, 70.0, 144.0, 82.0),
-			13,
-			MUTED,
-			HORIZONTAL_ALIGNMENT_CENTER
+			Rect2(36.0, 32.0, 88.0, 88.0),
+			PANEL,
+			BORDER,
+			6
 		)
+		icon_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var texture: Texture2D = _shop_icon_textures[index] as Texture2D
+		if texture != null:
+			var icon: TextureRect = TextureRect.new()
+			icon.position = Vector2(8.0, 8.0)
+			icon.size = Vector2(72.0, 72.0)
+			icon.texture = texture
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon_frame.add_child(icon)
+		else:
+			var fallback: Label = _create_label(
+				icon_frame,
+				StartScreenSettings.PASSIVE_NAMES[index].left(1),
+				Rect2(0.0, 0.0, 88.0, 88.0),
+				34,
+				TEXT,
+				HORIZONTAL_ALIGNMENT_CENTER
+			)
+			fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		var level_label: Label = _create_label(
 			card,
 			"",
-			Rect2(12.0, 174.0, 144.0, 58.0),
-			17,
-			TEXT,
+			Rect2(6.0, 124.0, _SHOP_CARD_SIZE.x - 12.0, 30.0),
+			15,
+			SHOP_GOLD,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
 		level_label.name = "PassiveLevelLabel_%s" % StartScreenSettings.PASSIVE_IDS[index]
+		_shop_cards.append(card)
 		_shop_level_labels.append(level_label)
-		var cost_label: Label = _create_label(
-			card,
-			"",
-			Rect2(12.0, 245.0, 144.0, 38.0),
-			15,
-			ORANGE,
-			HORIZONTAL_ALIGNMENT_CENTER
-		)
-		cost_label.name = "PassiveCostLabel_%s" % StartScreenSettings.PASSIVE_IDS[index]
-		_shop_cost_labels.append(cost_label)
-		var upgrade_button: Button = _create_button(
-			card,
-			"강화",
-			Rect2(14.0, 320.0, 140.0, 48.0),
-			accents[index],
-			14
-		)
-		upgrade_button.name = "PassiveUpgradeButton_%s" % StartScreenSettings.PASSIVE_IDS[index]
-		upgrade_button.pressed.connect(
-			_upgrade_passive.bind(StartScreenSettings.PASSIVE_IDS[index])
-		)
-		upgrade_button.focus_entered.connect(_play_select_sfx)
-		_shop_upgrade_buttons.append(upgrade_button)
+		_apply_shop_card_style(card, false)
 
-	var back_button: Button = _create_button(
+	var detail_panel: Panel = _create_panel(
+		screen,
+		Rect2(40.0, 512.0, 880.0, 132.0),
+		PANEL,
+		SHOP_GOLD,
+		10
+	)
+	detail_panel.name = "ShopDetailPanel"
+	_shop_detail_name = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 12.0, 560.0, 30.0),
+		21,
+		TEXT
+	)
+	_shop_detail_description = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 43.0, 580.0, 28.0),
+		13,
+		MUTED
+	)
+	_shop_detail_effect = _create_label(
+		detail_panel,
+		"",
+		Rect2(24.0, 76.0, 580.0, 28.0),
+		15,
+		TEXT
+	)
+	_shop_detail_cost = _create_label(
+		detail_panel,
+		"",
+		Rect2(630.0, 30.0, 226.0, 34.0),
+		16,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+	_create_label(
+		detail_panel,
+		"선택 후 Z로 강화",
+		Rect2(630.0, 68.0, 226.0, 28.0),
+		13,
+		MUTED,
+		HORIZONTAL_ALIGNMENT_RIGHT
+	)
+
+	_shop_back_button = _create_button(
 		screen,
 		"스테이지 선택으로",
-		Rect2(70.0, 650.0, 220.0, 48.0),
+		Rect2(70.0, 674.0, 220.0, 48.0),
 		PURPLE,
 		14
 	)
-	back_button.pressed.connect(show_stage_select)
+	_shop_back_button.name = "ShopBackButton"
+	_shop_back_button.pressed.connect(show_stage_select)
 	_shop_reset_button = _create_button(
 		screen,
 		"패시브 초기화",
-		Rect2(670.0, 650.0, 220.0, 48.0),
+		Rect2(670.0, 674.0, 220.0, 48.0),
 		DANGER,
 		14
 	)
 	_shop_reset_button.name = "PassiveResetButton"
 	_shop_reset_button.pressed.connect(_show_passive_reset_prompt)
 	_shop_reset_button.focus_entered.connect(_play_select_sfx)
+	_set_shop_card_neighbors()
 	_refresh_shop()
 
 
@@ -1276,14 +1409,14 @@ func _build_message_overlay() -> void:
 		MUTED,
 		HORIZONTAL_ALIGNMENT_CENTER
 	)
-	var okay_button: Button = _create_button(
+	_message_okay_button = _create_button(
 		panel,
 		"확인",
 		Rect2(180.0, 205.0, 180.0, 44.0),
 		CYAN,
 		14
 	)
-	okay_button.pressed.connect(_hide_message)
+	_message_okay_button.pressed.connect(_hide_message)
 
 
 func _build_progress_reset_overlay() -> void:
@@ -1577,8 +1710,13 @@ func _show_screen(screen_type: Screen) -> void:
 			if _options_first_button != null:
 				_options_first_button.grab_focus.call_deferred()
 		Screen.SHOP:
-			if not _shop_upgrade_buttons.is_empty():
-				_shop_upgrade_buttons[0].grab_focus.call_deferred()
+			if not _shop_cards.is_empty():
+				var index: int = clampi(
+					_selected_shop_index,
+					0,
+					_shop_cards.size() - 1
+				)
+				_shop_cards[index].grab_focus.call_deferred()
 		_:
 			pass
 
@@ -1608,28 +1746,107 @@ func _refresh_stage_select() -> void:
 
 
 func _refresh_shop() -> void:
-	if settings == null or _shop_upgrade_buttons.size() != StartScreenSettings.PASSIVE_IDS.size():
+	if settings == null or _shop_cards.is_empty():
 		return
 	_shop_currency_label.text = "별 %d개" % settings.star_currency
-	var effect_percent: int = roundi(MainCharacterData.PASSIVE_EFFECT_STEP * 100.0)
 	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
 		var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
 		var level: int = settings.get_passive_level(passive_id)
-		var cost: int = settings.get_passive_cost(passive_id)
-		var effect_sign: String = "-" if index in [0, 3, 4] else "+"
-		_shop_level_labels[index].text = "Lv. %d / %d\n효과 %s%d%%" % [
+		var bars: String = ""
+		for bar_index: int in range(StartScreenSettings.MAX_PASSIVE_LEVEL):
+			bars += "■" if bar_index < level else "□"
+			bars += "  "
+		_shop_level_labels[index].text = bars.trim_suffix("  ")
+	_refresh_shop_detail()
+
+
+func _refresh_shop_detail() -> void:
+	if settings == null or _shop_cards.is_empty():
+		return
+	var index: int = clampi(_selected_shop_index, 0, _shop_cards.size() - 1)
+	var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
+	var level: int = settings.get_passive_level(passive_id)
+	var cost: int = settings.get_passive_cost(passive_id)
+	var effect_percent: int = roundi(MainCharacterData.PASSIVE_EFFECT_STEP * 100.0)
+	var effect_text: String = ""
+	if passive_id == "health":
+		effect_text = "현재 효과: 목숨 +%d · Lv. %d / %d" % [
+			level,
 			level,
 			StartScreenSettings.MAX_PASSIVE_LEVEL,
+		]
+	else:
+		var effect_sign: String = "-" if index in [0, 3, 4] else "+"
+		effect_text = "현재 효과: %s%d%% · Lv. %d / %d" % [
 			effect_sign,
 			level * effect_percent,
+			level,
+			StartScreenSettings.MAX_PASSIVE_LEVEL,
 		]
-		var maxed: bool = level >= StartScreenSettings.MAX_PASSIVE_LEVEL
-		_shop_cost_labels[index].text = "최대 레벨" if maxed else "다음 비용 ★ %d" % cost
-		_shop_upgrade_buttons[index].disabled = maxed or settings.star_currency < cost
-		_shop_upgrade_buttons[index].text = "최대 레벨" if maxed else "강화"
+	_shop_detail_name.text = StartScreenSettings.PASSIVE_NAMES[index]
+	_shop_detail_description.text = StartScreenSettings.PASSIVE_DESCRIPTIONS[index]
+	_shop_detail_effect.text = effect_text
+	_shop_detail_cost.text = (
+		"최대 레벨"
+		if level >= StartScreenSettings.MAX_PASSIVE_LEVEL
+		else "다음 비용 ★ %d" % cost
+	)
+
+
+func _select_shop_item(index: int) -> void:
+	if _shop_cards.is_empty():
+		return
+	_selected_shop_index = clampi(index, 0, _shop_cards.size() - 1)
+	for shop_index: int in range(_shop_cards.size()):
+		_apply_shop_card_style(_shop_cards[shop_index], shop_index == _selected_shop_index)
+	_refresh_shop_detail()
+
+
+func _apply_shop_card_style(card: Button, selected: bool) -> void:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = Color("#fff8e6") if selected else PANEL
+	style.border_color = SHOP_GOLD if selected else Color("#5b6b7d")
+	style.set_border_width_all(3 if selected else 1)
+	style.set_corner_radius_all(8)
+	card.add_theme_stylebox_override("normal", style)
+	card.add_theme_stylebox_override("hover", style)
+	card.add_theme_stylebox_override("pressed", style)
+	card.add_theme_stylebox_override("focus", style)
+
+
+func _set_shop_card_neighbors() -> void:
+	var row_count: int = ceili(
+		float(_shop_cards.size()) / float(_SHOP_CARD_COLUMNS)
+	)
+	for index: int in range(_shop_cards.size()):
+		var card: Button = _shop_cards[index]
+		var col: int = index % _SHOP_CARD_COLUMNS
+		var row: int = index / _SHOP_CARD_COLUMNS
+		var left: int = index - 1 if col > 0 else index
+		var right: int = (
+			index + 1
+			if (col < _SHOP_CARD_COLUMNS - 1 and index + 1 < _shop_cards.size())
+			else index
+		)
+		var up: int = index - _SHOP_CARD_COLUMNS if row > 0 else index
+		card.focus_neighbor_left = card.get_path_to(_shop_cards[left])
+		card.focus_neighbor_right = card.get_path_to(_shop_cards[right])
+		card.focus_neighbor_top = card.get_path_to(_shop_cards[up])
+		if row + 1 < row_count:
+			var next_row_start: int = (row + 1) * _SHOP_CARD_COLUMNS
+			var next_row_count: int = mini(
+				_SHOP_CARD_COLUMNS,
+				_shop_cards.size() - next_row_start
+			)
+			var down: int = next_row_start + mini(col, next_row_count - 1)
+			card.focus_neighbor_bottom = card.get_path_to(_shop_cards[down])
+		elif _shop_reset_button != null:
+			card.focus_neighbor_bottom = card.get_path_to(_shop_reset_button)
 
 
 func _upgrade_passive(passive_id: String) -> void:
+	if settings.get_passive_level(passive_id) >= StartScreenSettings.MAX_PASSIVE_LEVEL:
+		return
 	var result: Dictionary = settings.upgrade_passive(passive_id)
 	if not bool(result.get("ok", false)):
 		_show_message(String(result.get("message", "패시브를 강화할 수 없습니다.")))
@@ -1700,13 +1917,26 @@ func _is_enter_key(key_event: InputEventKey) -> bool:
 func _show_message(message: String) -> void:
 	if _message_overlay == null:
 		return
+	if not _message_overlay.visible:
+		_message_previous_focus = get_viewport().gui_get_focus_owner()
 	_message_label.text = message
 	_message_overlay.visible = true
 	_message_overlay.move_to_front()
+	if _message_okay_button != null:
+		_message_okay_button.grab_focus.call_deferred()
 
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+	var previous_focus: Control = _message_previous_focus
+	_message_previous_focus = null
+	if (
+		previous_focus != null
+		and is_instance_valid(previous_focus)
+		and previous_focus.is_visible_in_tree()
+		and previous_focus.focus_mode != Control.FOCUS_NONE
+	):
+		previous_focus.grab_focus.call_deferred()
 
 
 ## 결과: modal을 최상단에 표시하고 게임 입력을 잠근 뒤 No에 초점을 둔다.

@@ -21,14 +21,16 @@ const PASSIVE_IDS: Array[String] = [
 	"jump",
 	"stamina",
 	"special_skill",
+	"health",
 ]
-const PASSIVE_NAMES: Array[String] = ["공속", "이동", "점프", "스태미나", "특수스킬"]
+const PASSIVE_NAMES: Array[String] = ["공속", "이동", "점프", "스태미나", "특수스킬", "체력"]
 const PASSIVE_DESCRIPTIONS: Array[String] = [
 	"기본 공격과 회전킥의 재사용 대기시간이 줄어듭니다.",
 	"좌우 이동 속도가 빨라집니다.",
 	"점프 높이가 높아집니다.",
 	"벽에 매달릴 때 스태미나 소모량이 줄어듭니다.",
 	"특수 스킬의 재사용 대기시간이 줄어듭니다.",
+	"레벨마다 캐릭터의 목숨이 1개 추가됩니다.",
 ]
 const MAX_PASSIVE_LEVEL: int = 3
 
@@ -37,7 +39,7 @@ var music_percent: float = 100.0
 var sfx_percent: float = 100.0
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
 var star_currency: int = 0
-var passive_levels: Array[int] = [0, 0, 0, 0, 0]
+var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
 
 var _bindings: Dictionary = {}
 
@@ -344,7 +346,7 @@ func _reset_settings_to_defaults() -> void:
 	sfx_percent = 100.0
 	stage_best_stars = [0, 0, 0, 0, 0]
 	star_currency = 0
-	passive_levels = [0, 0, 0, 0, 0]
+	passive_levels = [0, 0, 0, 0, 0, 0]
 
 
 func _load_bindings_from_config(config: ConfigFile) -> void:

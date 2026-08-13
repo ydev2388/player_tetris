@@ -94,6 +94,7 @@ const BOSS_DOWN_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DOWN_DISPLAY_SIZ
 const BOSS_FALLEN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 43.875)
 const BOSS_FRAME_COUNT: int = 4
 const BOSS_FRAME_INTERVAL: float = 0.18
+const BOSS_VISUAL_OFFSET: Vector2 = Vector2(0.0, -18.0)
 const BOSS_THORN_FRAME_INTERVAL: float = 0.1
 const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
 const HEART_DISPLAY_SIZE: Vector2 = Vector2(16.0, 16.0)
@@ -879,7 +880,7 @@ func _create_boss_display() -> void:
 	_boss_sprite.texture = BOSS_NORMAL_TEXTURE
 	_boss_sprite.region_enabled = true
 	_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
-	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
 	_boss_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_boss_sprite.z_index = 2
 	board_physics.add_child(_boss_sprite)
@@ -889,7 +890,7 @@ func _create_boss_display() -> void:
 	_boss_thorn_sprite.texture = BOSS_THORN_TEXTURE
 	_boss_thorn_sprite.region_enabled = true
 	_boss_thorn_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
-	_boss_thorn_sprite.position = MainGameController.BOSS_POSITION
+	_boss_thorn_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
 	_boss_thorn_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_boss_thorn_sprite.z_index = 3
 	_boss_thorn_sprite.visible = false
@@ -910,7 +911,7 @@ func _create_boss_display() -> void:
 		heart.name = "BossHeart%d" % (index + 1)
 		heart.texture = HEART_TEXTURE
 		heart.scale = HEART_DISPLAY_SIZE / Vector2(24.0, 24.0)
-		heart.position = MainGameController.BOSS_POSITION + Vector2(
+		heart.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET + Vector2(
 			float(index - 1) * 18.0,
 			106.0
 		)
@@ -1054,7 +1055,7 @@ func _refresh_boss_display() -> void:
 			_boss_down_frame_timer = 0.0
 		_boss_sprite.position = Vector2(
 			controller.boss_fall_position.x,
-			controller.boss_fall_position.y - BOSS_DOWN_DISPLAY_SIZE.y * 0.5
+			controller.boss_fall_position.y - BOSS_DOWN_DISPLAY_SIZE.y * 0.5 + BOSS_VISUAL_OFFSET.y
 		)
 		_apply_boss_down_frame()
 		return
@@ -1068,7 +1069,7 @@ func _refresh_boss_display() -> void:
 			_boss_falling_frame_timer = 0.0
 		_boss_sprite.position = Vector2(
 			controller.boss_fall_position.x,
-			controller.boss_fall_position.y - BOSS_DISPLAY_SIZE.y * 0.5
+			controller.boss_fall_position.y - BOSS_DISPLAY_SIZE.y * 0.5 + BOSS_VISUAL_OFFSET.y
 		)
 		_apply_boss_falling_frame()
 		return
@@ -1082,7 +1083,7 @@ func _refresh_boss_display() -> void:
 			_boss_fallen_frame_timer = 0.0
 		_boss_sprite.position = Vector2(
 			controller.boss_fall_position.x,
-			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5
+			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5 + BOSS_VISUAL_OFFSET.y
 		)
 		_apply_boss_fallen_frame()
 		return
@@ -1097,7 +1098,7 @@ func _refresh_boss_display() -> void:
 		_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
 		_boss_frame = 0
 		_boss_frame_timer = 0.0
-	_boss_sprite.position = MainGameController.BOSS_POSITION
+	_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
 	_apply_boss_frame()
 
 

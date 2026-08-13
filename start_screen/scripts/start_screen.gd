@@ -834,6 +834,7 @@ func _build_shop_screen() -> void:
 		)
 		card.name = "ShopCard_%s" % StartScreenSettings.PASSIVE_IDS[index]
 		card.focus_entered.connect(_select_shop_item.bind(index))
+		card.focus_exited.connect(_clear_shop_card_selection.bind(index))
 		card.pressed.connect(_select_shop_item.bind(index))
 		_create_label(
 			card,
@@ -1809,6 +1810,12 @@ func _select_shop_item(index: int) -> void:
 	_refresh_shop_detail()
 
 
+func _clear_shop_card_selection(index: int) -> void:
+	if _shop_cards.is_empty():
+		return
+	_apply_shop_card_style(_shop_cards[clampi(index, 0, _shop_cards.size() - 1)], false)
+
+
 func _apply_shop_card_style(card: Button, selected: bool) -> void:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = Color("#fff8e6") if selected else PANEL
@@ -1847,8 +1854,25 @@ func _set_shop_card_neighbors() -> void:
 			)
 			var down: int = next_row_start + mini(col, next_row_count - 1)
 			card.focus_neighbor_bottom = card.get_path_to(_shop_cards[down])
-		elif _shop_reset_button != null:
-			card.focus_neighbor_bottom = card.get_path_to(_shop_reset_button)
+		elif _shop_back_button != null and _shop_reset_button != null:
+			card.focus_neighbor_bottom = card.get_path_to(
+				_shop_back_button if col == 0 else _shop_reset_button
+			)
+
+	if _shop_cards.size() < 2 or _shop_back_button == null or _shop_reset_button == null:
+		return
+	_shop_back_button.focus_neighbor_left = _shop_back_button.get_path_to(_shop_back_button)
+	_shop_back_button.focus_neighbor_right = _shop_back_button.get_path_to(_shop_reset_button)
+	_shop_back_button.focus_neighbor_top = _shop_back_button.get_path_to(
+		_shop_cards[_shop_cards.size() - 2]
+	)
+	_shop_back_button.focus_neighbor_bottom = _shop_back_button.get_path_to(_shop_back_button)
+	_shop_reset_button.focus_neighbor_left = _shop_reset_button.get_path_to(_shop_back_button)
+	_shop_reset_button.focus_neighbor_right = _shop_reset_button.get_path_to(_shop_reset_button)
+	_shop_reset_button.focus_neighbor_top = _shop_reset_button.get_path_to(
+		_shop_cards[_shop_cards.size() - 1]
+	)
+	_shop_reset_button.focus_neighbor_bottom = _shop_reset_button.get_path_to(_shop_reset_button)
 
 
 func _upgrade_passive(passive_id: String) -> void:

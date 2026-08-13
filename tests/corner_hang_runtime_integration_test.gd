@@ -134,7 +134,7 @@ func _prepare_locked_corner_fixture(
 	board_physics._sync_from_model()
 	await physics_frame
 	character.set_character_id(character_id)
-	character.position = Vector2(216.0, 408.0)
+	character.position = Vector2(216.0, 440.0)
 	character.velocity = Vector2.ZERO
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA

@@ -61,11 +61,13 @@ region_enabled = true
 region_rect = Rect2(0, 0, 128, 128)
 
 [node name="LeftRay" type="RayCast2D" parent="BoardPhysics/Character"]
+position = Vector2(0, -32)
 enabled = true
 target_position = Vector2(-30, 0)
 collision_mask = 1
 
 [node name="RightRay" type="RayCast2D" parent="BoardPhysics/Character"]
+position = Vector2(0, -32)
 enabled = true
 target_position = Vector2(30, 0)
 collision_mask = 1

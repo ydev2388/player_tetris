@@ -216,6 +216,55 @@ func _run() -> void:
 		"상점에서 패시브 아이콘 카드와 하단 상세·초기화 UI를 사용할 수 있다."
 	)
 	await process_frame
+	var shop_back_button: Button = screen.find_child("ShopBackButton", true, false) as Button
+	var shop_reset_button: Button = screen.find_child("PassiveResetButton", true, false) as Button
+	var bottom_buttons_have_expected_focus_links: bool = (
+		shop_back_button != null and shop_reset_button != null
+	)
+	if bottom_buttons_have_expected_focus_links:
+		bottom_buttons_have_expected_focus_links = (
+			shop_reset_button.focus_neighbor_left
+			== shop_reset_button.get_path_to(shop_back_button)
+			and shop_back_button.focus_neighbor_right
+			== shop_back_button.get_path_to(shop_reset_button)
+			and shop_back_button.focus_neighbor_top
+			== shop_back_button.get_path_to(screen._shop_cards[screen._shop_cards.size() - 2])
+			and shop_reset_button.focus_neighbor_top
+			== shop_reset_button.get_path_to(screen._shop_cards[screen._shop_cards.size() - 1])
+		)
+	_expect(
+		bottom_buttons_have_expected_focus_links,
+		"상점 하단 버튼은 좌우로 서로 이동하고 위로 각 스탯 카드로 돌아간다."
+	)
+	var bottom_cards_point_to_stage_select: bool = shop_back_button != null
+	for card_index: int in range(screen._shop_cards.size() - 2, screen._shop_cards.size()):
+		var card: Button = screen._shop_cards[card_index]
+		var target_button: Button = shop_back_button if card_index == screen._shop_cards.size() - 2 else shop_reset_button
+		bottom_cards_point_to_stage_select = (
+			bottom_cards_point_to_stage_select
+			and card.focus_neighbor_bottom == card.get_path_to(target_button)
+		)
+	_expect(
+		bottom_cards_point_to_stage_select,
+		"상점 마지막 카드 행에서 아래 방향키가 대응하는 하단 버튼으로 이동한다."
+	)
+	var bottom_card: Button = screen._shop_cards[screen._shop_cards.size() - 1]
+	bottom_card.grab_focus()
+	await process_frame
+	shop_reset_button.grab_focus()
+	await process_frame
+	var cards_cleared_on_bottom_focus: bool = shop_reset_button.has_focus()
+	for card: Button in screen._shop_cards:
+		var card_style: StyleBox = card.get_theme_stylebox("normal")
+		if (
+			card_style is StyleBoxFlat
+			and (card_style as StyleBoxFlat).bg_color == Color("#fff8e6")
+		):
+			cards_cleared_on_bottom_focus = false
+	_expect(
+		cards_cleared_on_bottom_focus,
+		"하단 버튼에 초점을 옮기면 기존 스탯 카드 선택 표시가 사라진다."
+	)
 	var attack_card: Button = screen.find_child(
 		"ShopCard_attack_speed", true, false
 	) as Button

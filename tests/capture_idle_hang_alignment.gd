@@ -48,7 +48,7 @@ func _capture() -> void:
 	game.controller.board.cells[9][5] = MainTetrominoData.Type.J
 	board_physics._sync_from_model()
 	await physics_frame
-	character.position = Vector2(216.0, 360.0)
+	character.position = Vector2(216.0, 392.0)
 	character.velocity = Vector2.ZERO
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA

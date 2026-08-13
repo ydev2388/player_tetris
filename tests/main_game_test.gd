@@ -1500,7 +1500,7 @@ func _test_fixed_support_grab() -> void:
 	controller.board.reset()
 	for x: int in range(MainBoardModel.WIDTH):
 		controller.board.cells[18][x] = MainTetrominoData.Type.J
-	controller.board.cells[17][5] = MainTetrominoData.Type.J
+	controller.board.cells[16][5] = MainTetrominoData.Type.J
 	board_physics._sync_from_model()
 	await physics_frame
 
@@ -1645,7 +1645,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8)],
-		Vector2(216.0, 312.0)
+		Vector2(216.0, 344.0)
 	)
 	var grab_y: float = character.global_position.y
 	character._try_start_hang()
@@ -1664,7 +1664,7 @@ func _test_hang_face_bounds() -> void:
 	var every_back_facing_grab_rejected: bool = true
 	for profile_id: String in MainCharacterData.CHARACTER_ORDER:
 		character.set_character_id(profile_id)
-		character.position = Vector2(216.0, 312.0)
+		character.position = Vector2(216.0, 344.0)
 		character.facing = -1
 		character.sprite.flip_h = true
 		character._try_start_hang()
@@ -1680,7 +1680,7 @@ func _test_hang_face_bounds() -> void:
 		"All eight characters reject a wall touching their back and keep their facing direction."
 	)
 	# Restore the original front-facing hang before exercising surface removal.
-	character.position = Vector2(216.0, 312.0)
+	character.position = Vector2(216.0, 344.0)
 	character.facing = 1
 	character.sprite.flip_h = false
 	character._try_start_hang()
@@ -1694,7 +1694,7 @@ func _test_hang_face_bounds() -> void:
 		not character.is_hanging and character._hang_body == null,
 		"매달린 고정 블록 면이 사라지면 입력이 없어도 즉시 매달림을 해제한다."
 	)
-	character.position = Vector2(24.0, 312.0)
+	character.position = Vector2(24.0, 344.0)
 	character.facing = -1
 	character.left_ray.force_raycast_update()
 	character._try_start_hang()
@@ -1728,7 +1728,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8)],
-		Vector2(195.0, 312.0)
+		Vector2(195.0, 344.0)
 	)
 	character._try_start_hang()
 	_expect(
@@ -1741,7 +1741,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8)],
-		Vector2(216.0, 350.0)
+		Vector2(216.0, 382.0)
 	)
 	character._try_start_hang()
 	_expect(
@@ -1753,8 +1753,21 @@ func _test_hang_face_bounds() -> void:
 		controller,
 		board_physics,
 		character,
+		[Vector2i(5, 8)],
+		Vector2(216.0, 280.0)
+	)
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging,
+		"블록보다 40px 위 공중에서는 C-grab하지 않는다."
+	)
+
+	await _prepare_hang_fixture(
+		controller,
+		board_physics,
+		character,
 		[Vector2i(5, 8), Vector2i(5, 9)],
-		Vector2(216.0, 360.0)
+		Vector2(216.0, 392.0)
 	)
 	character._try_start_hang()
 	_expect(
@@ -1782,7 +1795,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8), Vector2i(5, 9)],
-		Vector2(216.0, 360.0)
+		Vector2(216.0, 392.0)
 	)
 	character._try_start_hang()
 	var lower_bound: float = character._hang_bottom_global_y
@@ -1854,7 +1867,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8), Vector2i(5, 10)],
-		Vector2(216.0, 408.0)
+		Vector2(216.0, 440.0)
 	)
 	character._try_start_hang()
 	_expect(
@@ -1870,7 +1883,7 @@ func _test_hang_face_bounds() -> void:
 		board_physics,
 		character,
 		[Vector2i(5, 8), Vector2i(6, 9)],
-		Vector2(216.0, 312.0)
+		Vector2(216.0, 344.0)
 	)
 	character._try_start_hang()
 	_expect(

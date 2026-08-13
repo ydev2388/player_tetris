@@ -25,7 +25,7 @@ func _run() -> void:
 	await physics_frame
 
 	character.set_character_id("normal")
-	character.position = Vector2(216.0, 600.0)
+	character.position = Vector2(216.0, 680.0)
 	character.velocity = Vector2.ZERO
 	character.facing = 1
 	character.stamina = MainCharacterController.MAX_STAMINA

@@ -60,8 +60,7 @@ func _run() -> void:
 	print(
 		"CLEANER_SPECIAL_RUNTIME_RESULT grounded=", stood_on_fixed_blocks,
 		" input=", input_was_accepted,
-		" original_targets_removed=", original_targets_removed,
-		" feedback=", character.feedback_text
+		" original_targets_removed=", original_targets_removed
 	)
 	Input.action_release(&"character_special")
 	game.queue_free()

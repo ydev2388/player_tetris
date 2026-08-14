@@ -1,4 +1,4 @@
-# Kung Fu Tetris 5차 Godot 변수 보고서 — C++ 학습자용
+# Block Fighter 5차 Godot 변수 보고서 — C++ 학습자용
 
 이 문서는 5차 GDScript의 상수, enum, signal, 멤버 변수와 주요 지역 변수의 의미를
 파일별로 설명한다. 함수 동작은 `GODOT_FUNCTION_REFERENCE_CPP_KO.md`에서 별도로 다룬다.
@@ -172,7 +172,6 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | 이름 | 의미 |
 | --- | --- |
 | `stats_changed` | lives/stamina/cooldown 변경을 View에 알린다. |
-| `feedback_changed` | feedback 문자열 생성·만료를 알린다. |
 | `controller` | 피스 이동/회전과 게임 종료를 명령할 GameController 참조. |
 | `sprite` | texture/region/flip/rotation/modulation/visible의 대상. |
 | `left_ray`, `right_ray` | 매달릴 collider 탐지용 RayCast2D. |
@@ -214,13 +213,12 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | `is_hanging` | 일반 이동 대신 hang branch를 선택하는 flag. |
 | `is_meditating` | 정지와 controller 시간 2배를 나타내는 flag. |
 | `rotation_cooldown_remaining` | 0보다 크면 새 블록 플립을 거부하는 countdown. |
-| `feedback_text` | View가 1.4초 동안 표시할 최근 행동 결과. |
 
 ### private state machine 변수
 
 | 그룹 | 변수 | 의미 |
 | --- | --- | --- |
-| 일반 timer | `_invulnerability_remaining`, `_feedback_remaining` | 피해 무시와 메시지 만료 countdown. |
+| 일반 timer | `_invulnerability_remaining` | 피해 무시 countdown. |
 | flip | `_spin_remaining`, `_spin_elapsed`, `_spin_direction`, `_pending_rotation_launch_velocity`, `_post_spin_animation_seeded` | 회전 진행·시작 방향·다음 frame 상승·종료 frame 보존. |
 | hang | `_hang_body`, `_hang_last_global_position`, `_hang_regrab_remaining`, `_hang_jump_grace_remaining`, `_hang_jump_facing` | 붙은 body와 이동 delta, 재잡기/점프 유예, 벽 방향. |
 | jump | `_coyote_remaining`, `_jump_buffer_remaining`, `_wall_jump_control_remaining`, `_wall_jump_wall_facing`, `_variable_jump_active` | 점프 입력 유예와 벽점프 조향, release cut 가능 상태. |
@@ -253,7 +251,7 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | `controller`, `character` | View가 읽을 authoritative gameplay object. View는 이 상태를 소유하지 않는다. |
 | `_title_label`, `_next_label` | 고정 제목과 next 제목. |
 | `_stats_label`, `_life_label`, `_stamina_label`, `_punch_label`, `_rotation_label` | `_refresh()`가 갱신하는 상태 Label. |
-| `_feedback_label`, `_status_label` | 행동 결과와 pause/game-over 문구. |
+| `_status_label` | pause/game-over 문구. |
 | `_self_respawn_panel`, `_self_respawn_fill` | Q hold 중만 보이는 높은 z-index 진행 UI. |
 | `_system_font` | retained Label과 `draw_string()`이 공유하는 font resource. |
 

@@ -13,7 +13,7 @@ const BLOCK_VISUAL_INSET: float = 2.0
 ## Godot: `_ready()`, 고정 timestep마다 `_physics_process(delta)`.
 ## GameController.game_restarted signal: `_reset_character()`.
 ## BoardPhysics: 보드 충돌체 갱신 뒤 `validate_position()`.
-## GameView: 공개 stats/getter를 읽고 `stats_changed`/`feedback_changed`를 구독.
+## GameView: 공개 stats/getter와 `stats_changed`를 구독.
 ## 호출 대상: GameController(명상 속도, 피스 밀기/회전, 게임 종료),
 ##           BoardModel/TetrominoData(공간 판정), AnimationData, Input.
 ##
@@ -21,7 +21,6 @@ const BLOCK_VISUAL_INSET: float = 2.0
 ## `func f(a: T) -> R`은 함수 시그니처, `and/or/not`은 `&&/||/!`에 해당한다.
 
 signal stats_changed # 생명/stamina/cooldown 변경을 GameView에 알린다.
-signal feedback_changed # feedback_text 변경/만료를 GameView에 알린다.
 signal binding_started
 signal binding_ended
 
@@ -146,13 +145,11 @@ var is_bound: bool = false
 var binding_timer: float = 0.0
 var rotation_cooldown_remaining: float = 0.0 # 0보다 크면 블록 플립 입력 거부; 매 frame 감소.
 var special_cooldown_remaining: float = 0.0 # 고유 특수 스킬 재사용 대기시간.
-var feedback_text: String = "" # GameView가 표시할 최근 행동 결과. 1.4초 후 지워진다.
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0] # 상점에서 구매한 전역 패시브 레벨.
 
 # 이 클래스 내부의 상태 기계용 변수. `_`는 C++의 private와 같은 강제 접근 제한은
 # 아니지만 외부에서 사용하지 말라는 GDScript 관례다.
 var _invulnerability_remaining: float = 0.0 # 0보다 크면 take_damage를 무시하고 깜빡임.
-var _feedback_remaining: float = 0.0 # 0이 되면 feedback_text를 지우는 countdown(초).
 var _spin_remaining: float = 0.0 # 블록 플립 sprite 회전을 계속할 countdown(초).
 var _spin_elapsed: float = 0.0 # 현재 블록 플립에서 소비한 시간(0~0.42초).
 var _spin_direction: int = 1 # 회전 시작 때 고정한 방향; 도중 facing 변경과 무관.
@@ -280,13 +277,10 @@ func _handle_special_input() -> void:
 
 func _attempt_special_skill() -> bool:
 	if special_cooldown_remaining > 0.0:
-		_set_feedback("%s 재사용 대기 중" % special_display_name())
 		return false
 	if not _can_use_special():
-		_set_feedback("지금은 특수 스킬을 사용할 수 없음")
 		return false
 	if (character_id == "firefighter" or character_id == "cleaner") and not is_on_floor():
-		_set_feedback("지상에서만 사용 가능")
 		return false
 
 	var delay: float = 0.0
@@ -328,8 +322,6 @@ func _attempt_special_skill() -> bool:
 	if delay > 0.0:
 		_pending_special_id = character_id
 		_pending_special_remaining = delay
-	else:
-		_set_feedback("%s 발동" % special_display_name())
 	stats_changed.emit()
 	return true
 
@@ -360,10 +352,6 @@ func _resolve_pending_special() -> void:
 					true
 				)
 			_last_special_succeeded = moved > 0
-			if moved > 0:
-				_set_feedback("가드 브레이크: %d칸" % moved)
-			else:
-				_set_feedback("가드 브레이크 실패")
 		"shield_guard":
 			_barrier_direction = _pending_barrier_direction
 			var barrier_cells: Array[Vector2i] = _available_barrier_cells_from(
@@ -374,12 +362,10 @@ func _resolve_pending_special() -> void:
 				_barrier_remaining = 0.0
 				_barrier_direction = 0
 				controller.clear_transient_blockers()
-				_set_feedback("보호벽 생성 공간 부족")
 			else:
 				_last_special_succeeded = true
 				_barrier_remaining = 2.0
 				controller.set_transient_blockers(barrier_cells)
-				_set_feedback("전방 보호벽 발동")
 			_pending_barrier_position = Vector2.ZERO
 			_pending_barrier_direction = 0
 		"firefighter":
@@ -390,26 +376,21 @@ func _resolve_pending_special() -> void:
 			)
 			_last_special_succeeded = created
 			_water_remaining = 4.0 if created else 0.0
-			_set_feedback("중력 물길 발동" if created else "물길 생성 실패")
 			_pending_water_start_cell = Vector2i.ZERO
 			_pending_water_direction = 0
 		"cleaner":
 			var removed: int = controller.clean_exposed_cells(_pending_cleaner_center_below)
 			_last_special_succeeded = removed > 0
-			_set_feedback("대청소: %d개 제거" % removed if removed > 0 else "대청소 대상 없음")
 			_pending_cleaner_center_below = Vector2i.ZERO
 		"chef":
 			_chef_meat_remaining = CHEF_MEAT_DURATION
 			_chef_meat_guard_available = true
 			_last_special_succeeded = true
-			_set_feedback("고기 섭취: 3초 강화")
 		"clockmaker":
 			_last_special_succeeded = controller.freeze_falling_blocks(3.0)
-			_set_feedback("낙하 시간 3초 정지" if _last_special_succeeded else "정지 태엽 실패")
 		"ninja":
 			_start_ninja_projectile()
 			_last_special_succeeded = true
-			_set_feedback("표창 발사")
 	stats_changed.emit()
 
 
@@ -1159,7 +1140,6 @@ func _perform_wall_jump() -> void:
 		-float(wall_facing) * WALL_JUMP_HORIZONTAL_SPEED,
 		current_jump_velocity() * WALL_JUMP_VERTICAL_MULTIPLIER
 	)
-	_set_feedback("벽 점프")
 
 
 ## 상황: 명상이 아닌 physics frame에서 새 펀치 입력을 처리한다.
@@ -1229,14 +1209,12 @@ func _resolve_pending_punch(delta: float) -> void:
 	if moved > 0:
 		_pending_punch_stage = 0
 		_pending_punch_hit_remaining = 0.0
-		_set_feedback("%s: 1칸 밀치기" % str(character_profile()["weapon"]))
 		stats_changed.emit()
 		return
 
 	_pending_punch_hit_remaining = maxf(0.0, _pending_punch_hit_remaining - delta)
 	if _pending_punch_hit_remaining <= 0.0:
 		_pending_punch_stage = 0
-		_set_feedback("공격이 빗나감")
 
 
 ## 상황: 명상 진입/종료, pause, 피해 또는 reset에서 명상 상태를 일관되게 바꿀 때 호출한다.
@@ -1265,12 +1243,10 @@ func _set_meditating(active: bool) -> void:
 		_variable_jump_active = false
 		_cancel_wall_jump_control()
 		velocity.x = 0.0
-		_set_feedback("명상 ×2")
 	else:
 		_stop_meditation_loop()
 		if controller.state == MainGameController.GameState.PLAYING:
 			_play_sfx(SFX_MEDITATION_END)
-			_set_feedback("명상 종료")
 	stats_changed.emit()
 
 
@@ -1281,10 +1257,8 @@ func _set_meditating(active: bool) -> void:
 ## 결과: 스태미나를 쓰지 않으며 대상이 없어도 한 바퀴 동작과 짧은 cooldown이 적용된다.
 func _attempt_rotation_kick(rotation_direction: int = 0) -> void:
 	if is_meditating or _special_animation_remaining > 0.0 or not _pending_special_id.is_empty():
-		_set_feedback("지금은 블록 플립을 사용할 수 없음")
 		return
 	if rotation_cooldown_remaining > 0.0:
-		_set_feedback("블록 플립 재사용 대기 중")
 		return
 
 	var resolved_direction: int = facing if rotation_direction == 0 else signi(rotation_direction)
@@ -1297,7 +1271,6 @@ func _attempt_rotation_kick(rotation_direction: int = 0) -> void:
 		return
 	if not _is_near_active_piece(0.0, MainLayout.scaled(88.0)):
 		_pending_rotation_launch_velocity = 0.0
-		_set_feedback("활성 블록에 닿지 않음")
 		velocity.y = MainLayout.scaled(-120.0)
 		rotation_cooldown_remaining = current_rotation_cooldown()
 		stats_changed.emit()
@@ -1311,12 +1284,10 @@ func _attempt_rotation_kick(rotation_direction: int = 0) -> void:
 		velocity.y = 0.0
 		_pending_rotation_launch_velocity = MainLayout.scaled(-260.0)
 		rotation_cooldown_remaining = current_rotation_cooldown()
-		_set_feedback("공중 블록 플립 성공")
 	else:
 		_pending_rotation_launch_velocity = 0.0
 		velocity.y = MainLayout.scaled(-140.0)
 		rotation_cooldown_remaining = current_rotation_cooldown()
-		_set_feedback("회전 공간 부족")
 	if thorn_contact:
 		take_thorn_damage("가시 회전킥 피해! 목숨 -1")
 	stats_changed.emit()
@@ -1436,7 +1407,6 @@ func _try_start_hang() -> void:
 		_cancel_wall_jump_control()
 		velocity = Vector2.ZERO
 		_play_sfx(SFX_WALL_CLIMB)
-		_set_feedback("벽 점프 재매달리기" if returned_from_wall_jump else "매달리기")
 
 
 ## 상황: grab 해제, stamina 소진, 벽 끝, 벽점프 또는 피해로 hang을 끝낼 때 호출한다.
@@ -1720,7 +1690,6 @@ func validate_position() -> void:
 		return
 	position = safe_position as Vector2
 	velocity = Vector2.ZERO
-	_set_feedback("보드 이탈: 안전 위치 복귀")
 
 
 func _clamp_to_board_bounds() -> void:
@@ -1754,12 +1723,11 @@ func take_damage() -> void:
 	if _invulnerability_remaining > 0.0:
 		return
 	if _barrier_remaining > 0.0 and _danger_is_from_direction(_barrier_direction):
-		_set_feedback("보호벽 방어")
 		return
 	_lose_life_and_respawn("압착 피해! 목숨 -1")
 
 
-func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 -1") -> void:
+func take_thorn_damage(_feedback_message: String = "") -> void:
 	if _invulnerability_remaining > 0.0:
 		return
 	if _consume_chef_meat_guard():
@@ -1767,13 +1735,12 @@ func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
 	_play_sfx(SFX_HURT)
-	_set_feedback(feedback_message)
 	if lives <= 0:
 		controller.end_game()
 	stats_changed.emit()
 
 
-func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어") -> bool:
+func _consume_chef_meat_guard(_feedback_message: String = "") -> bool:
 	if (
 		character_id != "chef"
 		or _chef_meat_remaining <= 0.0
@@ -1781,7 +1748,6 @@ func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어")
 	):
 		return false
 	_chef_meat_guard_available = false
-	_set_feedback(feedback_message)
 	stats_changed.emit()
 	return true
 
@@ -1789,7 +1755,7 @@ func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어")
 ## 상황: 압착 또는 자력 재스폰이 실제 생명 하나를 소비하기로 확정했을 때 호출한다.
 ## 순서: 생명/무적 갱신 → 모든 행동과 시각 회전 취소 → 게임오버 또는 상단 안전 재스폰.
 ## 결과: 두 진입점이 같은 정리·재스폰 규칙을 사용하며 자력 재스폰은 호출 전에 무적을 우회한다.
-func _lose_life_and_respawn(feedback_message: String) -> void:
+func _lose_life_and_respawn(_feedback_message: String) -> void:
 	_end_binding()
 	lives -= 1
 	_invulnerability_remaining = INVULNERABILITY_SECONDS
@@ -1815,7 +1781,6 @@ func _lose_life_and_respawn(feedback_message: String) -> void:
 	)
 	velocity = Vector2.ZERO
 	sprite.rotation = 0.0
-	_set_feedback(feedback_message)
 
 	if lives <= 0:
 		controller.end_game()
@@ -2032,11 +1997,6 @@ func _finish_ninja_projectile(
 	_ninja_special_result["in_flight"] = false
 	_ninja_special_result["impact_elapsed"] = 0.0
 	_last_special_succeeded = succeeded
-	_set_feedback(
-		"표창으로 활성 블록 밀치기 성공"
-		if succeeded
-		else "표창이 막혔거나 활성 블록 공간 없음"
-	)
 	stats_changed.emit()
 
 
@@ -2399,15 +2359,11 @@ func _update_timers(delta: float) -> void:
 	if _chef_meat_remaining <= 0.0:
 		_chef_meat_guard_available = false
 	_invulnerability_remaining = maxf(0.0, _invulnerability_remaining - delta)
-	_feedback_remaining = maxf(0.0, _feedback_remaining - delta)
 	_coyote_remaining = maxf(0.0, _coyote_remaining - delta)
 	_jump_buffer_remaining = maxf(0.0, _jump_buffer_remaining - delta)
 	_hang_regrab_remaining = maxf(0.0, _hang_regrab_remaining - delta)
 	_hang_jump_grace_remaining = maxf(0.0, _hang_jump_grace_remaining - delta)
 	_wall_jump_control_remaining = maxf(0.0, _wall_jump_control_remaining - delta)
-	if _feedback_remaining <= 0.0 and not feedback_text.is_empty():
-		feedback_text = ""
-		feedback_changed.emit()
 
 
 ## 상황: gameplay 처리가 끝난 활성 physics frame마다 sprite를 최신 상태로 만들 때 호출한다.
@@ -2800,15 +2756,6 @@ func _animation_target_size(_animation_state_value: String) -> Vector2:
 	return ANIMATION_DATA.display_size_for(character_id)
 
 
-## 상황: 행동 성공/실패를 사용자에게 짧게 알려야 할 때 호출한다.
-## 순서: text 대입 → 표시 timer=1.4초 → feedback_changed emit.
-## 결과: View가 즉시 표시하고 `_update_timers()`가 나중에 자동 삭제한다.
-func _set_feedback(message: String) -> void:
-	feedback_text = message
-	_feedback_remaining = 1.4
-	feedback_changed.emit()
-
-
 ## 상황: 캐릭터가 서로 독립적으로 재생할 SFX channel을 준비할 때 호출된다.
 ## 순서: AudioStreamPlayer 생성 → SFX bus 지정 → 캐릭터 자식으로 소유권 연결.
 ## 결과: scene free 시 함께 정리되는 player 참조를 반환한다.
@@ -2879,9 +2826,7 @@ func _reset_character() -> void:
 	controller.set_meditation_active(false)
 	rotation_cooldown_remaining = 0.0
 	special_cooldown_remaining = 0.0
-	feedback_text = ""
 	_invulnerability_remaining = 0.0
-	_feedback_remaining = 0.0
 	_spin_remaining = 0.0
 	_spin_elapsed = 0.0
 	_spin_direction = 1
@@ -2923,4 +2868,3 @@ func _reset_character() -> void:
 	sprite.visible = true
 	_apply_animation_frame()
 	stats_changed.emit()
-	feedback_changed.emit()

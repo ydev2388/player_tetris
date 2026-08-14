@@ -49,8 +49,7 @@ func _run() -> void:
 	)
 	print(
 		"BOXER_SPECIAL_RUNTIME_RESULT input=", input_was_accepted,
-		" floor_block_moved=", floor_block_moved,
-		" feedback=", character.feedback_text
+		" floor_block_moved=", floor_block_moved
 	)
 	Input.action_release(&"character_special")
 	game.queue_free()

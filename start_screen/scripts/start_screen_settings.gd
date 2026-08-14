@@ -32,11 +32,33 @@ const PASSIVE_DESCRIPTIONS: Array[String] = [
 	"특수 스킬의 재사용 대기시간이 줄어듭니다.",
 	"레벨마다 캐릭터의 목숨이 1개 추가됩니다.",
 ]
+const PASSIVE_NAMES_ENGLISH: Array[String] = ["Attack Speed", "Move", "Jump", "Stamina", "Special Skill", "Health"]
+const PASSIVE_DESCRIPTIONS_ENGLISH: Array[String] = [
+	"Reduces basic attack and block flip cooldowns.",
+	"Increases left and right movement speed.",
+	"Increases jump height.",
+	"Reduces stamina use while hanging from a wall.",
+	"Reduces special skill cooldowns.",
+	"Adds one life per level.",
+]
+const PASSIVE_NAMES_CHINESE: Array[String] = ["攻击速度", "移动", "跳跃", "体力", "特殊技能", "生命"]
+const PASSIVE_DESCRIPTIONS_CHINESE: Array[String] = [
+	"缩短普通攻击和方块翻转的冷却时间。",
+	"提高左右移动速度。",
+	"提高跳跃高度。",
+	"减少攀墙时的体力消耗。",
+	"缩短特殊技能的冷却时间。",
+	"每级增加一条生命。",
+]
 const MAX_PASSIVE_LEVEL: int = 3
+const ENGLISH: String = "english"
+const KOREAN: String = "kor"
+const CHINESE: String = "zh_cn"
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
+var language: String = ENGLISH
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
@@ -60,7 +82,24 @@ func get_action_definitions() -> Array[Dictionary]:
 
 func get_action_label(action_name: StringName) -> String:
 	var definition: Dictionary = _definition_for(action_name)
-	return String(definition.get("label", String(action_name)))
+	var label_key: String = (
+		"label" if language == KOREAN else "label_chinese" if language == CHINESE else "label_english"
+	)
+	return String(definition.get(label_key, String(action_name)))
+
+
+func get_passive_name(index: int) -> String:
+	var names: Array[String] = (
+		PASSIVE_NAMES if language == KOREAN else PASSIVE_NAMES_CHINESE if language == CHINESE else PASSIVE_NAMES_ENGLISH
+	)
+	return names[index]
+
+
+func get_passive_description(index: int) -> String:
+	var descriptions: Array[String] = (
+		PASSIVE_DESCRIPTIONS if language == KOREAN else PASSIVE_DESCRIPTIONS_CHINESE if language == CHINESE else PASSIVE_DESCRIPTIONS_ENGLISH
+	)
+	return descriptions[index]
 
 
 func get_action_keys(action_name: StringName) -> Array[int]:
@@ -82,7 +121,7 @@ func get_binding_text(action_name: StringName) -> String:
 func get_slot_text(action_name: StringName, slot_index: int) -> String:
 	var keys: Array[int] = get_action_keys(action_name)
 	if slot_index < 0 or slot_index >= keys.size() or keys[slot_index] == KEY_NONE:
-		return "미지정"
+		return "未设置" if language == CHINESE else "미지정" if language == KOREAN else "Unassigned"
 	return keycode_to_text(keys[slot_index])
 
 
@@ -114,7 +153,12 @@ func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dic
 	apply_bindings()
 	save_settings()
 	bindings_changed.emit()
-	return {"ok": true, "message": "%s 키가 변경되었습니다." % get_action_label(action_name)}
+	return {
+		"ok": true,
+		"message": "%s 키가 변경되었습니다." % get_action_label(action_name)
+		if language == KOREAN
+		else "%s key changed." % get_action_label(action_name),
+	}
 
 
 func clear_secondary_binding(action_name: StringName) -> Dictionary:
@@ -130,7 +174,12 @@ func clear_secondary_binding(action_name: StringName) -> Dictionary:
 	apply_bindings()
 	save_settings()
 	bindings_changed.emit()
-	return {"ok": true, "message": "%s 보조 키를 지웠습니다." % get_action_label(action_name)}
+	return {
+		"ok": true,
+		"message": "%s 보조 키를 지웠습니다." % get_action_label(action_name)
+		if language == KOREAN
+		else "%s secondary key cleared." % get_action_label(action_name),
+	}
 
 
 func find_conflict(
@@ -148,7 +197,7 @@ func find_conflict(
 				return {
 					"action": action_name,
 					"slot": slot_index,
-					"label": definition["label"],
+				"label": get_action_label(action_name),
 				}
 	return {}
 
@@ -176,6 +225,14 @@ func set_sfx_percent(value: float) -> void:
 	_apply_bus_volume(SFX_BUS, sfx_percent)
 	save_settings()
 	audio_changed.emit()
+
+
+func set_language(value: String) -> void:
+	var next_language: String = value if value in [KOREAN, CHINESE] else ENGLISH
+	if language == next_language:
+		return
+	language = next_language
+	save_settings()
 
 
 func get_stage_best_stars(stage_number: int) -> int:
@@ -345,6 +402,7 @@ func _reset_settings_to_defaults() -> void:
 	_load_default_bindings()
 	music_percent = 100.0
 	sfx_percent = 100.0
+	language = ENGLISH
 	stage_best_stars = [0, 0, 0, 0, 0]
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
@@ -423,6 +481,9 @@ func _load_audio_from_config(config: ConfigFile) -> void:
 		0.0,
 		100.0
 	)
+	language = String(config.get_value("options", "language", ENGLISH))
+	if language not in [KOREAN, CHINESE]:
+		language = ENGLISH
 
 
 func _load_progress_from_config(config: ConfigFile) -> void:
@@ -462,6 +523,7 @@ func save_settings() -> Error:
 		config.set_value("input", String(action_name), get_action_keys(action_name))
 	config.set_value("audio", "music_percent", music_percent)
 	config.set_value("audio", "sfx_percent", sfx_percent)
+	config.set_value("options", "language", language)
 	config.set_value("progress", "star_currency", star_currency)
 	config.set_value("progress", "passive_levels", passive_levels)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
@@ -553,13 +615,16 @@ func _apply_bus_volume(bus_name: StringName, percent: float) -> void:
 	var bus_index: int = AudioServer.get_bus_index(bus_name)
 	if bus_index < 0:
 		return
-	var muted: bool = percent <= 0.0
+	# ponytail: UI 값과 무관하게 SFX 실제 출력을 절반으로 고정. SFX 전용
+	# 조절이 필요해지면 percent를 저장 값으로 바꿔 옵션에 노출한다.
+	var effective_percent: float = percent * (0.5 if bus_name == SFX_BUS else 1.0)
+	var muted: bool = effective_percent <= 0.0
 	AudioServer.set_bus_mute(bus_index, muted)
 	AudioServer.set_bus_volume_db(
 		bus_index,
-		-80.0 if muted else linear_to_db(percent / 100.0)
+		-80.0 if muted else linear_to_db(effective_percent / 100.0) - 10.0
 	)
 
 
 func _failure(message: String) -> Dictionary:
-	return {"ok": false, "message": message}
+	return {"ok": false, "message": message if language == KOREAN else "Operation failed."}

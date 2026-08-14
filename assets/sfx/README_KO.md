@@ -1,4 +1,4 @@
-# Kung Fu Tetris SFX v2
+# Block Fighter SFX v2
 
 48 kHz / 16-bit / mono WAV입니다. 이전 sfxr 단일 파형 대신 여러 레이어를 합성했습니다.
 

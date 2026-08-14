@@ -272,6 +272,8 @@ func reset_game(seed_value: int = -1) -> void:
 		_spawn_random.randomize()
 		_gimmick_random.randomize()
 	total_lines = 0
+	score = 0
+	level = 1
 	boss_health = BOSS_MAX_HEALTH if is_boss_stage() else 0
 	boss_fall_position = Vector2(
 		BOSS_POSITION.x,
@@ -1167,6 +1169,8 @@ func lock_active_piece() -> void:
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
 		_apply_line_clear_rewards(cleared)
+	if state != GameState.PLAYING:
+		return # 보스 처치로 BOSS_FALLING으로 전환되면 이 lock의 후속 처리를 멈춘다.
 
 	if board.has_blocks_in_hidden_rows():
 		end_game()
@@ -1181,6 +1185,7 @@ func _apply_line_clear_rewards(cleared: int) -> void:
 	total_lines += cleared
 	level = level_for_lines(total_lines)
 	lines_cleared.emit()
+	damage_boss(cleared)
 
 
 ## 상황: P/Esc 입력 또는 테스트가 일시정지 상태를 전환할 때 호출한다.

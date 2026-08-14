@@ -26,5 +26,5 @@
 - 시작 화면 게임 설명은 12FPS 애니메이션 5페이지이며 키 표시는 설정의 실제 바인딩을 읽는다.
 - 게임 중 `Esc`를 누르면 `Yes`/`No` 확인창을 표시한다. 확인 중에는 physics process를 멈추며, `No`는 이전 게임 상태로 돌아가고 `Yes`는 메인 메뉴로 복귀한다.
 
-튜토리얼과 문서는 이전 `V` 키 플립 또는 당기기 동작을 전제로 하지 않는다. Windows 빌드는
-`build_main.ps1`(또는 `build_main.bat`)에서 게임 테스트와 export를 순서대로 실행한다.
+튜토리얼과 문서는 이전 `V` 키 플립 또는 당기기 동작을 전제로 하지 않는다. 배포는
+`export_presets.cfg`의 `Web` preset으로 `build/web/index.html`을 생성한다.

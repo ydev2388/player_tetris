@@ -18,6 +18,11 @@ const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss
 
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
+var _stage_cleared_captured: bool = false # stage_cleared 발생 감지용. lambda는 지역 변수를 값 캡처하므로 멤버를 쓴다.
+
+
+func _on_stage_cleared_captured(_cleared_lines: int) -> void:
+	_stage_cleared_captured = true
 
 
 ## 상황: SceneTree test runner가 생성될 때 자동 호출된다.
@@ -277,6 +282,7 @@ func _run() -> void:
 	_test_board_coordinate_alignment()
 	_test_stage_rule_contracts()
 	_test_spawn_side_margin()
+	await _test_restart_state_invariance()
 	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
@@ -373,6 +379,7 @@ func _test_stage_rule_contracts() -> void:
 		controller.state == MainGameController.GameState.PLAYING,
 		"보스 HP 0과 제한시간 0이 겹치면 제한시간 실패를 적용하지 않는다."
 	)
+
 	controller.binding_probability = MainGameController.BINDING_PROBABILITY
 	controller._gimmick_roll_overrides = [false, false, true]
 	controller._attempt_binding_roll()
@@ -388,6 +395,65 @@ func _test_stage_rule_contracts() -> void:
 		"속박 확률은 실패마다 5%p 증가하고 성공 시 15%로 초기화한다."
 	)
 	controller.free()
+
+
+## 상황: PAUSED/GAME_OVER/BOSS_FALLING 어느 상태에서 R 재시작을 누를 때의 상태 불변성을 검사한다.
+## 순서: 상태별로 점수·레벨·timer·기믹·보스·blocker·물길·freeze를 오염시킨 뒤
+##       Input.action_press로 R을 누르고 physics frame을 기다려 실제 입력 경로로 reset_game을 호출한다.
+## 결과: 어떤 상태에서 재시작해도 score/level/줄/timer/기믹/보스/blocker/물길/freeze가 초기값이 된다.
+func _test_restart_state_invariance() -> void:
+	var restart_controller: MainGameController = GAME_CONTROLLER.new()
+	restart_controller.stage_number = 4
+	for restart_state: int in [
+		MainGameController.GameState.PAUSED,
+		MainGameController.GameState.GAME_OVER,
+		MainGameController.GameState.BOSS_FALLING,
+	]:
+		restart_controller.reset_game(20260812)
+		restart_controller.score = 500
+		restart_controller.total_lines = 12
+		restart_controller.level = 2
+		restart_controller.stage_time_remaining = 3.0
+		restart_controller.transient_blocker_cells = [Vector2i(3, 5)]
+		restart_controller.water_path_cells = [Vector2i(4, 6)]
+		restart_controller.water_path_direction = -1
+		restart_controller.fall_freeze_remaining = 1.5
+		restart_controller.future_gimmick_freeze_remaining = 1.5
+		restart_controller.boss_health = 1
+		restart_controller.boss_down = true
+		restart_controller.boss_seeds = [{"position": Vector2.ZERO}]
+		restart_controller._fall_accumulator = 0.2
+		restart_controller._lock_accumulator = 0.3
+		restart_controller._lock_resets = 4
+		restart_controller.state = restart_state
+		Input.action_press(&"restart_game")
+		await physics_frame
+		restart_controller._physics_process(0.016)
+		Input.action_release(&"restart_game")
+		_expect(
+			restart_controller.score == 0
+				and restart_controller.total_lines == 0
+				and restart_controller.level == 1
+				and is_equal_approx(
+					restart_controller.stage_time_remaining,
+					restart_controller.stage_time_limit()
+				)
+				and restart_controller.transient_blocker_cells.is_empty()
+				and restart_controller.water_path_cells.is_empty()
+				and restart_controller.water_path_direction == 0
+				and restart_controller.fall_freeze_remaining == 0.0
+				and restart_controller.future_gimmick_freeze_remaining == 0.0
+				and restart_controller.boss_health == 0
+				and not restart_controller.boss_down
+				and restart_controller.boss_seeds.is_empty()
+				and restart_controller._fall_accumulator == 0.0
+				and restart_controller._lock_accumulator == 0.0
+				and restart_controller._lock_resets == 0
+				and restart_controller.state == MainGameController.GameState.PLAYING,
+			"상태 %d에서 R 재시작이 점수·레벨·줄·timer·기믹·보스·blocker·물길·freeze를 초기화한다."
+				% restart_state
+		)
+	restart_controller.free()
 
 
 func _test_spawn_side_margin() -> void:
@@ -627,6 +693,47 @@ func _test_boss_seeds() -> void:
 		"PAUSED에서는 씨앗 발사·수명 시간이 멈춘다."
 	)
 	controller.free()
+
+	var damage_controller: MainGameController = GAME_CONTROLLER.new()
+	damage_controller.stage_number = 5
+	damage_controller.reset_game(20260811)
+	for clear_index: int in range(MainGameController.BOSS_MAX_HEALTH):
+		damage_controller.board.reset()
+		damage_controller.boss_health = MainGameController.BOSS_MAX_HEALTH - clear_index
+		for column: int in range(MainBoardModel.WIDTH):
+			damage_controller.board.cells[20][column] = MainTetrominoData.Type.T
+		damage_controller.active_type = MainTetrominoData.Type.O
+		damage_controller.active_rotation = 0
+		damage_controller.active_origin = Vector2i(3, 18)
+		damage_controller.active_cell_indices = [0, 1, 2, 3]
+		damage_controller.lock_active_piece()
+		if clear_index < MainGameController.BOSS_MAX_HEALTH - 1:
+			_expect(
+				damage_controller.boss_health == MainGameController.BOSS_MAX_HEALTH - clear_index - 1
+					and damage_controller.state == MainGameController.GameState.PLAYING,
+				"정상 라인 1줄 삭제가 보스 체력을 %d에서 %d로 줄인다." % [
+					MainGameController.BOSS_MAX_HEALTH - clear_index,
+					MainGameController.BOSS_MAX_HEALTH - clear_index - 1,
+				]
+			)
+		else:
+			_expect(
+				damage_controller.boss_health == 0
+					and damage_controller.state == MainGameController.GameState.BOSS_FALLING
+					and damage_controller.boss_down,
+				"정상 라인 삭제로 보스 체력이 0이 되면 down으로 전환한다."
+			)
+	_stage_cleared_captured = false
+	damage_controller.stage_cleared.connect(_on_stage_cleared_captured)
+	damage_controller._advance_boss_fall(MainGameController.BOSS_DOWN_DURATION_SECONDS + 2.0)
+	damage_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+	_expect(
+		_stage_cleared_captured
+			and damage_controller.boss_fallen
+			and damage_controller.state == MainGameController.GameState.PAUSED,
+		"보스 체력 0 뒤 down -> fall -> stage clear 흐름을 유지한다."
+	)
+	damage_controller.free()
 
 	var scene: MainGameView = GAME_SCENE.instantiate()
 	root.add_child(scene)

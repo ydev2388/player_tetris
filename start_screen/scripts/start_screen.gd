@@ -1,4 +1,4 @@
-class_name KungFuTetrisStartScreen
+class_name BlockFighterStartScreen
 extends Control
 
 signal game_loaded(game_root: Node)
@@ -7,7 +7,6 @@ signal exit_requested
 const GAME_SCENE_DEFAULT: String = "res://scenes/main.tscn"
 const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
 const TUTORIAL_PAGE_COUNT: int = 5
-const PORTRAIT: Texture2D = preload("res://assets/sprites/characters/normal/normal_atlas.png")
 const PORTRAIT_SOURCE: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0)
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
@@ -46,6 +45,64 @@ const _SHOP_ICON_FILES: Array[String] = [
 	"special_attack.png",
 	"health.png",
 ]
+const ENGLISH_TEXT: Dictionary = {
+	"게임 설명": "GAME GUIDE", "↑ ↓ 선택    Z 확인": "UP/DOWN Select    Z Confirm",
+	"클리어한 스테이지의 별은 다음 도전에 이어집니다": "Cleared-stage stars carry into your next challenge.",
+	"별 0개": "0 Stars", "캐릭터 선택": "SELECT CHARACTER", "블록 깨러 가기": "START STAGE",
+	"상점": "SHOP", "메인으로": "MAIN MENU", "상점 선택": "SHOP",
+	"전역 패시브 강화": "GLOBAL PASSIVE UPGRADES",
+	"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.": "Select an icon to view its details below.",
+	"선택 후 Z로 강화": "Press Z to upgrade", "스테이지 선택으로": "STAGE SELECT",
+	"패시브 초기화": "RESET PASSIVES", "키 설정과 사운드 크기를 조절합니다": "Adjust key bindings, language, and sound.",
+	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "Change movement, action, and\nsystem keys.",
+	"키 설정 열기": "OPEN KEY SETTINGS", "BGM과 효과음의 크기를\n각각 조절합니다.": "Adjust BGM and sound\neffect volume.",
+	"볼륨 설정 열기": "OPEN VOLUME SETTINGS", "진행 데이터 초기화": "RESET PROGRESS",
+	"스테이지 해금과 별 재화를 지웁니다.": "Deletes stage unlocks and stars.",
+	"진행 상황 삭제": "DELETE PROGRESS", "버튼을 누른 뒤 새 키를 입력하세요": "Select a button, then press a new key.",
+	"동작": "ACTION", "주 키": "PRIMARY", "보조 키": "SECONDARY", "지우기": "CLEAR",
+	"기본값 복원": "RESTORE DEFAULTS", "OPTION으로": "BACK TO OPTIONS",
+	"향후 추가되는 음악과 효과음에도 설정이 유지됩니다": "These settings apply to future music and effects too.",
+	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% is muted. Music uses BGM and effects use SFX.",
+	"새 키 입력": "NEW KEY", "취소": "CANCEL", "안내": "NOTICE", "확인": "OK",
+	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금과 별 재화가 초기화됩니다.": "Stage unlocks and stars will be reset.",
+	"삭제": "DELETE", "패시브를 초기화할까요?": "Reset passive upgrades?",
+	"투자한 별을 모두 돌려받습니다.": "All invested stars will be refunded.", "초기화": "RESET",
+	"메뉴로 나가겠습니까?": "Return to the main menu?", "선택 완료": "CONFIRM", "뒤로": "BACK",
+	"실패": "FAILED", "보스 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
+}
+const CHINESE_TEXT: Dictionary = {
+	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
+	"클리어한 스테이지의 별은 다음 도전에 이어집니다": "通关关卡获得的星星会延续到下一次挑战。",
+	"캐릭터 선택": "选择角色", "블록 깨러 가기": "开始关卡", "상점": "商店", "메인으로": "主菜单",
+	"상점 선택": "选择商店", "전역 패시브 강화": "全局被动强化",
+	"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.": "选择图标可在下方查看详细信息。",
+	"선택 후 Z로 강화": "选择后按 Z 强化", "스테이지 선택으로": "关卡选择",
+	"패시브 초기화": "重置被动", "키 설정과 사운드 크기를 조절합니다": "调整按键、语言和音量。",
+	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "修改移动、动作和\n系统按键。",
+	"키 설정 열기": "打开按键设置", "BGM과 효과음의 크기를\n각각 조절합니다.": "分别调整 BGM 和\n音效音量。",
+	"볼륨 설정 열기": "打开音量设置", "진행 데이터 초기화": "重置进度数据",
+	"스테이지 해금과 별 재화를 지웁니다.": "删除关卡解锁和星星。",
+	"진행 상황 삭제": "删除进度", "버튼을 누른 뒤 새 키를 입력하세요": "选择按钮后输入新按键。",
+	"동작": "动作", "주 키": "主键", "보조 키": "副键", "지우기": "清除",
+	"기본값 복원": "恢复默认", "OPTION으로": "返回选项",
+	"향후 추가되는 음악과 효과음에도 설정이 유지됩니다": "此设置也会用于之后添加的音乐和音效。",
+	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% 为静音。音乐使用 BGM 总线，\n音效使用 SFX 总线。",
+	"새 키 입력": "输入新按键", "취소": "取消", "안내": "提示", "확인": "确定",
+	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금과 별 재화가 초기화됩니다.": "关卡解锁和星星将被重置。",
+	"삭제": "删除", "패시브를 초기화할까요?": "要重置被动强化吗？",
+	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
+	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "선택 완료": "确认", "뒤로": "返回",
+	"실패": "失败", "보스 제한시간이 끝났습니다.": "首领限制时间已结束。", "재시도": "重试",
+	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言",
+	"GAME START": "开始游戏", "OPTION": "选项", "EXIT": "退出", "STAGE SELECT": "关卡选择",
+	"KEY": "按键", "VOLUME": "音量", "KEY CUSTOM": "按键设置", "BGM": "背景音乐", "SFX": "音效",
+	"← 이전": "← 上一页", "다음 →": "下一页 →", "  보스": "  首领",
+	"별 %d개": "%d 颗星", "입장 가능": "可进入", "잠김": "未解锁",
+	"현재 효과: 목숨 +%d · Lv. %d / %d": "当前效果：生命 +%d · 等级 %d / %d",
+	"현재 효과: %s%d%% · Lv. %d / %d": "当前效果：%s%d%% · 等级 %d / %d",
+	"최대 레벨": "最高等级", "다음 비용 ★ %d": "下一级费用 ★ %d",
+	"1-%d 클리어!\n%s": "1-%d 通关！\n%s", "별 보상 +%d   (보유 %d)": "星星奖励 +%d   (持有 %d)",
+}
 
 enum Screen {
 	MAIN,
@@ -97,6 +154,8 @@ var _character_window_start: int = 0
 var _character_prev_button: Button
 var _character_next_button: Button
 var _options_first_button: Button
+var _language_button: Button
+var _selected_language: String = StartScreenSettings.ENGLISH
 var _key_buttons: Dictionary = {}
 var _key_status: Label
 var _tutorial_canvas: StartScreenTutorialCanvas
@@ -128,6 +187,9 @@ var _stage_result_overlay: Control
 var _stage_result_label: Label
 var _stage_result_reward_label: Label
 var _stage_result_button: Button
+var _stage_fail_overlay: Control
+var _stage_fail_retry_button: Button
+var _stage_fail_select_button: Button
 var _progress_reset_overlay: Control
 var _progress_reset_yes_button: Button
 var _progress_reset_no_button: Button
@@ -187,6 +249,7 @@ func _draw() -> void:
 
 func show_main_menu() -> void:
 	_hide_stage_result()
+	_hide_stage_fail()
 	_show_screen(Screen.MAIN)
 
 
@@ -213,6 +276,8 @@ func show_tutorial() -> void:
 
 
 func show_options() -> void:
+	_selected_language = settings.language
+	_refresh_language_button()
 	_show_screen(Screen.OPTIONS)
 
 
@@ -237,27 +302,28 @@ func previous_tutorial_page() -> void:
 
 func start_game(stage_number: int = -1) -> bool:
 	if _selected_character_id.is_empty() or not MainCharacterData.has_character(_selected_character_id):
-		_show_message("먼저 캐릭터를 선택하세요.")
+		_show_message(_text("먼저 캐릭터를 선택하세요.", "Select a character first."))
 		return false
 	if _game_instance != null and is_instance_valid(_game_instance):
 		return true
 	if stage_number < 1:
 		stage_number = selected_stage_number
 	if not settings.is_stage_unlocked(stage_number):
-		_show_message("아직 잠긴 스테이지입니다.")
+		_show_message(_text("아직 잠긴 스테이지입니다.", "This stage is locked."))
 		return false
 	if not ResourceLoader.exists(game_scene_path, "PackedScene"):
-		_show_message("게임 장면을 찾을 수 없습니다.\n%s" % game_scene_path)
+		_show_message(_text("게임 장면을 찾을 수 없습니다.\n%s", "Game scene not found.\n%s") % game_scene_path)
 		return false
 
 	var game_resource: Resource = load(game_scene_path)
 	if not game_resource is PackedScene:
-		_show_message("게임 장면을 불러올 수 없습니다.\n%s" % game_scene_path)
+		_show_message(_text("게임 장면을 불러올 수 없습니다.\n%s", "Could not load game scene.\n%s") % game_scene_path)
 		return false
 
 	_game_instance = (game_resource as PackedScene).instantiate()
 	_game_instance.name = "LoadedGame"
 	_game_instance.set_meta("stage_number", stage_number)
+	_game_instance.set_meta("language", settings.language)
 	selected_stage_number = stage_number
 	_game_host.add_child(_game_instance)
 	var selected_character: MainCharacterController = _game_instance.get_node_or_null(
@@ -269,6 +335,7 @@ func start_game(stage_number: int = -1) -> bool:
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
+		game_controller.stage_failed.connect(_on_stage_failed)
 	_show_screen(Screen.GAME)
 	game_loaded.emit(_game_instance)
 	return true
@@ -284,10 +351,10 @@ func begin_key_capture(action_name: StringName, slot_index: int) -> void:
 	_capture_action = action_name
 	_capture_slot = slot_index
 	_capture_label.text = (
-		"%s의 %s 키를 누르세요."
+		_text("%s의 %s 키를 누르세요.", "%s: press the %s key.")
 		% [
 			settings.get_action_label(action_name),
-			"주" if slot_index == 0 else "보조",
+			_text("주", "primary") if slot_index == 0 else _text("보조", "secondary"),
 		]
 	)
 	_capture_overlay.visible = true
@@ -317,6 +384,8 @@ func _input(event: InputEvent) -> void:
 	elif _handle_passive_reset_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_character_select_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_language_selection_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -415,6 +484,19 @@ func _handle_character_select_input(key_event: InputEventKey) -> bool:
 			show_stage_select()
 		return true
 	return false
+
+
+func _handle_language_selection_input(key_event: InputEventKey) -> bool:
+	if current_screen != Screen.OPTIONS or _language_button == null or not _language_button.has_focus():
+		return false
+	var key_code: int = key_event.physical_keycode
+	if key_code == KEY_NONE:
+		key_code = key_event.keycode
+	if key_code != KEY_LEFT and key_code != KEY_RIGHT:
+		return false
+	_selected_language = _next_language(key_code == KEY_RIGHT)
+	_refresh_language_button()
+	return true
 
 
 func _move_character_focus(direction: int) -> void:
@@ -595,6 +677,7 @@ func _build_interface() -> void:
 	_build_passive_reset_overlay()
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
+	_build_stage_fail_overlay()
 
 
 func _build_main_screen() -> void:
@@ -607,42 +690,14 @@ func _build_main_screen() -> void:
 		14
 	)
 
-	var kicker: Label = _create_label(
-		panel,
-		"KUNG FU × FALLING BLOCKS",
-		Rect2(64.0, 60.0, 430.0, 28.0),
-		15,
-		CYAN
-	)
-	kicker.add_theme_constant_override("outline_size", 4)
-	kicker.add_theme_color_override("font_outline_color", Color(1.0, 1.0, 1.0, 0.72))
 	_create_label(
 		panel,
-		"KUNG FU\nTETRIS",
-		Rect2(62.0, 92.0, 430.0, 138.0),
+		"BLOCK\nFIGHTER",
+		Rect2(0.0, 104.0, 840.0, 138.0),
 		48,
-		TEXT
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
 	).add_theme_constant_override("line_spacing", -4)
-	_create_label(
-		panel,
-		"블록 위에서 펼쳐지는 쿵푸 액션",
-		Rect2(66.0, 239.0, 420.0, 34.0),
-		18,
-		MUTED
-	)
-
-	var portrait_texture: AtlasTexture = AtlasTexture.new()
-	portrait_texture.atlas = PORTRAIT
-	portrait_texture.region = PORTRAIT_SOURCE
-	var portrait: TextureRect = TextureRect.new()
-	portrait.name = "CharacterPortrait"
-	portrait.position = Vector2(520.0, 64.0)
-	portrait.size = Vector2(260.0, 500.0)
-	portrait.texture = portrait_texture
-	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(portrait)
 
 	var button_data: Array = [
 		["GAME START", CYAN, show_stage_select],
@@ -655,7 +710,7 @@ func _build_main_screen() -> void:
 		var button: Button = _create_button(
 			panel,
 			String(data[0]),
-			Rect2(64.0, 318.0 + index * 67.0, 350.0, 54.0),
+			Rect2(245.0, 290.0 + index * 67.0, 350.0, 54.0),
 			data[1],
 			18
 		)
@@ -666,9 +721,10 @@ func _build_main_screen() -> void:
 	_create_label(
 		panel,
 		"↑ ↓ 선택    Z 확인",
-		Rect2(66.0, 604.0, 340.0, 28.0),
+		Rect2(250.0, 604.0, 340.0, 28.0),
 		13,
-		MUTED
+		MUTED,
+		HORIZONTAL_ALIGNMENT_CENTER
 	)
 
 
@@ -707,7 +763,7 @@ func _build_stage_select_screen() -> void:
 		)
 		_create_label(
 			panel,
-			"1-%d%s" % [stage_number, "  BOSS" if stage_number == 5 else ""],
+			"1-%d%s" % [stage_number, _text("  보스", "  BOSS") if stage_number == 5 else ""],
 			Rect2(10.0, 26.0, 130.0, 38.0),
 			19,
 			TEXT,
@@ -838,7 +894,7 @@ func _build_shop_screen() -> void:
 		card.pressed.connect(_select_shop_item.bind(index))
 		_create_label(
 			card,
-			StartScreenSettings.PASSIVE_NAMES[index],
+			settings.get_passive_name(index),
 			Rect2(6.0, 4.0, _SHOP_CARD_SIZE.x - 12.0, 26.0),
 			15,
 			TEXT,
@@ -866,7 +922,7 @@ func _build_shop_screen() -> void:
 		else:
 			var fallback: Label = _create_label(
 				icon_frame,
-				StartScreenSettings.PASSIVE_NAMES[index].left(1),
+				settings.get_passive_name(index).left(1),
 				Rect2(0.0, 0.0, 88.0, 88.0),
 				34,
 				TEXT,
@@ -1003,105 +1059,43 @@ func _build_tutorial_screen() -> void:
 func _build_options_screen() -> void:
 	var screen: Control = _create_screen("OptionsScreen", Screen.OPTIONS)
 	_add_screen_title(screen, "OPTION", "키 설정과 사운드 크기를 조절합니다")
+	_options_first_button = _create_button(
+		screen, "KEY", Rect2(255.0, 150.0, 450.0, 54.0), CYAN, 18
+	)
+	_options_first_button.pressed.connect(show_key_custom)
+	var volume_button: Button = _create_button(
+		screen, "VOLUME", Rect2(255.0, 220.0, 450.0, 54.0), ORANGE, 18
+	)
+	volume_button.pressed.connect(show_volume)
 
-	_options_first_button = _create_option_card(
-		screen,
-		Rect2(110.0, 190.0, 340.0, 370.0),
-		"KEY\nCUSTOM",
-		Rect2(36.0, 44.0, 270.0, 95.0),
-		"이동·액션·시스템 키를\n원하는 키로 변경합니다.",
-		CYAN,
-		"키 설정 열기",
-		show_key_custom
+	var language_panel: Panel = _create_panel(
+		screen, Rect2(255.0, 290.0, 450.0, 60.0), PANEL, PURPLE, 12
 	)
-	_create_option_card(
-		screen,
-		Rect2(510.0, 190.0, 340.0, 370.0),
-		"VOLUME",
-		Rect2(36.0, 72.0, 270.0, 54.0),
-		"BGM과 효과음의 크기를\n각각 조절합니다.",
-		ORANGE,
-		"볼륨 설정 열기",
-		show_volume
+	_create_label(language_panel, "LANGUAGE", Rect2(24.0, 15.0, 150.0, 30.0), 18, TEXT)
+	_language_button = _create_button(
+		language_panel, _text("한국어", "ENGLISH"), Rect2(190.0, 12.0, 236.0, 36.0), PURPLE, 14
 	)
-	var reset_panel: Panel = _create_panel(
-		screen,
-		Rect2(310.0, 575.0, 340.0, 130.0),
-		PANEL,
-		DANGER,
-		12
-	)
-	_create_label(
-		reset_panel,
-		"진행 데이터 초기화",
-		Rect2(20.0, 14.0, 300.0, 30.0),
-		18,
-		DANGER,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
-	_create_label(
-		reset_panel,
-		"스테이지 해금과 별 재화를 지웁니다.",
-		Rect2(20.0, 45.0, 300.0, 24.0),
-		13,
-		MUTED,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
+	_language_button.name = "LanguageButton"
+	_language_button.tooltip_text = "←/→ 선택    Z 적용"
+	_language_button.pressed.connect(_confirm_language_selection)
+
 	var reset_button: Button = _create_button(
-		reset_panel,
-		"진행 상황 삭제",
-		Rect2(70.0, 78.0, 200.0, 38.0),
+		screen,
+		"DATA 초기화",
+		Rect2(255.0, 366.0, 450.0, 54.0),
 		DANGER,
-		14
+		18
 	)
 	reset_button.pressed.connect(_show_progress_reset_prompt)
 
 	var back_button: Button = _create_button(
 		screen,
-		"메인으로",
-		Rect2(390.0, 725.0, 180.0, 40.0),
+		"뒤로가기",
+		Rect2(255.0, 436.0, 450.0, 54.0),
 		PURPLE,
-		14
+		18
 	)
 	back_button.pressed.connect(show_main_menu)
-
-
-func _create_option_card(
-	parent: Control,
-	rect: Rect2,
-	title: String,
-	title_rect: Rect2,
-	description: String,
-	accent: Color,
-	button_text: String,
-	on_pressed: Callable
-) -> Button:
-	var panel: Panel = _create_panel(parent, rect, PANEL, accent, 12)
-	_create_label(
-		panel,
-		title,
-		title_rect,
-		34,
-		TEXT,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
-	_create_label(
-		panel,
-		description,
-		Rect2(32.0, 170.0, 276.0, 70.0),
-		16,
-		MUTED,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
-	var button: Button = _create_button(
-		panel,
-		button_text,
-		Rect2(50.0, 278.0, 240.0, 52.0),
-		accent,
-		16
-	)
-	button.pressed.connect(on_pressed)
-	return button
 
 
 func _build_key_screen() -> void:
@@ -1150,7 +1144,7 @@ func _build_key_row(screen: Control, definition: Dictionary, index: int) -> void
 	_add_key_row_stripe(screen, y_value, index % 2 == 0)
 	_create_label(
 		screen,
-		String(definition["label"]),
+		settings.get_action_label(action_name),
 		Rect2(108.0, y_value + 5.0, 210.0, 26.0),
 		15,
 		TEXT
@@ -1628,14 +1622,108 @@ func _build_stage_result_overlay() -> void:
 	_stage_result_button.pressed.connect(show_stage_select)
 
 
+func _build_stage_fail_overlay() -> void:
+	_stage_fail_overlay = Control.new()
+	_stage_fail_overlay.name = "StageFailOverlay"
+	_stage_fail_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage_fail_overlay.z_as_relative = false
+	_stage_fail_overlay.z_index = 200
+	_stage_fail_overlay.visible = false
+	add_child(_stage_fail_overlay)
+
+	var shade: ColorRect = ColorRect.new()
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.78)
+	_stage_fail_overlay.add_child(shade)
+	var panel: Panel = _create_panel(
+		_stage_fail_overlay,
+		Rect2(220.0, 250.0, 520.0, 300.0),
+		PANEL,
+		DANGER,
+		12
+	)
+	_create_label(
+		panel,
+		"실패",
+		Rect2(40.0, 40.0, 440.0, 84.0),
+		27,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_create_label(
+		panel,
+		"보스 제한시간이 끝났습니다.",
+		Rect2(40.0, 140.0, 440.0, 42.0),
+		17,
+		ORANGE,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	_stage_fail_retry_button = _create_button(
+		panel,
+		"재시도",
+		Rect2(70.0, 220.0, 180.0, 46.0),
+		CYAN,
+		14
+	)
+	_stage_fail_retry_button.name = "StageFailRetryButton"
+	_stage_fail_retry_button.pressed.connect(_retry_failed_stage)
+	_stage_fail_select_button = _create_button(
+		panel,
+		"스테이지 선택으로",
+		Rect2(270.0, 220.0, 180.0, 46.0),
+		DANGER,
+		14
+	)
+	_stage_fail_select_button.name = "StageFailSelectButton"
+	_stage_fail_select_button.pressed.connect(_on_stage_fail_select)
+
+
+func _show_stage_fail() -> void:
+	if _stage_fail_overlay == null:
+		return
+	_stage_fail_overlay.visible = true
+	_stage_fail_overlay.move_to_front()
+	_stage_fail_retry_button.grab_focus.call_deferred()
+
+
+func _hide_stage_fail() -> void:
+	if _stage_fail_overlay != null:
+		_stage_fail_overlay.visible = false
+
+
+## 상황: 보스 제한시간이 끝나 game_controller가 stage_failed를 방송했을 때 호출한다.
+## 순서: 게임 제거 → 메뉴 창 복원 → 스테이지 선택 아래에 실패 overlay 표시.
+## 결과: 별·해금·별 재화는 지급되지 않으며 재시도/스테이지 선택 버튼이 입력을 받는다.
+func _on_stage_failed() -> void:
+	if _game_instance != null and is_instance_valid(_game_instance):
+		_game_instance.queue_free()
+	_game_instance = null
+	_apply_menu_viewport_size()
+	_show_screen(Screen.STAGE_SELECT)
+	_show_stage_fail()
+
+
+func _retry_failed_stage() -> void:
+	_hide_stage_fail()
+	if _game_instance != null and is_instance_valid(_game_instance):
+		_game_instance.queue_free()
+	_game_instance = null
+	start_game(selected_stage_number)
+
+
+func _on_stage_fail_select() -> void:
+	_hide_stage_fail()
+	show_stage_select()
+
+
 func _show_stage_result(result: Dictionary) -> void:
 	if _stage_result_overlay == null:
 		return
 	var stage_number: int = int(result.get("stage_number", selected_stage_number))
 	var stars: int = int(result.get("stars", 3))
 	var reward: int = int(result.get("reward", 0))
-	_stage_result_label.text = "1-%d 클리어!\n%s" % [stage_number, _star_text(stars)]
-	_stage_result_reward_label.text = "별 보상 +%d   (보유 %d)" % [
+	_stage_result_label.text = _text("1-%d 클리어!\n%s", "1-%d CLEAR!\n%s") % [stage_number, _star_text(stars)]
+	_stage_result_reward_label.text = _text("별 보상 +%d   (보유 %d)", "Stars +%d   (Total %d)") % [
 		reward,
 		int(result.get("star_currency", settings.star_currency)),
 	]
@@ -1741,22 +1829,22 @@ func _refresh_tutorial() -> void:
 func _refresh_stage_select() -> void:
 	if settings == null or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT:
 		return
-	_stage_currency_label.text = "별 %d개" % settings.star_currency
+	_stage_currency_label.text = _text("별 %d개" % settings.star_currency, "%d Stars" % settings.star_currency)
 	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
 		var index: int = stage_number - 1
 		var unlocked: bool = settings.is_stage_unlocked(stage_number)
 		_stage_labels[index].text = "%s\n%s" % [
 			_star_text(settings.get_stage_best_stars(stage_number)),
-			"입장 가능" if unlocked else "잠김",
+			_text("입장 가능", "AVAILABLE") if unlocked else _text("잠김", "LOCKED"),
 		]
 		_stage_buttons[index].disabled = not unlocked
-		_stage_buttons[index].text = "블록 깨러 가기" if unlocked else "잠김"
+		_stage_buttons[index].text = _text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")
 
 
 func _refresh_shop() -> void:
 	if settings == null or _shop_cards.is_empty():
 		return
-	_shop_currency_label.text = "별 %d개" % settings.star_currency
+	_shop_currency_label.text = _text("별 %d개" % settings.star_currency, "%d Stars" % settings.star_currency)
 	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
 		var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
 		var level: int = settings.get_passive_level(passive_id)
@@ -1778,26 +1866,26 @@ func _refresh_shop_detail() -> void:
 	var effect_percent: int = roundi(MainCharacterData.PASSIVE_EFFECT_STEP * 100.0)
 	var effect_text: String = ""
 	if passive_id == "health":
-		effect_text = "현재 효과: 목숨 +%d · Lv. %d / %d" % [
+		effect_text = _text("현재 효과: 목숨 +%d · Lv. %d / %d", "Current effect: Lives +%d · Lv. %d / %d") % [
 			level,
 			level,
 			StartScreenSettings.MAX_PASSIVE_LEVEL,
 		]
 	else:
 		var effect_sign: String = "-" if index in [0, 3, 4] else "+"
-		effect_text = "현재 효과: %s%d%% · Lv. %d / %d" % [
+		effect_text = _text("현재 효과: %s%d%% · Lv. %d / %d", "Current effect: %s%d%% · Lv. %d / %d") % [
 			effect_sign,
 			level * effect_percent,
 			level,
 			StartScreenSettings.MAX_PASSIVE_LEVEL,
 		]
-	_shop_detail_name.text = StartScreenSettings.PASSIVE_NAMES[index]
-	_shop_detail_description.text = StartScreenSettings.PASSIVE_DESCRIPTIONS[index]
+	_shop_detail_name.text = settings.get_passive_name(index)
+	_shop_detail_description.text = settings.get_passive_description(index)
 	_shop_detail_effect.text = effect_text
 	_shop_detail_cost.text = (
-		"최대 레벨"
+		_text("최대 레벨", "MAX LEVEL")
 		if level >= StartScreenSettings.MAX_PASSIVE_LEVEL
-		else "다음 비용 ★ %d" % cost
+		else _text("다음 비용 ★ %d", "NEXT COST ★ %d") % cost
 	)
 
 
@@ -1922,7 +2010,7 @@ func _show_binding_result(result: Dictionary) -> void:
 
 func _reset_keys() -> void:
 	settings.reset_bindings_to_defaults()
-	_key_status.text = "모든 키를 기본값으로 복원했습니다."
+	_key_status.text = _text("모든 키를 기본값으로 복원했습니다.", "All keys were restored to defaults.")
 	_key_status.modulate = CYAN
 
 
@@ -2079,7 +2167,7 @@ func _create_label(
 	color: Color,
 	alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT
 ) -> Label:
-	return _ui.create_label(parent, text_value, rect, font_size, color, alignment)
+	return _ui.create_label(parent, _text(text_value), rect, font_size, color, alignment)
 
 
 func _create_button(
@@ -2089,7 +2177,48 @@ func _create_button(
 	accent: Color,
 	font_size: int
 ) -> Button:
-	return _ui.create_button(parent, text_value, rect, accent, font_size)
+	return _ui.create_button(parent, _text(text_value), rect, accent, font_size)
+
+
+func _text(korean: String, english: String = "") -> String:
+	if settings == null or settings.language == StartScreenSettings.KOREAN:
+		return korean
+	if settings.language == StartScreenSettings.CHINESE:
+		return String(CHINESE_TEXT.get(korean, korean))
+	return english if not english.is_empty() else String(ENGLISH_TEXT.get(korean, korean))
+
+
+func _set_language(language: String) -> void:
+	settings.set_language(language)
+	get_tree().reload_current_scene()
+
+
+func _refresh_language_button() -> void:
+	if _language_button != null:
+		_language_button.text = _language_name(_selected_language)
+
+
+func _next_language(forward: bool) -> String:
+	var languages: Array[String] = [
+		StartScreenSettings.ENGLISH,
+		StartScreenSettings.KOREAN,
+		StartScreenSettings.CHINESE,
+	]
+	var index: int = languages.find(_selected_language)
+	return languages[posmod(index + (1 if forward else -1), languages.size())]
+
+
+func _language_name(language: String) -> String:
+	if language == StartScreenSettings.KOREAN:
+		return "한국어"
+	if language == StartScreenSettings.CHINESE:
+		return "中文"
+	return "ENGLISH"
+
+
+func _confirm_language_selection() -> void:
+	if settings.language != _selected_language:
+		_set_language(_selected_language)
 
 
 func _create_slider(parent: Control, rect: Rect2, initial_value: float) -> HSlider:

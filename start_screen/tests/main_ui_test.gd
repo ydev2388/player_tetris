@@ -20,7 +20,7 @@ func _run() -> void:
 	legacy_config.set_value("input", "character_grab", [KEY_K])
 	legacy_config.set_value("input", "character_rotation_kick", [KEY_BACKSPACE])
 	legacy_config.save(TEST_SETTINGS_PATH)
-	var screen: KungFuTetrisStartScreen = START_SCREEN_SCENE.instantiate()
+	var screen: BlockFighterStartScreen = START_SCREEN_SCENE.instantiate()
 	screen.settings_file_path = TEST_SETTINGS_PATH
 	screen.suppress_quit_for_tests = true
 	root.add_child(screen)
@@ -44,6 +44,24 @@ func _run() -> void:
 		screen.settings.get_action_keys(&"character_self_respawn") == [KEY_Q],
 		"삭제된 차지 펀치 키 Q는 자력 재스폰 기본키로 쓴다."
 	)
+	_expect(
+		screen.settings.language == StartScreenSettings.ENGLISH,
+		"언어 기본값은 english다."
+	)
+	screen.settings.set_language(StartScreenSettings.KOREAN)
+	_expect(
+		screen.settings.language == StartScreenSettings.KOREAN,
+		"언어 설정은 kor로 변경된다."
+	)
+	screen.settings.set_language(StartScreenSettings.CHINESE)
+	_expect(
+		screen.settings.language == StartScreenSettings.CHINESE
+			and screen.settings.get_action_label(&"character_jump") == "跳跃"
+			and screen.settings.get_passive_name(0) == "攻击速度"
+			and screen._text("OPTION") == "选项",
+		"중국어 설정과 핵심 메뉴 번역이 적용된다."
+	)
+	screen.settings.set_language(StartScreenSettings.ENGLISH)
 	_expect(
 		screen.settings.is_stage_unlocked(1)
 			and not screen.settings.is_stage_unlocked(2)
@@ -151,13 +169,13 @@ func _run() -> void:
 	screen.show_tutorial()
 	_expect(
 		screen._handle_back_navigation(back_event)
-			and screen.current_screen == KungFuTetrisStartScreen.Screen.MAIN,
+			and screen.current_screen == BlockFighterStartScreen.Screen.MAIN,
 		"게임 설명에서 X가 메인 메뉴로 돌아간다."
 	)
 	screen.show_options()
 	_expect(
 		screen._handle_back_navigation(back_event)
-			and screen.current_screen == KungFuTetrisStartScreen.Screen.MAIN,
+			and screen.current_screen == BlockFighterStartScreen.Screen.MAIN,
 		"OPTION에서 X가 메인 메뉴로 돌아간다."
 	)
 	screen.show_options()
@@ -182,13 +200,13 @@ func _run() -> void:
 	enter_event.pressed = true
 	enter_event.physical_keycode = KEY_ENTER
 	_expect(screen._handle_menu_confirm_input(enter_event), "Enter는 메뉴 선택으로 처리하지 않는다.")
-	_expect(screen.current_screen == KungFuTetrisStartScreen.Screen.MAIN, "Enter는 시작 메뉴를 유지한다.")
+	_expect(screen.current_screen == BlockFighterStartScreen.Screen.MAIN, "Enter는 시작 메뉴를 유지한다.")
 	var menu_confirm_event: InputEventKey = InputEventKey.new()
 	menu_confirm_event.pressed = true
 	menu_confirm_event.physical_keycode = KEY_Z
 	Input.action_press(&"character_jump")
 	_expect(screen._handle_menu_confirm_input(menu_confirm_event), "Z가 초점 메뉴 버튼을 선택한다.")
-	_expect(screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT, "GAME START가 스테이지 선택을 연다.")
+	_expect(screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT, "GAME START가 스테이지 선택을 연다.")
 	await process_frame
 	var character_select_button: Button = screen.find_child(
 		"CharacterSelectButton", true, false
@@ -209,7 +227,7 @@ func _run() -> void:
 		if screen.find_child("ShopCard_%s" % passive_id, true, false) == null:
 			shop_cards_exist = false
 	_expect(
-		screen.current_screen == KungFuTetrisStartScreen.Screen.SHOP
+		screen.current_screen == BlockFighterStartScreen.Screen.SHOP
 			and shop_cards_exist
 			and screen.find_child("ShopDetailPanel", true, false) != null
 			and screen.find_child("PassiveResetButton", true, false) != null,
@@ -314,14 +332,14 @@ func _run() -> void:
 		_expect(
 			screen._selected_shop_index == StartScreenSettings.PASSIVE_IDS.find("jump")
 				and screen._shop_detail_name.text == "점프"
-				and screen._shop_detail_description.text == StartScreenSettings.PASSIVE_DESCRIPTIONS[2],
+				and screen._shop_detail_description.text == screen.settings.get_passive_description(2),
 			"아이콘 카드를 선택하면 하단 상세 패널에 해당 패시브 정보가 표시된다."
 		)
 	screen.show_stage_select()
 	if character_select_button != null:
 		character_select_button.pressed.emit()
 	_expect(
-		screen.current_screen == KungFuTetrisStartScreen.Screen.CHARACTER,
+		screen.current_screen == BlockFighterStartScreen.Screen.CHARACTER,
 		"캐릭터 선택 버튼이 기존 캐릭터 선택 화면을 연다."
 	)
 	await process_frame
@@ -390,7 +408,7 @@ func _run() -> void:
 	z_character_event.physical_keycode = KEY_Z
 	screen._input(z_character_event)
 	_expect(
-		screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._selected_character_id == "boxer",
 		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정한다."
 	)
@@ -398,7 +416,7 @@ func _run() -> void:
 	_expect(stage_button != null and not stage_button.disabled, "1-1 스테이지 버튼을 선택할 수 있다.")
 	if stage_button != null:
 		stage_button.pressed.emit()
-	_expect(screen.current_screen == KungFuTetrisStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
+	_expect(screen.current_screen == BlockFighterStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
 	await process_frame
 	await physics_frame
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
@@ -460,7 +478,7 @@ func _run() -> void:
 			await process_frame
 			await process_frame
 		_expect(
-			screen.current_screen == KungFuTetrisStartScreen.Screen.MAIN
+			screen.current_screen == BlockFighterStartScreen.Screen.MAIN
 				and screen._game_instance == null
 				and screen.find_child("LoadedGame", true, false) == null,
 			"Yes는 게임 인스턴스를 제거하고 메인 메뉴로 돌아간다."
@@ -484,7 +502,7 @@ func _run() -> void:
 	debug_echo_event.physical_keycode = KEY_ENTER
 	screen._input(debug_echo_event)
 	_expect(
-		screen.current_screen == KungFuTetrisStartScreen.Screen.GAME
+		screen.current_screen == BlockFighterStartScreen.Screen.GAME
 			and screen._game_instance != null,
 		"Enter를 놓거나 반복 입력한 것은 디버그 완료를 실행하지 않는다."
 	)
@@ -492,7 +510,7 @@ func _run() -> void:
 	var result_overlay: Control = screen.find_child("StageResultOverlay", true, false) as Control
 	_expect(
 		OS.is_debug_build()
-			and screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT
+			and screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._game_instance == null
 			and result_overlay != null
 			and result_overlay.visible,
@@ -503,7 +521,7 @@ func _run() -> void:
 		result_button.pressed.emit()
 	_expect(
 		result_overlay != null and not result_overlay.visible
-			and screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT,
+			and screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT,
 		"완료 결과 확인이 스테이지 선택을 유지한다."
 	)
 	for stage_number: int in range(2, 5):
@@ -530,7 +548,7 @@ func _run() -> void:
 		boss_controller != null
 			and boss_controller.boss_health == 0
 			and boss_controller.state == MainGameController.GameState.BOSS_FALLING
-			and screen.current_screen == KungFuTetrisStartScreen.Screen.GAME
+			and screen.current_screen == BlockFighterStartScreen.Screen.GAME
 			and screen._game_instance != null,
 		"Stage 5의 Enter는 즉시 결과 처리 대신 보스 체력을 0으로 만든다."
 	)
@@ -541,13 +559,50 @@ func _run() -> void:
 		boss_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
 	await process_frame
 	_expect(
-		screen.current_screen == KungFuTetrisStartScreen.Screen.STAGE_SELECT
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._game_instance == null
 			and result_overlay != null
 			and result_overlay.visible
 			and screen.settings.get_stage_best_stars(5) == 3,
 		"Stage 5 보스가 쓰러지면 3별 결과 화면으로 전환한다."
 	)
+
+	screen.start_game(5)
+	await process_frame
+	var fail_controller: MainGameController = screen._loaded_game_controller()
+	var stars_before_fail: int = screen.settings.star_currency
+	var failed_state: int = -1
+	if fail_controller != null:
+		fail_controller.stage_time_remaining = 0.01
+		fail_controller._advance_stage_timer(0.01)
+		failed_state = fail_controller.state
+	await process_frame
+	var fail_overlay: Control = screen.find_child("StageFailOverlay", true, false) as Control
+	var fail_retry_button: Button = screen.find_child("StageFailRetryButton", true, false) as Button
+	_expect(
+		failed_state == MainGameController.GameState.GAME_OVER
+			and screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and screen._game_instance == null
+			and fail_overlay != null
+			and fail_overlay.visible
+			and screen.settings.star_currency == stars_before_fail,
+		"보스 제한시간 초과가 실패 UI를 표시하고 별·해금을 지급하지 않는다."
+	)
+	if fail_retry_button != null:
+		fail_retry_button.pressed.emit()
+	await process_frame
+	var retry_controller: MainGameController = screen._loaded_game_controller()
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.GAME
+			and screen._game_instance != null
+			and retry_controller != null
+			and retry_controller.boss_health == MainGameController.BOSS_MAX_HEALTH,
+		"실패 UI의 재시도가 같은 스테이지를 새 게임으로 시작한다."
+	)
+	if screen._game_instance != null and is_instance_valid(screen._game_instance):
+		screen._game_instance.queue_free()
+	screen._game_instance = null
+	await process_frame
 
 	screen._select_sfx_player.stop()
 	screen._select_sfx_player.stream = null

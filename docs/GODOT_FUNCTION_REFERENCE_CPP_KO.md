@@ -1,4 +1,4 @@
-# Kung Fu Tetris 5차 Godot 함수 보고서 — C++ 학습자용
+# Block Fighter 5차 Godot 함수 보고서 — C++ 학습자용
 
 이 문서는 5차 프로젝트의 GDScript 함수를 파일별로 분리해 설명한다. 변수는
 `GODOT_VARIABLE_REFERENCE_CPP_KO.md`에서 별도로 다룬다.
@@ -20,7 +20,7 @@
 
 ## 2. 전체 호출 흐름
 
-1. `KungFuTetrisStartScreen._ready()`가 설정·화면·overlay를 구성한다.
+1. `BlockFighterStartScreen._ready()`가 설정·화면·overlay를 구성한다.
 2. `start_game()`이 `main.tscn`을 instantiate한다.
 3. `MainGameController._physics_process()`가 피스 중력과 lock delay를 진행한다.
 4. `MainCharacterController._physics_process()`가 캐릭터 상태 기계를 진행한다.
@@ -232,7 +232,6 @@
 | `_get_animation_state()` | flip→attack→hang→jump→idle 순서로 첫 상태를 반환한다. | 배타적인 animation key를 결정한다. |
 | `_apply_animation_frame()` | texture/region/target size를 조회해 sprite에 적용한다. | 원본 frame 크기와 무관한 화면 크기를 만든다. |
 | `_animation_target_size(state)` | flip/attack/일반 상태별 목표 크기를 선택한다. | sprite scaling 기준 Vector2를 반환한다. |
-| `_set_feedback(message)` | text와 1.4초 timer를 저장하고 signal을 보낸다. | View에 행동 결과를 표시한다. |
 | `_create_sfx_player()` | player 생성, SFX bus 설정, child 연결을 한다. | 캐릭터 수명에 묶인 audio channel을 반환한다. |
 | `_play_sfx(stream)` | 주 channel stream을 교체하고 재생한다. | 일반 단발음을 낸다. |
 | `_play_sfx_cue(stream)` | 보조 channel을 사용한다. | 주 효과음을 끊지 않는 cue를 낸다. |

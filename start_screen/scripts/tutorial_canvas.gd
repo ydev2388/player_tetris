@@ -6,7 +6,7 @@ extends Control
 ## C++로 보면 `update(delta)`와 `render(Canvas&)`를 가진 작은 animation state machine에 가깝다.
 ## 별도 GIF 파일을 재생하지 않고 누적 시간에서 위치·frame·alpha를 계산해 매 draw pass에 다시 그린다.
 ##
-## 호출자: KungFuTetrisStartScreen의 TUTORIAL 화면.
+## 호출자: BlockFighterStartScreen의 TUTORIAL 화면.
 ## 호출 대상: MainCharacterAnimationData, StartScreenSettings, CanvasItem draw API.
 
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # sprite frame table utility.

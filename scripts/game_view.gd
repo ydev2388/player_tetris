@@ -42,7 +42,7 @@ const PANEL_COLOR: Color = Color("#ffffff") # 보드/HUD panel 표면.
 const TEXT_COLOR: Color = Color("#152033") # 주요 제목과 수치.
 const MUTED_TEXT_COLOR: Color = Color("#344158") # 조작법 같은 보조 설명.
 const CYAN: Color = Color("#2c8fd6") # stamina/캐릭터 강조색.
-const ORANGE: Color = Color("#e47719") # feedback 강조색.
+const ORANGE: Color = Color("#e47719")
 
 # sprite atlas와 piece 이름 -> atlas source Rect 매핑.
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
@@ -115,7 +115,6 @@ var _stats_label: Label # score/level/line 수치.
 var _life_label: Label # 큰 하트로 표시하는 현재 목숨.
 var _punch_label: Label # 보조 정보인 펀치 단계.
 var _rotation_label: Label # 블록 플립 준비/남은 초.
-var _feedback_label: Label # 최근 캐릭터 행동 성공/실패 메시지.
 var _status_label: Label # pause 또는 game-over 중앙 overlay 문구.
 var _self_respawn_panel: Panel # hold 중 캐릭터·블록 위에 표시하는 진행 배경.
 var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색 막대.
@@ -135,6 +134,7 @@ var _boss_falling_frame_timer: float = 0.0
 var _boss_fallen_frame: int = 0
 var _boss_fallen_frame_timer: float = 0.0
 var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
+var _language: String = "english"
 
 
 ## 상황: main.tscn의 루트 View가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
@@ -142,6 +142,7 @@ var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지�
 ## 결과: retained Label UI가 만들어지고 이후 상태 변경을 자동 반영한다.
 func _ready() -> void:
 	_apply_game_viewport_size()
+	_language = String(get_meta("language", "english"))
 	_system_font = SystemFont.new()
 	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
 	_build_interface()
@@ -150,7 +151,6 @@ func _ready() -> void:
 	controller.game_changed.connect(_refresh)
 	controller.boss_attacked.connect(_start_boss_thorn_attack)
 	character.stats_changed.connect(_refresh)
-	character.feedback_changed.connect(_refresh)
 	character.binding_started.connect(_refresh)
 	character.binding_ended.connect(_refresh)
 	_refresh()
@@ -200,16 +200,6 @@ func _build_interface() -> void:
 	_timer_label.add_theme_color_override("font_outline_color", TEXT_COLOR)
 	_timer_label.z_index = 5
 
-	_feedback_label = _create_label(
-		"",
-		BOARD_ORIGIN + Vector2(18.0, BOARD_SIZE.y - 58.0),
-		Vector2(BOARD_SIZE.x - 36.0, 42.0),
-		17,
-		ORANGE
-	)
-	_feedback_label.name = "FeedbackLabel"
-	_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_feedback_label.z_index = 10
 	_build_self_respawn_progress()
 
 	_status_label = _create_label(
@@ -779,29 +769,28 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	_refresh_boss_display()
-	_lines_label.text = "삭제한 줄 %d" % controller.total_lines
-	_lives_label.text = "목숨: %d" % character.lives
+	_lines_label.text = _text("삭제한 줄 %d", "LINES %d") % controller.total_lines
+	_lives_label.text = _text("목숨: %d", "LIVES: %d") % character.lives
 	var remaining_seconds: int = ceili(controller.stage_time_remaining)
 	_timer_label.text = "%02d:%02d" % [remaining_seconds / 60, remaining_seconds % 60]
 	_timer_label.visible = true
 	var self_respawn_ratio: float = character.self_respawn_hold_ratio()
 	_self_respawn_panel.visible = self_respawn_ratio > 0.0
 	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio
-	_feedback_label.text = (
-		"자력 리스폰 준비 중 %d%%" % roundi(self_respawn_ratio * 100.0)
-		if self_respawn_ratio > 0.0
-		else character.feedback_text
-	)
 	match controller.state:
 		MainGameController.GameState.PAUSED:
-			_status_label.text = "일시정지\n\nP로 계속 · Esc로 메뉴"
+			_status_label.text = _text("일시정지\n\nP로 계속 · Esc로 메뉴", "PAUSED\n\nP Resume · Esc Menu")
 			_status_label.visible = true
 		MainGameController.GameState.GAME_OVER:
-			_status_label.text = "게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴"
+			_status_label.text = _text("게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴", "GAME OVER\n\nR Restart\nEsc Menu")
 			_status_label.visible = true
 		_:
 			_status_label.visible = false
 	queue_redraw()
+
+
+func _text(korean: String, english: String) -> String:
+	return korean if _language == "kor" else english
 
 
 func _draw_thorns() -> void:

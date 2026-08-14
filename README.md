@@ -1,4 +1,4 @@
-# Kung Fu Tetris
+# Block Fighter
 
 테트리스 보드 안의 쿵푸 캐릭터가 블록을 밀고 회전시키는 Godot 4.7.1
 프로젝트입니다. 밝은 UI, 블록 스프라이트와 프레임 기반 캐릭터 애니메이션을 사용합니다.
@@ -11,7 +11,7 @@
 
 명령행에서 Godot을 사용할 수 있다면 저장소 루트에서 다음 명령으로 실행할 수 있습니다.
 
-```powershell
+```sh
 godot --path .
 ```
 
@@ -88,15 +88,17 @@ godot --path .
 
 ## 검증
 
-Godot 4.7.1 기준 게임 로직·물리·시작 화면 테스트를 실행합니다. 저장소 루트에서
-`build_main.ps1`을 실행하면 테스트 뒤 Windows 실행 파일까지 내보낼 수 있습니다.
+Godot 4.7.1 기준 게임 로직·물리·시작 화면 테스트를 실행하고 Web release를 내보냅니다.
 
-빌드 스크립트는 상위 작업 폴더와 `PATH`에서 Godot 4.7.1을 자동으로 찾으며,
-필요하면 `-GodotPath`로 실행 파일을 직접 지정할 수 있습니다. 리소스 가져오기,
-메인 게임 테스트, 시작 화면 테스트, Windows 내보내기, 내보낸 실행 파일 스모크
-테스트를 순서대로 수행합니다. Godot 로그는 `build/godot_main.log`, 스모크 테스트
-로그는 `build/main_smoke.log`에 저장되며, 실행 파일이 생성되지 않았거나 실행 중
-스크립트·파싱 오류가 발견되면 빌드가 실패합니다.
+```sh
+./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --import
+./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/main_game_test.gd
+./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://start_screen/tests/main_ui_test.gd
+./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --export-release Web build/web/index.html
+```
+
+Web 결과는 `build/web/`에 생성됩니다. 브라우저 보안 정책 때문에 `index.html`을 파일로
+직접 열지 말고 HTTP 정적 서버에서 실행해야 합니다.
 
 게임 중 `Esc`를 누르면 메뉴 복귀 확인창이 표시됩니다. `↑`/`↓`로 `Yes`/`No`를
 고르고 `Z`로 확인하며, `X`로 취소하고 게임으로 돌아갑니다.

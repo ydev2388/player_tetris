@@ -6,7 +6,7 @@ extends RefCounted
 ## C++로 보면 UI widget을 생성해 소유자에게 넘기는 factory/helper 클래스에 가깝다.
 ## RefCounted이므로 Node처럼 scene tree에 들어가지 않고 StartScreen이 참조하는 동안만 살아 있다.
 ##
-## 호출자: KungFuTetrisStartScreen의 `_create_*()` wrapper.
+## 호출자: BlockFighterStartScreen의 `_create_*()` wrapper.
 ## 호출 대상: Godot Control 파생 클래스와 StyleBoxFlat.
 
 var _font: Font # 모든 Label/Button이 공유하는 폰트 리소스 포인터.

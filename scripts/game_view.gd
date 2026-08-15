@@ -654,7 +654,7 @@ func _draw_character_card() -> void:
 	draw_string(
 		_system_font,
 		Vector2(662.0, 538.0),
-		character.character_display_name(),
+		tr(character.character_display_name()),
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0,
 		16,
@@ -779,8 +779,8 @@ func _refresh() -> void:
 	if not is_node_ready():
 		return
 	_refresh_boss_display()
-	_lines_label.text = "삭제한 줄 %d" % controller.total_lines
-	_lives_label.text = "목숨: %d" % character.lives
+	_lines_label.text = tr("삭제한 줄 %d") % controller.total_lines
+	_lives_label.text = tr("목숨: %d") % character.lives
 	var remaining_seconds: int = ceili(controller.stage_time_remaining)
 	_timer_label.text = "%02d:%02d" % [remaining_seconds / 60, remaining_seconds % 60]
 	_timer_label.visible = true
@@ -788,16 +788,16 @@ func _refresh() -> void:
 	_self_respawn_panel.visible = self_respawn_ratio > 0.0
 	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio
 	_feedback_label.text = (
-		"자력 리스폰 준비 중 %d%%" % roundi(self_respawn_ratio * 100.0)
+		tr("자력 리스폰 준비 중 %d%%") % roundi(self_respawn_ratio * 100.0)
 		if self_respawn_ratio > 0.0
 		else character.feedback_text
 	)
 	match controller.state:
 		MainGameController.GameState.PAUSED:
-			_status_label.text = "일시정지\n\nP로 계속 · Esc로 메뉴"
+			_status_label.text = tr("일시정지\n\nP로 계속 · Esc로 메뉴")
 			_status_label.visible = true
 		MainGameController.GameState.GAME_OVER:
-			_status_label.text = "게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴"
+			_status_label.text = tr("게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴")
 			_status_label.visible = true
 		_:
 			_status_label.visible = false

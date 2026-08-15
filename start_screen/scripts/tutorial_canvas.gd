@@ -124,14 +124,14 @@ func _draw_movement_page() -> void:
 	_text(Vector2(88.0, 116.0), "좌우 이동", 21, TEXT)
 	_text(
 		Vector2(52.0, 148.0),
-		"[%s] 키로 블록 사이를 이동합니다." % _keys(&"character_left", &"character_right"),
+		tr("[%s] 키로 블록 사이를 이동합니다.") % _keys(&"character_left", &"character_right"),
 		15,
 		MUTED
 	)
 	_draw_floor(Vector2(54.0, 365.0), 310.0)
 	var movement_ratio: float = _movement_ratio(_animation_time)
 	var movement_x: float = lerpf(85.0, 277.0, movement_ratio)
-	var moving_right: bool = _animation_time < 1.65
+	var moving_right: bool = _movement_facing(_animation_time) > 0
 	var movement_alpha: float = _loop_alpha(3.0)
 	var movement_arrow_start: Vector2 = (
 		Vector2(158.0, 295.0) if moving_right else Vector2(265.0, 295.0)
@@ -143,7 +143,9 @@ func _draw_movement_page() -> void:
 		Rect2(movement_x, 237.0, 61.0, 116.0),
 		ANIMATION_DATA.IDLE,
 		_animation_time,
-		movement_alpha
+		movement_alpha,
+		0.0,
+		1 if moving_right else -1
 	)
 	_draw_arrow(
 		movement_arrow_start,
@@ -169,7 +171,7 @@ func _draw_movement_page() -> void:
 	_text(Vector2(490.0, 116.0), "점프", 21, TEXT)
 	_text(
 		Vector2(454.0, 148.0),
-		"[%s]를 짧게/길게 눌러 높이를 조절합니다." % _binding(&"character_jump"),
+		tr("[%s]를 짧게/길게 눌러 높이를 조절합니다.") % _binding(&"character_jump"),
 		15,
 		MUTED
 	)
@@ -285,7 +287,7 @@ func _draw_block_action_page() -> void:
 		PURPLE,
 		clampf(sin(kick_ratio * PI) + kick_impact * 0.5, 0.0, 1.0)
 	)
-	_draw_floor(Vector2(180.0, 360.0), 440.0)
+	_draw_floor(Vector2(442.0, 360.0), 336.0)
 	if kick_active:
 		for trail_index: int in range(2, 0, -1):
 			var trail_elapsed: float = maxf(
@@ -353,8 +355,8 @@ func _draw_block_action_page() -> void:
 		14,
 		Color(PURPLE.r, PURPLE.g, PURPLE.b, rotation_label_alpha)
 	)
-	_text(Vector2(230.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
-	_text(Vector2(230.0, 415.0), "성공 뒤 2초, 실패 뒤 1초 대기", 13, MUTED)
+	_text(Vector2(444.0, 392.0), "지상·공중 모두 사용", 13, MUTED)
+	_text(Vector2(444.0, 415.0), "성공 뒤 2초, 실패 뒤 1초 대기", 13, MUTED)
 
 
 ## 상황: page 2에서 매달리기→벽 점프→원래 벽 재매달리기 경로를 그릴 때 호출된다.
@@ -385,7 +387,9 @@ func _draw_wall_page() -> void:
 		Rect2(wall_position, Vector2(64.0, 108.0)),
 		wall_state,
 		wall_state_time,
-		_loop_alpha(4.0)
+		_loop_alpha(4.0),
+		0.0,
+		_wall_facing(_animation_time)
 	)
 	_draw_step_badge(
 		Vector2(145.0, 238.0),
@@ -444,13 +448,13 @@ func _draw_wall_page() -> void:
 	_text(Vector2(442.0, 158.0), "원래 벽 방향으로 직접 조향", 14, TEXT)
 	_text(
 		Vector2(442.0, 190.0),
-		"%s를 유지하면 높은 위치에 다시 매달립니다." % _binding(&"character_grab"),
+		tr("%s를 유지하면 높은 위치에 다시 매달립니다.") % _binding(&"character_grab"),
 		14,
 		MUTED
 	)
 	_text(
 		Vector2(442.0, 232.0),
-		"%s를 놓은 뒤 0.15초 안에\n%s를 눌러도 벽 점프가 이어집니다."
+		tr("%s를 놓은 뒤 0.15초 안에\n%s를 눌러도 벽 점프가 이어집니다.")
 		% [_binding(&"character_grab"), _binding(&"character_jump")],
 		14,
 		MUTED
@@ -463,7 +467,7 @@ func _draw_wall_page() -> void:
 ## 결과: 상태를 실제로 바꾸지 않고 시간 배율과 시스템 기능을 시각적으로 설명한다.
 func _draw_system_page() -> void:
 	# 명상 ring과 낙하 블록은 같은 2초 ratio를 공유해 효과의 인과관계를 보여준다.
-	_draw_page_heading("4. 명상과 시스템 키", "테트리스의 흐름을 조절하고 언제든 다시 시작할 수 있습니다")
+	_draw_page_heading("4. 명상과 시스템 키", "낙하 블록의 흐름을 조절하고 언제든 다시 시작할 수 있습니다")
 	var left_card: Rect2 = Rect2(20.0, 70.0, 470.0, 382.0)
 	var right_card: Rect2 = Rect2(510.0, 70.0, 290.0, 382.0)
 	_draw_card(left_card)
@@ -474,7 +478,7 @@ func _draw_system_page() -> void:
 	var meditation_ratio: float = _animation_time / 2.0
 	var meditation_pulse: float = 0.5 + 0.5 * sin(meditation_ratio * TAU)
 	_key_chip(
-		Vector2(147.0, 96.0),
+		Vector2(215.0, 96.0),
 		_binding(&"character_meditate"),
 		CYAN,
 		0.45 + meditation_pulse * 0.5
@@ -691,6 +695,18 @@ func _movement_ratio(time_value: float) -> float:
 	return 0.0
 
 
+## 상황: 좌우 왕복 안내에서 위치 변화와 바라보는 방향을 같은 시점에 전환할 때 호출된다.
+## 결과: 오른쪽 이동·대기 중에는 +1, 왼쪽 복귀와 도착 후에는 -1을 반환한다.
+func _movement_facing(time_value: float) -> int:
+	return 1 if time_value < 1.65 else -1
+
+
+## 상황: 벽 동작 안내 캐릭터의 진행 방향을 실제 인게임 facing 규칙과 맞출 때 호출된다.
+## 결과: 왼쪽 벽에 매달릴 때와 복귀할 때는 -1, 벽에서 오른쪽으로 점프할 때는 +1을 반환한다.
+func _wall_facing(time_value: float) -> int:
+	return 1 if time_value >= 1.2 and time_value < 2.4 else -1
+
+
 ## 상황: 기본 밀치기 예시에서 공격 동작 구간인지 결정할 때 호출된다.
 ## 결과: 준비 중에는 0, 공격 중에는 항상 1을 반환한다.
 func _punch_stage(time_value: float) -> int:
@@ -789,15 +805,17 @@ func _loop_alpha(duration: float) -> float:
 ## 순서: 제목 draw → font metric으로 폭 측정 → 겹치지 않을 subtitle x 계산 → subtitle draw.
 ## 결과: 제목 길이가 달라도 두 문자열이 최소 간격을 유지한다.
 func _draw_page_heading(title: String, subtitle: String) -> void:
-	_text(Vector2(24.0, 32.0), title, 24, TEXT)
+	var localized_title: String = tr(title)
+	var localized_subtitle: String = tr(subtitle)
+	_text(Vector2(24.0, 32.0), localized_title, 24, TEXT)
 	var title_width: float = _font.get_string_size( # subtitle 배치에만 쓰는 실제 glyph 폭.
-		title,
+		localized_title,
 		HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0,
 		24
 	).x
 	var subtitle_x: float = maxf(252.0, 24.0 + title_width + 28.0)
-	_text(Vector2(subtitle_x, 32.0), subtitle, 14, MUTED)
+	_text(Vector2(subtitle_x, 32.0), localized_subtitle, 14, MUTED)
 
 
 ## 상황: 설명 요소 묶음을 공통 배경 card로 감쌀 때 호출된다.
@@ -863,14 +881,15 @@ func _draw_floor(origin: Vector2, width: float) -> void:
 
 
 ## 상황: gameplay과 같은 sprite sheet frame을 임의 tutorial bounds에 그릴 때 호출된다.
-## 순서: state texture/region 조회 → aspect-fit 크기 → 하단 중앙 위치 → 선택적 transform → region draw/복원.
-## 결과: 원본 비율을 보존한 캐릭터 한 frame을 alpha와 rotation으로 표시한다.
+## 순서: state texture/region 조회 → aspect-fit 크기 → 하단 중앙 위치 → 회전·좌우 반전 transform → region draw/복원.
+## 결과: 원본 비율을 보존한 캐릭터 한 frame을 alpha, rotation, 인게임과 같은 facing으로 표시한다.
 func _draw_animated_character(
 	bounds: Rect2,
 	state: String,
 	elapsed: float,
 	alpha: float,
-	rotation_radians: float = 0.0
+	rotation_radians: float = 0.0,
+	facing_direction: int = 1
 ) -> void:
 	var texture: Texture2D = ANIMATION_DATA.texture_for(state) # state가 선택한 sprite atlas.
 	var source_region: Rect2 = ANIMATION_DATA.region_for(state, elapsed) # elapsed에 해당하는 source frame.
@@ -884,17 +903,19 @@ func _draw_animated_character(
 		bounds.position.x + (bounds.size.x - target_size.x) * 0.5,
 		bounds.end.y - target_size.y
 	)
-	if not is_zero_approx(rotation_radians):
+	var facing_scale: float = -1.0 if facing_direction < 0 else 1.0
+	var uses_transform: bool = not is_zero_approx(rotation_radians) or facing_scale < 0.0
+	if uses_transform:
 		var center: Vector2 = bounds.position + bounds.size * 0.5
 		target_position -= center
-		draw_set_transform(center, rotation_radians, Vector2.ONE)
+		draw_set_transform(center, rotation_radians, Vector2(facing_scale, 1.0))
 	draw_texture_rect_region(
 		texture,
 		Rect2(target_position, target_size),
 		source_region,
 		Color(1.0, 1.0, 1.0, alpha)
 	)
-	if not is_zero_approx(rotation_radians):
+	if uses_transform:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -1048,6 +1069,7 @@ func _text(
 	font_size: int,
 	color: Color
 ) -> void:
+	text_value = tr(text_value)
 	if "\n" in text_value:
 		var line_position: Vector2 = position_value
 		for line: String in text_value.split("\n"):
@@ -1071,6 +1093,11 @@ func _text(
 			font_size,
 			color
 		)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSLATION_CHANGED:
+		queue_redraw()
 
 
 ## 상황: page draw 함수가 action 하나의 현재 사용자 키 문자열을 요구할 때 호출된다.

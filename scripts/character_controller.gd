@@ -82,7 +82,6 @@ const ROTATION_SPIN_DURATION: float = 0.42 # 전용 8 frame과 한 바퀴 회전
 const SELF_RESPAWN_HOLD_SECONDS: float = 1.0 # 자력 재스폰을 확정하기 위한 연속 입력 시간.
 const POST_SPIN_APEX_SPEED: float = 40.0 * MainLayout.DISPLAY_SCALE # 종료 후 jump frame 경계.
 const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무시하는 초.
-const ATTACK_COOLDOWN: float = 0.48 # 새 펀치 sequence 시작 간격(초).
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
 const SPECIAL_ANIMATION_DURATION: float = 0.8 # 8 frame 특수 스킬 표시 초.
 const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # 공격 시작 뒤 주먹 판정을 유지하는 시간.
@@ -99,6 +98,7 @@ const CHEF_MEAT_MOVE_MULTIPLIER: float = 1.2
 # Script 리소스는 C++의 namespace/static utility class를 참조하는 핸들과 비슷하다.
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
 const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd") # 베타 캐릭터 능력치 데이터.
+const SAINTESS_AURA_SHADER: Shader = preload("res://shaders/saintess_aura.gdshader")
 const SFX_HURT: AudioStream = preload("res://assets/sfx/01_player_hurt.wav")
 const SFX_PUNCH: AudioStream = preload("res://assets/sfx/02_block_punch.wav")
 const SFX_FLIP: AudioStream = preload("res://assets/sfx/03a_block_flip.wav")
@@ -115,12 +115,8 @@ const SHURIKEN_SPEED: float = CELL_SIZE * 12.0
 const SHURIKEN_REACH_CELLS: int = 6
 const SHURIKEN_IMPACT_DURATION: float = 0.37
 const SHURIKEN_COLLISION_SIZE: Vector2 = Vector2(32.0, 32.0)
-const CRUSH_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 반투명 외곽을 제외할 알파 경계.
 const FRAME_ALPHA_THRESHOLD: float = 128.0 / 255.0 # 표시 실루엣의 반투명 외곽 제외 경계.
-const CRUSH_CORE_SIZE: Vector2 = Vector2(
-	28.0 * MainLayout.DISPLAY_SCALE,
-	64.0 * MainLayout.DISPLAY_SCALE
-)
+const FIXED_SUPPORT_FOOT_WIDTH: float = 28.0 * MainLayout.DISPLAY_SCALE
 const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 
 @export var character_id: String = ANIMATION_DATA.DEFAULT_CHARACTER_ID
@@ -128,6 +124,7 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 # main.tscn의 상대 경로로 찾은 협력 객체. `@onready`라 `_ready()` 전에 유효해진다.
 @onready var controller: MainGameController = $"../../GameController" # 피스/게임 상태 명령 대상.
 @onready var sprite: Sprite2D = $Sprite # animation/flip/회전/색/깜빡임 대상.
+@onready var crush_sensor: ShapeCast2D = $CrushSensor # 머리 상단 30×12px 압착 전용 영역.
 @onready var left_ray: RayCast2D = $LeftRay # 왼쪽 매달릴 collision 탐지기.
 @onready var right_ray: RayCast2D = $RightRay # 오른쪽 매달릴 collision 탐지기.
 @onready var boundaries: StaticBody2D = $"../Boundaries" # 바닥과 양쪽 보드 벽 collision 소유자.
@@ -135,6 +132,7 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
 var _meditation_loop_player: AudioStreamPlayer
+var _saintess_aura_material: ShaderMaterial
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
@@ -205,7 +203,6 @@ var _respawn_airborne_pending: bool = false # 순간이동 직후 이전 바닥 
 var _was_grounded_for_stamina: bool = true # 비접지→접지 전환에서만 stamina를 완충하기 위한 이전 상태.
 var _self_respawn_hold_time: float = 0.0 # Q 또는 사용자 지정 키를 연속으로 누른 시간.
 var _self_respawn_requires_release: bool = false # 발동 뒤 같은 hold의 연속 생명 차감을 막는다.
-var _crush_mask_cache: Dictionary = {} # 상태/프레임별 화면 픽셀 몸통 마스크.
 var _frame_alpha_bounds_cache: Dictionary = {} # 캐릭터/프레임별 불투명 영역.
 var _animation_image_cache: Dictionary = {} # texture path별 CPU alpha 판정용 Image.
 var _respawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # 캐릭터 X 전용 난수열.
@@ -223,6 +220,7 @@ func _ready() -> void:
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
 	_meditation_loop_player = _create_sfx_player()
+	_setup_saintess_aura_material()
 	_meditation_loop_player.finished.connect(_restart_meditation_loop)
 	_respawn_random.randomize()
 	controller.game_restarted.connect(_reset_character)
@@ -238,7 +236,6 @@ func set_character_id(value: String) -> bool:
 	if character_id == value:
 		return true
 	character_id = value
-	_crush_mask_cache.clear()
 	_frame_alpha_bounds_cache.clear()
 	_animation_image_cache.clear()
 	_animation_state = ANIMATION_DATA.IDLE
@@ -249,6 +246,7 @@ func set_character_id(value: String) -> bool:
 	_cancel_character_skill_effects()
 	controller.clear_skill_effects()
 	_apply_animation_frame()
+	_sync_saintess_aura()
 	return true
 
 
@@ -280,7 +278,7 @@ func _handle_special_input() -> void:
 
 func _attempt_special_skill() -> bool:
 	if special_cooldown_remaining > 0.0:
-		_set_feedback("%s 재사용 대기 중" % special_display_name())
+		_set_feedback(tr("%s 재사용 대기 중") % tr(special_display_name()))
 		return false
 	if not _can_use_special():
 		_set_feedback("지금은 특수 스킬을 사용할 수 없음")
@@ -329,7 +327,7 @@ func _attempt_special_skill() -> bool:
 		_pending_special_id = character_id
 		_pending_special_remaining = delay
 	else:
-		_set_feedback("%s 발동" % special_display_name())
+		_set_feedback(tr("%s 발동") % tr(special_display_name()))
 	stats_changed.emit()
 	return true
 
@@ -361,7 +359,7 @@ func _resolve_pending_special() -> void:
 				)
 			_last_special_succeeded = moved > 0
 			if moved > 0:
-				_set_feedback("가드 브레이크: %d칸" % moved)
+				_set_feedback(tr("가드 브레이크: %d칸") % moved)
 			else:
 				_set_feedback("가드 브레이크 실패")
 		"shield_guard":
@@ -396,13 +394,13 @@ func _resolve_pending_special() -> void:
 		"cleaner":
 			var removed: int = controller.clean_exposed_cells(_pending_cleaner_center_below)
 			_last_special_succeeded = removed > 0
-			_set_feedback("대청소: %d개 제거" % removed if removed > 0 else "대청소 대상 없음")
+			_set_feedback(tr("대청소: %d개 제거") % removed if removed > 0 else "대청소 대상 없음")
 			_pending_cleaner_center_below = Vector2i.ZERO
 		"chef":
 			_chef_meat_remaining = CHEF_MEAT_DURATION
 			_chef_meat_guard_available = true
 			_last_special_succeeded = true
-			_set_feedback("고기 섭취: 3초 강화")
+			_set_feedback("성역의 가호: 3초 강화")
 		"clockmaker":
 			_last_special_succeeded = controller.freeze_falling_blocks(3.0)
 			_set_feedback("낙하 시간 3초 정지" if _last_special_succeeded else "정지 태엽 실패")
@@ -491,7 +489,7 @@ func _stop_for_inactive_game() -> void:
 func apply_binding(duration: float = 2.0) -> void:
 	if is_bound or controller.state != MainGameController.GameState.PLAYING:
 		return
-	if _consume_chef_meat_guard("고기 섭취: 기믹 무효"):
+	if _consume_chef_meat_guard("성역의 가호: 기믹 무효"):
 		return
 	_set_meditating(false)
 	_exit_hang()
@@ -1229,7 +1227,7 @@ func _resolve_pending_punch(delta: float) -> void:
 	if moved > 0:
 		_pending_punch_stage = 0
 		_pending_punch_hit_remaining = 0.0
-		_set_feedback("%s: 1칸 밀치기" % str(character_profile()["weapon"]))
+		_set_feedback(tr("%s: 1칸 밀치기") % tr(str(character_profile()["weapon"])))
 		stats_changed.emit()
 		return
 
@@ -1587,9 +1585,9 @@ func _cancel_wall_jump_control() -> void:
 
 
 ## 상황: GameController가 자연 중력으로 활성 피스를 정확히 한 칸 내린 직후 호출한다.
-## 순서: 실제 한 칸 하강 검증 → 현재 애니메이션 알파 마스크와 활성 셀 교집합
-##       → 고정 지지면이 발밑이면 압착 피해, 아니면 1.2배 낙하 상태 시작.
-## 결과: 좌우 이동/회전/고정 블록 접촉은 피해를 만들지 않고 자연 낙하 압착만 처리된다.
+## 순서: 실제 한 칸 하강 검증 → 이전 머리 센서 비접촉 → 현재 첫 접촉
+##       → 블록 하단면이 센서 위에서 아래로 진입 → 발밑 고정 지지면 확인.
+## 결과: 자연 낙하 블록이 머리 위 압착 영역에 처음 들어온 순간에만 피해를 처리한다.
 func handle_active_piece_descended(
 	previous_origin: Vector2i,
 	current_origin: Vector2i
@@ -1598,87 +1596,76 @@ func handle_active_piece_descended(
 		return
 	if current_origin != previous_origin + Vector2i.DOWN:
 		return
-	if not _crush_mask_overlaps_active_piece(current_origin):
+	var sensor_rect: Rect2 = _crush_sensor_rect()
+	if sensor_rect.size.is_zero_approx():
 		return
+	if _active_piece_overlaps_crush_sensor(previous_origin, sensor_rect):
+		return
+	if not _active_piece_overlaps_crush_sensor(current_origin, sensor_rect):
+		return
+	if not _active_piece_crossed_crush_sensor_from_above(
+		previous_origin,
+		current_origin,
+		sensor_rect
+	):
+		return
+	if not _has_fixed_support_underfoot():
+		return
+	take_damage()
 
-	if _has_fixed_support_underfoot():
-		take_damage()
+
+## 상황: ShapeCast2D로 조정하는 머리 센서를 BoardPhysics 로컬 Rect로 변환한다.
+## 결과: 스프라이트 투명 여백과 팔/다리를 제외한 30×12px 상단 압착 영역을 반환한다.
+func _crush_sensor_rect() -> Rect2:
+	var rectangle: RectangleShape2D = crush_sensor.shape as RectangleShape2D
+	if rectangle == null:
+		return Rect2()
+	var center: Vector2 = position + crush_sensor.position
+	return Rect2(center - rectangle.size * 0.5, rectangle.size)
 
 
-## 상황: 자연 낙하한 네 블록 중 하나가 현재 캐릭터 몸통 픽셀에 닿는지 판정한다.
-## 순서: 현재 프레임의 캐시된 불투명 픽셀 → flip/rotation 변환 → 네 셀 Rect 포함 검사.
-## 결과: 알파 128 이상이면서 중앙 28×64px 안인 실제 표시 픽셀이 닿을 때만 true다.
-func _crush_mask_overlaps_active_piece(origin: Vector2i) -> bool:
-	var collider_rect: Rect2 = _character_collider_rect()
+## 상황: 지정한 피스 원점에서 네 셀 중 하나라도 머리 센서와 실제 면적으로 겹치는지 판정한다.
+## 결과: 변/모서리 접촉은 false, 양의 면적 교차는 true다.
+func _active_piece_overlaps_crush_sensor(origin: Vector2i, sensor_rect: Rect2) -> bool:
 	for local_cell: Vector2i in controller.active_local_cells():
 		if _rects_overlap_with_area(
-			collider_rect,
+			sensor_rect,
 			_board_cell_rect(origin + local_cell)
 		):
 			return true
 	return false
 
 
-## 상황: 현재 애니메이션 프레임의 압사 몸통 마스크가 필요할 때 호출한다.
-## 순서: 상태/region key 캐시 조회 → 화면 중앙 28×64 각 픽셀을 source region으로 역매핑
-##       → 원본 alpha가 128 이상인 화면 픽셀 중심만 저장.
-## 결과: 투명 여백과 뻗은 팔다리가 빠진 정확한 화면 픽셀 좌표 목록을 반환한다.
-func _current_crush_mask_points() -> Array[Vector2]:
-	var region: Rect2 = ANIMATION_DATA.region_for(
-		_animation_state,
-		_animation_time,
-		character_id
-	)
-	var cache_key: String = "%s:%s:%d:%d:%d:%d" % [
-		character_id,
-		_animation_state,
-		int(region.position.x),
-		int(region.position.y),
-		int(region.size.x),
-		int(region.size.y),
-	]
-	if _crush_mask_cache.has(cache_key):
-		return _crush_mask_cache[cache_key] as Array[Vector2]
-
-	var texture: Texture2D = ANIMATION_DATA.texture_for(_animation_state, character_id)
-	var image_key: String = texture.resource_path
-	var image: Image
-	if _animation_image_cache.has(image_key):
-		image = _animation_image_cache[image_key] as Image
-	else:
-		image = texture.get_image()
-		_animation_image_cache[image_key] = image
-
-	var target_size: Vector2 = _animation_target_size(_animation_state)
-	var points: Array[Vector2] = []
-	var half_core: Vector2 = CRUSH_CORE_SIZE * 0.5
-	for pixel_y: int in range(int(-half_core.y), int(half_core.y)):
-		for pixel_x: int in range(int(-half_core.x), int(half_core.x)):
-			var display_point: Vector2 = Vector2(
-				float(pixel_x) + 0.5,
-				float(pixel_y) + 0.5
-			)
-			var normalized: Vector2 = (display_point + target_size * 0.5) / target_size
-			if (
-				normalized.x < 0.0
-				or normalized.x >= 1.0
-				or normalized.y < 0.0
-				or normalized.y >= 1.0
-			):
-				continue
-			var source_pixel: Vector2i = Vector2i(
-				int(floor(region.position.x + normalized.x * region.size.x)),
-				int(floor(region.position.y + normalized.y * region.size.y))
-			)
-			if image.get_pixelv(source_pixel).a >= CRUSH_ALPHA_THRESHOLD:
-				points.append(display_point)
-
-	_crush_mask_cache[cache_key] = points
-	return points
+## 상황: 현재 센서 접촉이 옆/기존 겹침이 아니라 위에서 처음 들어온 하강인지 확인한다.
+## 순서: 각 셀의 X 교차 확인 → 이전 하단면이 센서 상단 위/접촉인지
+##       → 현재 하단면이 상단을 통과했고 셀 상단이 센서 하단보다 위인지 검사.
+## 결과: 동일 셀의 하단면이 머리 센서 상단을 아래 방향으로 처음 통과했을 때만 true다.
+func _active_piece_crossed_crush_sensor_from_above(
+	previous_origin: Vector2i,
+	current_origin: Vector2i,
+	sensor_rect: Rect2
+) -> bool:
+	for local_cell: Vector2i in controller.active_local_cells():
+		var previous_rect: Rect2 = _board_cell_rect(previous_origin + local_cell)
+		var current_rect: Rect2 = _board_cell_rect(current_origin + local_cell)
+		var overlaps_horizontally: bool = (
+			current_rect.position.x < sensor_rect.end.x
+			and current_rect.end.x > sensor_rect.position.x
+		)
+		if not overlaps_horizontally:
+			continue
+		if previous_rect.end.y > sensor_rect.position.y + FIXED_SUPPORT_TOLERANCE:
+			continue
+		if current_rect.end.y <= sensor_rect.position.y:
+			continue
+		if current_rect.position.y >= sensor_rect.end.y:
+			continue
+		return true
+	return false
 
 
 ## 상황: 낙하 블록과 겹친 순간 캐릭터가 아래 고정 지지면에 직접 붙어 있는지 검사한다.
-## 순서: 28px 발 너비와 보드 바닥 비교 → 고정 셀 윗면과 1px 이내인지 비교.
+## 순서: 42px 발 너비와 보드 바닥 비교 → 고정 셀 윗면과 1.5px 이내인지 비교.
 ## 결과: Boundaries 바닥 또는 LockedBlocks 윗면만 true이며 활성 피스는 제외된다.
 func _has_fixed_support_underfoot() -> bool:
 	var foot_y: float = (
@@ -1690,8 +1677,8 @@ func _has_fixed_support_underfoot() -> bool:
 	if absf(foot_y - board_floor_y) <= FIXED_SUPPORT_TOLERANCE:
 		return true
 
-	var foot_left: float = position.x - CRUSH_CORE_SIZE.x * 0.5
-	var foot_right: float = position.x + CRUSH_CORE_SIZE.x * 0.5
+	var foot_left: float = position.x - FIXED_SUPPORT_FOOT_WIDTH * 0.5
+	var foot_right: float = position.x + FIXED_SUPPORT_FOOT_WIDTH * 0.5
 	for y: int in range(MainBoardModel.HEIGHT):
 		for x: int in range(MainBoardModel.WIDTH):
 			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
@@ -1773,7 +1760,7 @@ func take_thorn_damage(feedback_message: String = "가시 공격 피해! 목숨 
 	stats_changed.emit()
 
 
-func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어") -> bool:
+func _consume_chef_meat_guard(feedback_message: String = "성역의 가호 방어") -> bool:
 	if (
 		character_id != "chef"
 		or _chef_meat_remaining <= 0.0
@@ -1781,6 +1768,7 @@ func _consume_chef_meat_guard(feedback_message: String = "고기 섭취 방어")
 	):
 		return false
 	_chef_meat_guard_available = false
+	_sync_saintess_aura()
 	_set_feedback(feedback_message)
 	stats_changed.emit()
 	return true
@@ -1890,7 +1878,7 @@ func current_special_cooldown() -> float:
 
 
 func current_attack_cooldown() -> float:
-	return ATTACK_COOLDOWN * CHARACTER_DATA.passive_cooldown_multiplier(passive_levels, 0)
+	return CHARACTER_DATA.attack_cooldown(character_id, passive_levels)
 
 
 func is_special_animating() -> bool:
@@ -2418,6 +2406,25 @@ func _update_visual_state(delta: float) -> void:
 	_update_sprite_modulation()
 	_update_damage_blink()
 	_advance_character_animation(delta)
+	_sync_saintess_aura()
+
+
+func _setup_saintess_aura_material() -> void:
+	_saintess_aura_material = ShaderMaterial.new()
+	_saintess_aura_material.shader = SAINTESS_AURA_SHADER
+	_saintess_aura_material.set_shader_parameter("aura_enabled", false)
+	sprite.material = _saintess_aura_material
+
+
+func _sync_saintess_aura() -> void:
+	if _saintess_aura_material == null:
+		return
+	_saintess_aura_material.set_shader_parameter(
+		"aura_enabled",
+		character_id == "chef"
+		and _chef_meat_remaining > 0.0
+		and _chef_meat_guard_available
+	)
 
 
 ## 상황: 블록 플립 spin timer 중 또는 끝난 뒤 sprite 각도를 갱신할 때 호출한다.
@@ -2804,7 +2811,7 @@ func _animation_target_size(_animation_state_value: String) -> Vector2:
 ## 순서: text 대입 → 표시 timer=1.4초 → feedback_changed emit.
 ## 결과: View가 즉시 표시하고 `_update_timers()`가 나중에 자동 삭제한다.
 func _set_feedback(message: String) -> void:
-	feedback_text = message
+	feedback_text = tr(message)
 	_feedback_remaining = 1.4
 	feedback_changed.emit()
 
@@ -2922,5 +2929,6 @@ func _reset_character() -> void:
 	sprite.modulate = Color.WHITE
 	sprite.visible = true
 	_apply_animation_frame()
+	_sync_saintess_aura()
 	stats_changed.emit()
 	feedback_changed.emit()

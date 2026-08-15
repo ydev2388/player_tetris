@@ -4,12 +4,14 @@ extends Node
 signal bindings_changed
 signal audio_changed
 signal progress_changed
+signal language_changed(language_code: String)
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
 const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
+const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
@@ -37,6 +39,7 @@ const MAX_PASSIVE_LEVEL: int = 3
 var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
+var language: String = LOCALIZATION.ENGLISH
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
@@ -60,7 +63,7 @@ func get_action_definitions() -> Array[Dictionary]:
 
 func get_action_label(action_name: StringName) -> String:
 	var definition: Dictionary = _definition_for(action_name)
-	return String(definition.get("label", String(action_name)))
+	return tr(String(definition.get("label", String(action_name))))
 
 
 func get_action_keys(action_name: StringName) -> Array[int]:
@@ -82,27 +85,27 @@ func get_binding_text(action_name: StringName) -> String:
 func get_slot_text(action_name: StringName, slot_index: int) -> String:
 	var keys: Array[int] = get_action_keys(action_name)
 	if slot_index < 0 or slot_index >= keys.size() or keys[slot_index] == KEY_NONE:
-		return "미지정"
+		return tr("미지정")
 	return keycode_to_text(keys[slot_index])
 
 
 func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dictionary:
 	var definition: Dictionary = _definition_for(action_name)
 	if definition.is_empty():
-		return _failure("알 수 없는 입력 동작입니다.")
+		return _failure(tr("알 수 없는 입력 동작입니다."))
 
 	var slot_count: int = int(definition.get("slots", 1))
 	if slot_index < 0 or slot_index >= slot_count:
-		return _failure("변경할 수 없는 키 슬롯입니다.")
+		return _failure(tr("변경할 수 없는 키 슬롯입니다."))
 	if key_code == KEY_NONE:
-		return _failure("주 키는 비워둘 수 없습니다.")
+		return _failure(tr("주 키는 비워둘 수 없습니다."))
 	if key_code == KEY_ESCAPE:
-		return _failure("Esc는 메뉴 복귀 전용 키입니다.")
+		return _failure(tr("Esc는 메뉴 복귀 전용 키입니다."))
 
 	var conflict: Dictionary = find_conflict(key_code, action_name, slot_index)
 	if not conflict.is_empty():
 		return _failure(
-			"%s 키는 이미 '%s'에 사용 중입니다."
+			tr("%s 키는 이미 '%s'에 사용 중입니다.")
 			% [keycode_to_text(key_code), String(conflict.get("label", ""))]
 		)
 
@@ -114,13 +117,16 @@ func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dic
 	apply_bindings()
 	save_settings()
 	bindings_changed.emit()
-	return {"ok": true, "message": "%s 키가 변경되었습니다." % get_action_label(action_name)}
+	return {
+		"ok": true,
+		"message": tr("%s 키가 변경되었습니다.") % get_action_label(action_name),
+	}
 
 
 func clear_secondary_binding(action_name: StringName) -> Dictionary:
 	var definition: Dictionary = _definition_for(action_name)
 	if definition.is_empty() or int(definition.get("slots", 1)) < 2:
-		return _failure("보조 키가 없는 동작입니다.")
+		return _failure(tr("보조 키가 없는 동작입니다."))
 
 	var keys: Array[int] = get_action_keys(action_name)
 	while keys.size() < 2:
@@ -130,7 +136,10 @@ func clear_secondary_binding(action_name: StringName) -> Dictionary:
 	apply_bindings()
 	save_settings()
 	bindings_changed.emit()
-	return {"ok": true, "message": "%s 보조 키를 지웠습니다." % get_action_label(action_name)}
+	return {
+		"ok": true,
+		"message": tr("%s 보조 키를 지웠습니다.") % get_action_label(action_name),
+	}
 
 
 func find_conflict(
@@ -148,7 +157,7 @@ func find_conflict(
 				return {
 					"action": action_name,
 					"slot": slot_index,
-					"label": definition["label"],
+					"label": tr(str(definition["label"])),
 				}
 	return {}
 
@@ -176,6 +185,16 @@ func set_sfx_percent(value: float) -> void:
 	_apply_bus_volume(SFX_BUS, sfx_percent)
 	save_settings()
 	audio_changed.emit()
+
+
+func set_language(language_code: String) -> void:
+	var normalized: String = LOCALIZATION.normalize_language(language_code)
+	if language == normalized:
+		return
+	language = normalized
+	LOCALIZATION.install(language)
+	save_settings()
+	language_changed.emit(language)
 
 
 func get_stage_best_stars(stage_number: int) -> int:
@@ -213,13 +232,13 @@ func get_passive_levels() -> Array[int]:
 func upgrade_passive(passive_id: String) -> Dictionary:
 	var index: int = PASSIVE_IDS.find(passive_id)
 	if index < 0:
-		return _failure("알 수 없는 패시브입니다.")
+		return _failure(tr("알 수 없는 패시브입니다."))
 	var current_level: int = passive_levels[index]
 	if current_level >= MAX_PASSIVE_LEVEL:
-		return _failure("이미 최대 레벨입니다.")
+		return _failure(tr("이미 최대 레벨입니다."))
 	var cost: int = current_level + 1
 	if star_currency < cost:
-		return _failure("별이 부족합니다. 필요한 별: %d개" % cost)
+		return _failure(tr("별이 부족합니다. 필요한 별: %d개") % cost)
 
 	var previous_currency: int = star_currency
 	passive_levels[index] = current_level + 1
@@ -228,7 +247,7 @@ func upgrade_passive(passive_id: String) -> Dictionary:
 	if save_error != OK:
 		passive_levels[index] = current_level
 		star_currency = previous_currency
-		return _failure("패시브 강화를 저장하지 못했습니다: %s" % error_string(save_error))
+		return _failure(tr("패시브 강화를 저장하지 못했습니다: %s") % error_string(save_error))
 	progress_changed.emit()
 	return {
 		"ok": true,
@@ -252,7 +271,7 @@ func reset_passive_upgrades() -> Dictionary:
 	if save_error != OK:
 		passive_levels = previous_levels
 		star_currency = previous_currency
-		return _failure("패시브 초기화를 저장하지 못했습니다: %s" % error_string(save_error))
+		return _failure(tr("패시브 초기화를 저장하지 못했습니다: %s") % error_string(save_error))
 	progress_changed.emit()
 	return {
 		"ok": true,
@@ -263,9 +282,9 @@ func reset_passive_upgrades() -> Dictionary:
 
 func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) -> Dictionary:
 	if stage_number < 1 or stage_number > STAGE_COUNT:
-		return _failure("알 수 없는 스테이지입니다.")
+		return _failure(tr("알 수 없는 스테이지입니다."))
 	if stars < 1:
-		return _failure("스테이지 클리어 별은 1개 이상이어야 합니다.")
+		return _failure(tr("스테이지 클리어 별은 1개 이상이어야 합니다."))
 
 	var awarded_stars: int = clampi(stars, 1, MAX_STAGE_STARS)
 	var previous_stars: int = get_stage_best_stars(stage_number)
@@ -279,7 +298,7 @@ func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) ->
 			stage_best_stars[stage_number - 1] = previous_stars
 			star_currency = previous_currency
 			return _failure(
-				"스테이지 결과를 저장하지 못했습니다: %s" % error_string(save_error)
+				tr("스테이지 결과를 저장하지 못했습니다: %s") % error_string(save_error)
 			)
 		progress_changed.emit()
 	return {
@@ -323,14 +342,16 @@ func apply_audio() -> void:
 
 func load_settings() -> void:
 	_reset_settings_to_defaults()
+	LOCALIZATION.install(language)
 
 	var config: ConfigFile = ConfigFile.new()
 	var load_error: Error = config.load(settings_path)
 	if load_error != OK:
 		if load_error != ERR_FILE_NOT_FOUND:
-			settings_error.emit("설정 파일을 읽지 못했습니다: %s" % error_string(load_error))
+			settings_error.emit(tr("설정 파일을 읽지 못했습니다: %s") % error_string(load_error))
 		return
 
+	_load_language_from_config(config)
 	_load_bindings_from_config(config)
 	_restore_escape_bindings()
 	_migrate_rotation_kick_binding()
@@ -345,6 +366,7 @@ func _reset_settings_to_defaults() -> void:
 	_load_default_bindings()
 	music_percent = 100.0
 	sfx_percent = 100.0
+	language = LOCALIZATION.ENGLISH
 	stage_best_stars = [0, 0, 0, 0, 0]
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
@@ -425,6 +447,13 @@ func _load_audio_from_config(config: ConfigFile) -> void:
 	)
 
 
+func _load_language_from_config(config: ConfigFile) -> void:
+	language = LOCALIZATION.normalize_language(
+		str(config.get_value("general", "language", LOCALIZATION.ENGLISH))
+	)
+	LOCALIZATION.install(language)
+
+
 func _load_progress_from_config(config: ConfigFile) -> void:
 	star_currency = maxi(int(config.get_value("progress", "star_currency", 0)), 0)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
@@ -452,7 +481,7 @@ func _load_progress_from_config(config: ConfigFile) -> void:
 func _restore_defaults_for_duplicate_keys() -> void:
 	if _has_duplicate_keys():
 		_load_default_bindings()
-		settings_error.emit("저장된 키 설정에 중복이 있어 기본값으로 복원했습니다.")
+		settings_error.emit(tr("저장된 키 설정에 중복이 있어 기본값으로 복원했습니다."))
 
 
 func save_settings() -> Error:
@@ -462,6 +491,7 @@ func save_settings() -> Error:
 		config.set_value("input", String(action_name), get_action_keys(action_name))
 	config.set_value("audio", "music_percent", music_percent)
 	config.set_value("audio", "sfx_percent", sfx_percent)
+	config.set_value("general", "language", language)
 	config.set_value("progress", "star_currency", star_currency)
 	config.set_value("progress", "passive_levels", passive_levels)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
@@ -472,7 +502,7 @@ func save_settings() -> Error:
 		)
 	var save_error: Error = config.save(settings_path)
 	if save_error != OK:
-		settings_error.emit("설정을 저장하지 못했습니다: %s" % error_string(save_error))
+		settings_error.emit(tr("설정을 저장하지 못했습니다: %s") % error_string(save_error))
 	return save_error
 
 

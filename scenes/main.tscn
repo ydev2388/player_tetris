@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/game_view.gd" id="1_view"]
 [ext_resource type="Script" path="res://scripts/game_controller.gd" id="2_controller"]
@@ -8,6 +8,9 @@
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_character"]
 size = Vector2(42, 90)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_crush_sensor"]
+size = Vector2(30, 12)
 
 [node name="Main" type="Control"]
 texture_filter = 1
@@ -52,6 +55,12 @@ script = ExtResource("4_character")
 [node name="Collider" type="CollisionShape2D" parent="BoardPhysics/Character"]
 position = Vector2(0, 3)
 shape = SubResource("RectangleShape2D_character")
+
+[node name="CrushSensor" type="ShapeCast2D" parent="BoardPhysics/Character"]
+position = Vector2(0, -36)
+shape = SubResource("RectangleShape2D_crush_sensor")
+target_position = Vector2(0, 0)
+collision_mask = 1
 
 [node name="Sprite" type="Sprite2D" parent="BoardPhysics/Character"]
 position = Vector2(0, 40)

@@ -31,7 +31,6 @@ const ORANGE: Color = Color("#e47719")
 const PURPLE: Color = Color("#6f57c9")
 const DANGER: Color = Color("#d9485f")
 const SHOP_GOLD: Color = Color("#d8b23a")
-const _CHARACTER_SELECT_HINT: String = "화면에 보이는 캐릭터 카드를 선택하세요.\n특수 스킬은 스태미나를 소모하지 않고 쿨다운만 사용합니다."
 const _CHARACTER_INSELECT_MODULATE: Color = Color(0.82, 0.85, 0.90, 0.88)
 const _SHOP_CARD_COLUMNS: int = 4
 const _SHOP_CARD_SIZE: Vector2 = Vector2(160.0, 158.0)
@@ -151,11 +150,10 @@ var _shop_back_button: Button
 var _character_buttons: Array[Button] = []
 var _character_confirm_button: Button
 var _character_back_button: Button
-var _character_detail_label: Label
+var _character_position_labels: Array[Label] = []
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
 var _character_card_selected_style: StyleBoxFlat
 var _character_card_normal_style: StyleBoxFlat
-var _character_window_start: int = 0
 var _character_prev_button: Button
 var _character_next_button: Button
 var _options_first_button: Button
@@ -505,19 +503,15 @@ func _handle_language_selection_input(key_event: InputEventKey) -> bool:
 
 
 func _move_character_focus(direction: int) -> void:
-	var focused_button: Button = get_viewport().gui_get_focus_owner() as Button
-	var current_index: int = _character_buttons.find(focused_button)
-	if current_index < 0:
-		current_index = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
-	if current_index < 0:
-		current_index = _character_window_start
-	var target_index: int = current_index + signi(direction)
-	if target_index < 0 or target_index >= _character_buttons.size():
+	if _character_buttons.is_empty():
 		return
-	if target_index < _character_window_start:
-		_shift_character_window(-1)
-	elif target_index >= _character_window_start + 3:
-		_shift_character_window(1)
+	var current_index: int = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
+	if current_index < 0:
+		current_index = 0
+	var target_index: int = posmod(
+		current_index + signi(direction),
+		_character_buttons.size()
+	)
 	_character_buttons[target_index].grab_focus()
 	_select_character(MainCharacterData.CHARACTER_ORDER[target_index])
 
@@ -2245,7 +2239,7 @@ func _draw_decorative_blocks(origin: Vector2, color: Color, alpha: float) -> voi
 
 func _build_character_screen() -> void:
 	var screen: Control = _create_screen("CharacterScreen", Screen.CHARACTER)
-	_add_screen_title(screen, "캐릭터 선택", "다섯 능력치와 하나의 특수 스킬을 비교하세요")
+	_add_screen_title(screen, "캐릭터 선택", "이미지와 다섯 능력치, 특수 스킬을 비교하세요")
 
 	for index: int in range(MainCharacterData.CHARACTER_ORDER.size()):
 		var character_id: String = MainCharacterData.CHARACTER_ORDER[index]
@@ -2253,7 +2247,7 @@ func _build_character_screen() -> void:
 		var card: Button = _create_button(
 			screen,
 			"",
-			Rect2(50.0 + float(index) * 285.0, 142.0, 270.0, 354.0),
+			Rect2(335.0, 142.0, 270.0, 470.0),
 			CYAN,
 			16
 		)
@@ -2263,6 +2257,15 @@ func _build_character_screen() -> void:
 		card.focus_entered.connect(_play_select_sfx)
 		_character_buttons.append(card)
 
+		var position_label: Label = _create_label(
+			card,
+			"",
+			Rect2(10.0, 8.0, 58.0, 22.0),
+			12,
+			MUTED,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		_character_position_labels.append(position_label)
 		var portrait_texture := AtlasTexture.new()
 		portrait_texture.atlas = MainCharacterAnimationData.texture_for(
 			MainCharacterAnimationData.IDLE,
@@ -2270,8 +2273,8 @@ func _build_character_screen() -> void:
 		)
 		portrait_texture.region = PORTRAIT_SOURCE
 		var portrait := TextureRect.new()
-		portrait.position = Vector2(47.0, 12.0)
-		portrait.size = Vector2(176.0, 158.0)
+		portrait.position = Vector2(47.0, 18.0)
+		portrait.size = Vector2(176.0, 126.0)
 		portrait.texture = portrait_texture
 		portrait.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -2279,74 +2282,71 @@ func _build_character_screen() -> void:
 		portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(portrait)
 
-		var stat_text: String = (
-			"%s  [%s]\n%s\n\n공속 %d (S %.1f초)\n이동 %d (%.0fpx/s)  점프 %d (%.1f칸)\n스태미나 %d   특수 %d (%.1f초)\n무기: %s"
-			% [
-				_text(str(profile["display_name"])),
-				_text(str(profile["unlock_text"])),
-				_text(str(profile["role"])),
-				profile["attack_speed"],
-				MainCharacterData.rotation_cooldown(character_id),
-				profile["move"],
-				MainCharacterData.move_speed(character_id) * MainLayout.DISPLAY_SCALE,
-				profile["jump"],
-				MainCharacterData.jump_cells(character_id),
-				profile["stamina"],
-				profile["special_skill"],
-				MainCharacterData.special_cooldown(character_id),
-				_text(str(profile["weapon"])),
-			]
-		)
-		var info: Label = _create_label(
+		_create_label(
 			card,
-			stat_text,
-			Rect2(12.0, 168.0, 246.0, 174.0),
-			14,
-			Color.WHITE,
+			_text(str(profile["display_name"])),
+			Rect2(12.0, 142.0, 246.0, 30.0),
+			18,
+			TEXT,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
-		info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		info.add_theme_constant_override("line_spacing", 4)
+		_add_character_stat_bar(card, 174.0, _text("공격속도"), int(profile["attack_speed"]))
+		_add_character_stat_bar(card, 204.0, _text("이동속도"), int(profile["move"]))
+		_add_character_stat_bar(card, 234.0, _text("점프력"), int(profile["jump"]))
+		_add_character_stat_bar(card, 264.0, _text("스태미나"), int(profile["stamina"]))
+		_add_character_stat_bar(card, 294.0, _text("특수공격"), int(profile["special_skill"]))
+
+		var skill_panel: Panel = _create_panel(
+			card,
+			Rect2(12.0, 330.0, 246.0, 127.0),
+			PANEL_DARK,
+			BORDER,
+			7
+		)
+		skill_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		skill_panel.clip_contents = true
+		_create_label(
+			skill_panel,
+			_text("특수 · %s") % _text(str(profile["special_name"])),
+			Rect2(10.0, 5.0, 226.0, 26.0),
+			14,
+			TEXT,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		var skill_description: Label = _create_label(
+			skill_panel,
+			_text(str(profile.get("special_short_description", profile["special_description"]))),
+			Rect2(10.0, 34.0, 226.0, 82.0),
+			12,
+			MUTED,
+			HORIZONTAL_ALIGNMENT_CENTER
+		)
+		skill_description.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
 	_character_prev_button = _create_button(
-		screen, "◀", Rect2(6.0, 286.0, 38.0, 70.0), PURPLE, 19
+		screen, "<", Rect2(6.0, 210.0, 38.0, 58.0), PURPLE, 19
 	)
 	_character_prev_button.focus_mode = Control.FOCUS_NONE
-	_character_prev_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_character_prev_button.pressed.connect(_move_character_focus.bind(-1))
 	_character_next_button = _create_button(
-		screen, "▶", Rect2(916.0, 286.0, 38.0, 70.0), PURPLE, 19
+		screen, ">", Rect2(916.0, 210.0, 38.0, 58.0), PURPLE, 19
 	)
 	_character_next_button.focus_mode = Control.FOCUS_NONE
-	_character_next_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_character_next_button.pressed.connect(_move_character_focus.bind(1))
 
-	var detail_panel: Panel = _create_panel(
-		screen,
-		Rect2(34.0, 516.0, 892.0, 160.0),
-		PANEL,
-		BORDER,
-		10
-	)
-	_character_detail_label = _create_label(
-		detail_panel,
-		"",
-		Rect2(22.0, 10.0, 848.0, 88.0),
-		14,
-		TEXT
-	)
-	_character_detail_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	_character_confirm_button = _create_button(
-		detail_panel,
+		screen,
 		"선택 완료",
-		Rect2(472.0, 104.0, 238.0, 42.0),
+		Rect2(472.0, 630.0, 238.0, 46.0),
 		CYAN,
 		16
 	)
 	_character_confirm_button.focus_mode = Control.FOCUS_NONE
-	_character_confirm_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_character_confirm_button.pressed.connect(show_stage_select)
 	var back_button: Button = _create_button(
-		detail_panel,
+		screen,
 		"뒤로",
-		Rect2(720.0, 104.0, 150.0, 42.0),
+		Rect2(720.0, 630.0, 150.0, 46.0),
 		DANGER,
 		16
 	)
@@ -2361,6 +2361,47 @@ func _build_character_screen() -> void:
 	_refresh_character_selection()
 
 
+func _add_character_stat_bar(
+	parent: Control,
+	y_position: float,
+	stat_name: String,
+	stat_value: int
+) -> void:
+	_create_label(
+		parent,
+		stat_name,
+		Rect2(12.0, y_position, 64.0, 24.0),
+		12,
+		TEXT
+	)
+	var bar: ProgressBar = ProgressBar.new()
+	bar.position = Vector2(80.0, y_position + 6.0)
+	bar.size = Vector2(140.0, 12.0)
+	bar.min_value = 0.0
+	bar.max_value = 10.0
+	bar.step = 1.0
+	bar.value = clampi(stat_value, 0, 10)
+	bar.show_percentage = false
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var background_style := StyleBoxFlat.new()
+	background_style.bg_color = Color("#dce3ed")
+	background_style.set_corner_radius_all(6)
+	bar.add_theme_stylebox_override("background", background_style)
+	var fill_style := StyleBoxFlat.new()
+	fill_style.bg_color = SHOP_GOLD
+	fill_style.set_corner_radius_all(6)
+	bar.add_theme_stylebox_override("fill", fill_style)
+	parent.add_child(bar)
+	_create_label(
+		parent,
+		str(stat_value),
+		Rect2(226.0, y_position, 30.0, 24.0),
+		12,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+
+
 func _select_character(character_id: String) -> void:
 	if not MainCharacterData.has_character(character_id):
 		return
@@ -2368,18 +2409,8 @@ func _select_character(character_id: String) -> void:
 	_refresh_character_selection()
 
 
-func _shift_character_window(direction: int) -> void:
-	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
-	_character_window_start = clampi(_character_window_start + signi(direction), 0, maximum_start)
-	if not _selected_character_id.is_empty():
-		var selected_index: int = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
-		if selected_index < _character_window_start or selected_index >= _character_window_start + 3:
-			_selected_character_id = ""
-	_refresh_character_selection()
-
-
 func _refresh_character_selection() -> void:
-	if _character_detail_label == null:
+	if _character_confirm_button == null or _character_buttons.is_empty():
 		return
 	var has_selection: bool = (
 		not _selected_character_id.is_empty()
@@ -2387,43 +2418,23 @@ func _refresh_character_selection() -> void:
 	)
 	if has_selection:
 		var profile: Dictionary = MainCharacterData.profile_for(_selected_character_id)
-		var detail_text: String = (
-			"%s · %s\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
-			% [
-				_text(str(profile["display_name"])),
-				_text(str(profile["description"])),
-				_text(str(profile["special_name"])),
-				_text(str(profile["special_description"])),
-				float(profile["special_base_cooldown"]),
-				MainCharacterData.special_cooldown(_selected_character_id),
-			]
-		)
-		if profile.has("unlock_hint"):
-			detail_text = (
-				"%s · %s\n해금 힌트: “%s”\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
-				% [
-					_text(str(profile["display_name"])),
-					_text(str(profile["description"])),
-					_text(str(profile["unlock_hint"])),
-					_text(str(profile["special_name"])),
-					_text(str(profile["special_description"])),
-					float(profile["special_base_cooldown"]),
-					MainCharacterData.special_cooldown(_selected_character_id),
-				]
-			)
-		if _character_detail_label.text != detail_text:
-			_character_detail_label.text = detail_text
-	else:
-		if _character_detail_label.text != _CHARACTER_SELECT_HINT:
-			_character_detail_label.text = _CHARACTER_SELECT_HINT
+		_character_confirm_button.text = _text("%s 선택") % _text(str(profile["display_name"]))
 	_character_confirm_button.disabled = not has_selection
-	var maximum_start: int = maxi(0, MainCharacterData.CHARACTER_ORDER.size() - 3)
-	_character_prev_button.disabled = _character_window_start <= 0
-	_character_next_button.disabled = _character_window_start >= maximum_start
+	_character_prev_button.disabled = not has_selection
+	_character_next_button.disabled = not has_selection
+	var character_count: int = MainCharacterData.CHARACTER_ORDER.size()
+	var selected_index: int = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
+	if selected_index < 0:
+		selected_index = 0
+	var visible_indices: Array[int] = [
+		posmod(selected_index - 1, character_count),
+		selected_index,
+		posmod(selected_index + 1, character_count),
+	]
 	for index: int in range(_character_buttons.size()):
 		var button: Button = _character_buttons[index]
-		var visible_slot: int = index - _character_window_start
-		var is_visible: bool = visible_slot >= 0 and visible_slot < 3
+		var visible_slot: int = visible_indices.find(index)
+		var is_visible: bool = visible_slot >= 0
 		if button.visible != is_visible:
 			button.visible = is_visible
 		if not is_visible:
@@ -2431,16 +2442,17 @@ func _refresh_character_selection() -> void:
 		var target_position: Vector2 = Vector2(50.0 + float(visible_slot) * 285.0, 142.0)
 		if button.position != target_position:
 			button.position = target_position
-			var left_button: Button = (
-				_character_buttons[index - 1] if visible_slot > 0 else button
-			)
-			var right_button: Button = (
-				_character_buttons[index + 1] if visible_slot < 2 else button
-			)
-			button.focus_neighbor_left = button.get_path_to(left_button)
-			button.focus_neighbor_right = button.get_path_to(right_button)
-			button.focus_neighbor_bottom = button.get_path_to(_character_back_button)
-			button.focus_neighbor_top = button.get_path_to(button)
+		var left_button: Button = _character_buttons[visible_indices[maxi(0, visible_slot - 1)]]
+		var right_button: Button = _character_buttons[visible_indices[mini(2, visible_slot + 1)]]
+		button.focus_neighbor_left = button.get_path_to(left_button)
+		button.focus_neighbor_right = button.get_path_to(right_button)
+		button.focus_neighbor_bottom = button.get_path_to(_character_back_button)
+		button.focus_neighbor_top = button.get_path_to(button)
+		_character_position_labels[index].text = [
+			_text("이전"),
+			_text("현재"),
+			_text("다음"),
+		][visible_slot]
 	for index: int in range(_character_buttons.size()):
 		var button: Button = _character_buttons[index]
 		if not button.visible:
@@ -2470,7 +2482,10 @@ func _apply_card_style(button: Button, selected: bool) -> void:
 	button.modulate = Color.WHITE if selected else _CHARACTER_INSELECT_MODULATE
 	for child: Node in button.get_children():
 		if child is Label:
-			(child as Label).modulate = Color.WHITE if selected else TEXT
+			(child as Label).add_theme_color_override(
+				"font_color",
+				Color.WHITE if selected else TEXT
+			)
 
 
 ## 상황: 게임 설명의 canvas·탐색 버튼·counter·뒤로가기를 최초 조립할 때 호출된다.

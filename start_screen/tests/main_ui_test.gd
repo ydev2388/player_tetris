@@ -410,6 +410,20 @@ func _run() -> void:
 	await process_frame
 	var boxer_button: Button = screen.find_child("Character_boxer", true, false) as Button
 	_expect(boxer_button != null, "캐릭터 선택 화면에 복서 카드가 있다.")
+	var stat_bars: Array[ProgressBar] = []
+	if boxer_button != null:
+		for child: Node in boxer_button.get_children():
+			if child is ProgressBar:
+				stat_bars.append(child)
+	_expect(
+		stat_bars.size() == 5
+			and stat_bars[0].value == 9.0
+			and stat_bars[1].value == 7.0
+			and stat_bars[2].value == 5.0
+			and stat_bars[3].value == 3.0
+			and stat_bars[4].value == 2.0,
+		"카드마다 다섯 능력치를 막대그래프로 표시한다."
+	)
 	var right_event: InputEventKey = InputEventKey.new()
 	right_event.pressed = true
 	right_event.physical_keycode = KEY_RIGHT
@@ -425,6 +439,20 @@ func _run() -> void:
 			screen._selected_character_id == "boxer",
 			"캐릭터 카드에서 오른쪽 방향키를 누르면 다음 카드로 바로 이동한다."
 		)
+		var white_labels: bool = true
+		for child: Node in screen._character_buttons[1].get_children():
+			if child is Label:
+				if (child as Label).get_theme_color("font_color") != Color.WHITE:
+					white_labels = false
+		var dark_labels: bool = true
+		for child: Node in screen._character_buttons[0].get_children():
+			if child is Label:
+				if (child as Label).get_theme_color("font_color") != Color("#152033"):
+					dark_labels = false
+		_expect(
+			white_labels and dark_labels,
+			"포커스된 카드의 글자는 흰색, 옆 카드는 어두운 색으로 표시된다."
+		)
 		screen._input(right_event)
 		await process_frame
 		_expect(
@@ -437,10 +465,11 @@ func _run() -> void:
 			"Character_firefighter", true, false
 		) as Button
 		_expect(
-			screen._character_window_start == 1
-				and screen._selected_character_id == "firefighter"
-				and firefighter_button != null,
-			"표시 영역 오른쪽 끝에서 오른쪽 방향키를 누르면 다음 칸으로 즉시 넘어간다."
+			screen._selected_character_id == "firefighter"
+				and firefighter_button != null
+				and firefighter_button.visible
+				and firefighter_button.position == Vector2(335.0, 142.0),
+			"캐러셀에서 선택 캐릭터는 항상 중앙 칸에 표시된다."
 		)
 		screen._input(left_event)
 		await process_frame
@@ -449,22 +478,26 @@ func _run() -> void:
 		screen._input(left_event)
 		await process_frame
 		_expect(
-			screen._character_window_start == 0
-				and screen._selected_character_id == "normal",
-			"표시 영역 왼쪽 끝에서 왼쪽 방향키를 누르면 이전 칸으로 즉시 넘어간다."
+			screen._selected_character_id == "normal"
+				and screen._character_buttons[0].position == Vector2(335.0, 142.0),
+			"캐러셀에서 왼쪽 방향키를 누르면 이전 캐릭터로 이동한다."
+		)
+		_expect(
+			screen._character_position_labels.size() == 8
+				and screen._character_position_labels[7].text == screen._text("이전")
+				and screen._character_position_labels[0].text == screen._text("현재")
+				and screen._character_position_labels[1].text == screen._text("다음"),
+			"세 칸 캐러셀의 위치 라벨이 이전/현재/다음을 표시한다."
 		)
 		_expect(
 			screen._character_prev_button.focus_mode == Control.FOCUS_NONE
 				and screen._character_next_button.focus_mode == Control.FOCUS_NONE
 				and screen._character_confirm_button.focus_mode == Control.FOCUS_NONE
-				and screen._character_prev_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
-				and screen._character_next_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
-				and screen._character_confirm_button.mouse_filter == Control.MOUSE_FILTER_IGNORE
 				and screen._character_buttons[2].focus_neighbor_right
 				== screen._character_buttons[2].get_path_to(screen._character_buttons[2])
 				and screen._character_buttons[2].focus_neighbor_bottom
 				== screen._character_buttons[2].get_path_to(screen._character_back_button),
-			"좌우 화살표와 선택완료 버튼은 포커스·마우스 상호작용을 받지 않는다."
+			"좌우 화살표와 선택완료 버튼은 포커스 상호작용을 받지 않는다."
 		)
 		screen._input(right_event)
 		await process_frame

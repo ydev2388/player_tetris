@@ -41,7 +41,7 @@ const CLEANER_ATLAS: Texture2D = preload(
 	"res://assets/sprites/characters/cleaner/cleaner_reference_atlas_v6.png"
 )
 const SAINTESS_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/saintess/saintess_reference_atlas_v1.png"
+	"res://assets/sprites/characters/saintess/saintess_reference_atlas_v2.png"
 )
 const CLOCKMAKER_ATLAS: Texture2D = preload(
 	"res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v6.png"
@@ -111,6 +111,7 @@ const PROFILES: Dictionary = {
 		"geometry_mode": "fixed_reference",
 		"fixed_scale": Vector2.ONE,
 		"fixed_offset": Vector2(0.0, 3.0),
+		"hang_frame_count": 8,
 	},
 	"clockmaker": {
 		"character_id": "clockmaker",

@@ -99,6 +99,9 @@ const CHEF_MEAT_MOVE_MULTIPLIER: float = 1.2
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # frame 데이터.
 const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd") # 베타 캐릭터 능력치 데이터.
 const SAINTESS_AURA_SHADER: Shader = preload("res://shaders/saintess_aura.gdshader")
+const SAINTESS_BARRIER_TEXTURE: Texture2D = preload(
+	"res://assets/sprites/effects/saintess/saintess_barrier_v1.png"
+)
 const SFX_HURT: AudioStream = preload("res://assets/sfx/01_player_hurt.wav")
 const SFX_PUNCH: AudioStream = preload("res://assets/sfx/02_block_punch.wav")
 const SFX_FLIP: AudioStream = preload("res://assets/sfx/03a_block_flip.wav")
@@ -133,6 +136,7 @@ var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
 var _meditation_loop_player: AudioStreamPlayer
 var _saintess_aura_material: ShaderMaterial
+var _saintess_barrier_sprite: Sprite2D
 
 # GameView/테스트가 읽는 공개 상태.
 var lives: int = MAX_LIVES # 남은 피격 허용 횟수. 0이면 controller.end_game().
@@ -2414,17 +2418,35 @@ func _setup_saintess_aura_material() -> void:
 	_saintess_aura_material.shader = SAINTESS_AURA_SHADER
 	_saintess_aura_material.set_shader_parameter("aura_enabled", false)
 	sprite.material = _saintess_aura_material
+	_saintess_barrier_sprite = Sprite2D.new()
+	_saintess_barrier_sprite.name = "SaintessBarrier"
+	_saintess_barrier_sprite.texture = SAINTESS_BARRIER_TEXTURE
+	_saintess_barrier_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_saintess_barrier_sprite.z_index = sprite.z_index + 2
+	_saintess_barrier_sprite.visible = false
+	add_child(_saintess_barrier_sprite)
 
 
 func _sync_saintess_aura() -> void:
 	if _saintess_aura_material == null:
 		return
-	_saintess_aura_material.set_shader_parameter(
-		"aura_enabled",
+	var barrier_active: bool = (
 		character_id == "chef"
 		and _chef_meat_remaining > 0.0
 		and _chef_meat_guard_available
 	)
+	_saintess_aura_material.set_shader_parameter(
+		"aura_enabled",
+		barrier_active
+	)
+	if not is_instance_valid(_saintess_barrier_sprite):
+		return
+	_saintess_barrier_sprite.visible = barrier_active
+	_saintess_barrier_sprite.position = sprite.position
+	_saintess_barrier_sprite.scale = sprite.scale
+	if barrier_active:
+		var pulse: float = 0.56 + 0.06 * sin(float(Time.get_ticks_msec()) * 0.004)
+		_saintess_barrier_sprite.modulate = Color(1.0, 1.0, 0.92, pulse)
 
 
 ## 상황: 블록 플립 spin timer 중 또는 끝난 뒤 sprite 각도를 갱신할 때 호출한다.

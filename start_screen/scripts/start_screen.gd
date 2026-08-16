@@ -62,9 +62,11 @@ const ENGLISH_TEXT: Dictionary = {
 	"동작": "ACTION", "주 키": "PRIMARY", "보조 키": "SECONDARY", "지우기": "CLEAR",
 	"기본값 복원": "RESTORE DEFAULTS", "OPTION으로": "BACK TO OPTIONS",
 	"향후 추가되는 음악과 효과음에도 설정이 유지됩니다": "These settings apply to future music and effects too.",
+	"BGM은 추후 추가되며 현재는 효과음만 조절합니다.": "BGM will be added later; only sound effects can be adjusted now.",
+	"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.": "BGM will be added later.\n0% is muted.",
 	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% is muted. Music uses BGM and effects use SFX.",
 	"새 키 입력": "NEW KEY", "취소": "CANCEL", "안내": "NOTICE", "확인": "OK",
-	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금과 별 재화가 초기화됩니다.": "Stage unlocks and stars will be reset.",
+	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금, 별 재화와 패시브가 초기화됩니다.": "Stage unlocks, stars, and passives will be reset.",
 	"삭제": "DELETE", "패시브를 초기화할까요?": "Reset passive upgrades?",
 	"투자한 별을 모두 돌려받습니다.": "All invested stars will be refunded.", "초기화": "RESET",
 	"메뉴로 나가겠습니까?": "Return to the main menu?", "선택 완료": "CONFIRM", "뒤로": "BACK",
@@ -86,9 +88,11 @@ const CHINESE_TEXT: Dictionary = {
 	"동작": "动作", "주 키": "主键", "보조 키": "副键", "지우기": "清除",
 	"기본값 복원": "恢复默认", "OPTION으로": "返回选项",
 	"향후 추가되는 음악과 효과음에도 설정이 유지됩니다": "此设置也会用于之后添加的音乐和音效。",
+	"BGM은 추후 추가되며 현재는 효과음만 조절합니다.": "背景音乐将在之后添加；目前只能调节音效。",
+	"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.": "背景音乐将在之后添加。\n0% 为静音。",
 	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% 为静音。音乐使用 BGM 总线，\n音效使用 SFX 总线。",
 	"새 키 입력": "输入新按键", "취소": "取消", "안내": "提示", "확인": "确定",
-	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금과 별 재화가 초기화됩니다.": "关卡解锁和星星将被重置。",
+	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금, 별 재화와 패시브가 초기화됩니다.": "关卡解锁、星星和被动强化将被重置。",
 	"삭제": "删除", "패시브를 초기화할까요?": "要重置被动强化吗？",
 	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
 	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "선택 완료": "确认", "뒤로": "返回",
@@ -440,10 +444,10 @@ func _handle_game_exit_prompt_input(key_event: InputEventKey) -> bool:
 			else:
 				_hide_game_exit_prompt()
 			return true
-		if key_code == KEY_X:
+		if key_code == KEY_X or _is_escape_key(key_event):
 			_hide_game_exit_prompt()
 			return true
-		return _is_escape_key(key_event)
+		return false
 	if current_screen != Screen.GAME or not _is_escape_key(key_event):
 		return false
 	var game_controller: MainGameController = _loaded_game_controller()
@@ -1247,7 +1251,7 @@ func _build_key_footer(screen: Control) -> void:
 
 func _build_volume_screen() -> void:
 	var screen: Control = _create_screen("VolumeScreen", Screen.VOLUME)
-	_add_screen_title(screen, "VOLUME", "향후 추가되는 음악과 효과음에도 설정이 유지됩니다")
+	_add_screen_title(screen, "VOLUME", "BGM은 추후 추가되며 현재는 효과음만 조절합니다.")
 	var panel: Panel = _create_panel(
 		screen,
 		Rect2(150.0, 190.0, 660.0, 390.0),
@@ -1256,19 +1260,10 @@ func _build_volume_screen() -> void:
 		12
 	)
 
-	_music_value_label = _create_volume_row(
-		panel,
-		"BGM",
-		69.0,
-		settings.music_percent,
-		CYAN,
-		"MusicSlider",
-		_on_music_changed
-	)
 	_sfx_value_label = _create_volume_row(
 		panel,
 		"SFX",
-		179.0,
+		100.0,
 		settings.sfx_percent,
 		ORANGE,
 		"SfxSlider",
@@ -1277,8 +1272,8 @@ func _build_volume_screen() -> void:
 
 	_create_label(
 		panel,
-		"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.",
-		Rect2(54.0, 278.0, 552.0, 64.0),
+		"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.",
+		Rect2(54.0, 190.0, 552.0, 64.0),
 		14,
 		MUTED,
 		HORIZONTAL_ALIGNMENT_CENTER
@@ -1444,7 +1439,7 @@ func _build_progress_reset_overlay() -> void:
 	)
 	_create_label(
 		panel,
-		"스테이지 해금과 별 재화가 초기화됩니다.",
+		"스테이지 해금, 별 재화와 패시브가 초기화됩니다.",
 		Rect2(40.0, 92.0, 440.0, 32.0),
 		15,
 		MUTED,
@@ -1695,9 +1690,7 @@ func _hide_stage_fail() -> void:
 ## 순서: 게임 제거 → 메뉴 창 복원 → 스테이지 선택 아래에 실패 overlay 표시.
 ## 결과: 별·해금·별 재화는 지급되지 않으며 재시도/스테이지 선택 버튼이 입력을 받는다.
 func _on_stage_failed() -> void:
-	if _game_instance != null and is_instance_valid(_game_instance):
-		_game_instance.queue_free()
-	_game_instance = null
+	_dispose_game_instance()
 	_apply_menu_viewport_size()
 	_show_screen(Screen.STAGE_SELECT)
 	_show_stage_fail()
@@ -1705,9 +1698,7 @@ func _on_stage_failed() -> void:
 
 func _retry_failed_stage() -> void:
 	_hide_stage_fail()
-	if _game_instance != null and is_instance_valid(_game_instance):
-		_game_instance.queue_free()
-	_game_instance = null
+	_dispose_game_instance()
 	start_game(selected_stage_number)
 
 
@@ -1770,9 +1761,7 @@ func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
 	if not bool(result.get("ok", false)):
 		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
 		return
-	if _game_instance != null and is_instance_valid(_game_instance):
-		_game_instance.queue_free()
-	_game_instance = null
+	_dispose_game_instance()
 	_apply_menu_viewport_size()
 	_show_screen(Screen.STAGE_SELECT)
 	_show_stage_result(result)
@@ -2096,11 +2085,20 @@ func _hide_game_exit_prompt() -> void:
 ## 결과: 다음 GAME START는 새 게임 인스턴스를 만들며 메인 메뉴 첫 버튼에 초점이 간다.
 func _confirm_return_to_main_menu() -> void:
 	_hide_game_exit_prompt()
-	if _game_instance != null and is_instance_valid(_game_instance):
-		_game_instance.queue_free()
-	_game_instance = null
+	_dispose_game_instance()
 	_apply_menu_viewport_size()
 	show_main_menu()
+
+
+func _dispose_game_instance() -> void:
+	if _game_instance == null or not is_instance_valid(_game_instance):
+		_game_instance = null
+		return
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.clear_runtime_state()
+	_game_instance.queue_free()
+	_game_instance = null
 
 
 ## 결과: 현재 로드된 게임의 authoritative controller를 찾거나 없으면 null을 반환한다.

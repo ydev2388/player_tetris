@@ -3,6 +3,7 @@ extends SceneTree
 const START_SCREEN_SCENE: PackedScene = preload(
 	"res://start_screen/scenes/start_screen.tscn"
 )
+const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
 const TEST_SETTINGS_PATH: String = "user://main_ui_test_settings.cfg"
 
 var _checks: int = 0
@@ -53,6 +54,11 @@ func _run() -> void:
 		screen.settings.language == StartScreenSettings.KOREAN,
 		"언어 설정은 kor로 변경된다."
 	)
+	_expect(
+		screen.settings.get_passive_name(2) == "점프"
+			and screen.settings.get_passive_description(2) == "점프 높이가 높아집니다.",
+		"한국어 패시브 이름과 설명이 적용된다."
+	)
 	screen.settings.set_language(StartScreenSettings.CHINESE)
 	_expect(
 		screen.settings.language == StartScreenSettings.CHINESE
@@ -62,6 +68,11 @@ func _run() -> void:
 		"중국어 설정과 핵심 메뉴 번역이 적용된다."
 	)
 	screen.settings.set_language(StartScreenSettings.ENGLISH)
+	_expect(
+		screen.settings.get_passive_name(2) == "Jump"
+			and screen.settings.get_passive_description(2) == "Increases jump height.",
+		"영어 패시브 이름과 설명이 적용된다."
+	)
 	_expect(
 		screen.settings.is_stage_unlocked(1)
 			and not screen.settings.is_stage_unlocked(2)
@@ -103,7 +114,52 @@ func _run() -> void:
 			and reloaded_settings.star_currency == 3,
 		"스테이지 별과 별 화폐가 설정 파일에 저장된다."
 	)
+	var migrated_config: ConfigFile = ConfigFile.new()
+	var migration_load_error: Error = migrated_config.load(TEST_SETTINGS_PATH)
+	_expect(
+		migration_load_error == OK
+			and migrated_config.get_value("meta", "version", 0) == StartScreenSettings.SETTINGS_SCHEMA_VERSION
+			and migrated_config.has_section_key("input", "character_self_respawn"),
+		"키 migration 결과와 schema version을 설정 파일에 저장한다."
+	)
 	reloaded_settings.free()
+	var corrupt_path: String = "user://main_ui_corrupt_settings.cfg"
+	var corrupt_config: ConfigFile = ConfigFile.new()
+	corrupt_config.set_value("input", "character_left", ["bad"])
+	corrupt_config.set_value("audio", "music_percent", "bad")
+	corrupt_config.set_value("audio", "sfx_percent", 150.0)
+	corrupt_config.set_value("options", "language", "bad")
+	corrupt_config.set_value("progress", "star_currency", -5)
+	corrupt_config.set_value("progress", "passive_levels", [9, "bad"])
+	corrupt_config.save(corrupt_path)
+	var corrupt_settings: StartScreenSettings = StartScreenSettings.new(corrupt_path)
+	corrupt_settings.load_settings()
+	_expect(
+		corrupt_settings.get_action_keys(&"character_left") == INPUT_ACTIONS.get_default_keys(&"character_left")
+			and corrupt_settings.music_percent == 100.0
+			and corrupt_settings.sfx_percent == 100.0
+			and corrupt_settings.language == StartScreenSettings.ENGLISH
+			and corrupt_settings.star_currency == 0
+			and corrupt_settings.get_passive_level("attack_speed") == 3
+			and corrupt_settings.get_passive_level("move") == 0,
+		"잘못된 설정값은 안전한 기본값과 범위 안의 값으로 복구한다."
+	)
+	corrupt_settings.free()
+	var save_failure_settings: StartScreenSettings = StartScreenSettings.new(
+		"user://missing_settings_directory/settings.cfg"
+	)
+	save_failure_settings.load_settings()
+	var original_left_keys: Array[int] = save_failure_settings.get_action_keys(&"character_left")
+	save_failure_settings.set_binding(&"character_left", 0, KEY_F9)
+	save_failure_settings.set_music_percent(25.0)
+	save_failure_settings.set_language(StartScreenSettings.KOREAN)
+	_expect(
+		save_failure_settings.get_action_keys(&"character_left") == original_left_keys
+			and save_failure_settings.music_percent == 100.0
+			and save_failure_settings.language == StartScreenSettings.ENGLISH,
+		"설정 저장 실패 시 키·볼륨·언어의 메모리 값을 이전 상태로 되돌린다."
+	)
+	save_failure_settings.free()
 	_expect(
 		screen.settings.get_passive_level("attack_speed") == 0
 			and screen.settings.get_passive_cost("attack_speed") == 1
@@ -178,14 +234,23 @@ func _run() -> void:
 			and screen.current_screen == BlockFighterStartScreen.Screen.MAIN,
 		"OPTION에서 X가 메인 메뉴로 돌아간다."
 	)
+	screen.show_volume()
+	await process_frame
+	_expect(
+		screen.find_child("MusicSlider", true, false) == null
+			and screen.find_child("SfxSlider", true, false) != null,
+		"BGM을 추가하기 전에는 BGM slider를 표시하지 않는다."
+	)
 	screen.show_options()
 	screen._show_progress_reset_prompt()
 	screen._confirm_progress_reset()
 	_expect(
 		screen.settings.star_currency == 0
 			and screen.settings.get_stage_best_stars(1) == 0
+			and screen.settings.get_passive_level("move") == 0
+			and screen.settings.get_passive_level("health") == 0
 			and not screen.settings.is_stage_unlocked(2),
-		"진행 데이터 삭제는 스테이지 별, 해금, 별 재화만 초기화한다."
+		"진행 데이터 삭제는 스테이지 별, 해금, 별 재화와 패시브를 초기화한다."
 	)
 	screen._hide_progress_reset_prompt()
 	await process_frame
@@ -331,7 +396,7 @@ func _run() -> void:
 		await process_frame
 		_expect(
 			screen._selected_shop_index == StartScreenSettings.PASSIVE_IDS.find("jump")
-				and screen._shop_detail_name.text == "점프"
+				and screen._shop_detail_name.text == "Jump"
 				and screen._shop_detail_description.text == screen.settings.get_passive_description(2),
 			"아이콘 카드를 선택하면 하단 상세 패널에 해당 패시브 정보가 표시된다."
 		)
@@ -461,6 +526,15 @@ func _run() -> void:
 				and controller.is_physics_processing()
 				and controller.state == MainGameController.GameState.PLAYING,
 			"X가 일시정지 전 게임 상태를 복원한다."
+		)
+		screen._handle_game_exit_prompt_input(escape_event)
+		_expect(overlay.visible, "Esc로 메뉴 복귀 확인창을 다시 연다.")
+		screen._handle_game_exit_prompt_input(escape_event)
+		_expect(
+			not overlay.visible
+				and controller.is_physics_processing()
+				and controller.state == MainGameController.GameState.PLAYING,
+			"확인창에서 Esc를 다시 누르면 취소한다."
 		)
 		screen._handle_game_exit_prompt_input(escape_event)
 		await process_frame
@@ -611,6 +685,9 @@ func _run() -> void:
 	var settings_path: String = ProjectSettings.globalize_path(TEST_SETTINGS_PATH)
 	if FileAccess.file_exists(settings_path):
 		DirAccess.remove_absolute(settings_path)
+	var corrupt_settings_path: String = ProjectSettings.globalize_path(corrupt_path)
+	if FileAccess.file_exists(corrupt_settings_path):
+		DirAccess.remove_absolute(corrupt_settings_path)
 	if _failures == 0:
 		print("성공: 메인 UI 테스트 %d개 통과" % _checks)
 	else:

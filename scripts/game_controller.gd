@@ -800,6 +800,21 @@ func clear_skill_effects() -> void:
 	_water_triggered_serial = -1
 
 
+func clear_runtime_state() -> void:
+	meditation_active = false
+	clear_skill_effects()
+	_reset_active_piece_gimmick()
+	boss_seeds.clear()
+	boss_seed_timer = 0.0
+	boss_seed_first_cast_done = false
+	binding_check_timer = 0.0
+	binding_probability = BINDING_PROBABILITY
+	binding_first_check_pending = true
+	if is_instance_valid(character):
+		character.clear_runtime_state()
+	game_changed.emit()
+
+
 ## 소방관의 물길을 고정 블록과 바닥만 기준으로 계산한다.
 func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 3) -> bool:
 	water_path_cells.clear()
@@ -1205,15 +1220,7 @@ func toggle_pause() -> void:
 ## 결과: 게임 시간과 캐릭터 물리가 멈추고 View가 게임오버를 표시한다.
 func end_game() -> void:
 	state = GameState.GAME_OVER
-	meditation_active = false
-	_reset_active_piece_gimmick()
-	boss_seeds.clear()
-	boss_seed_timer = 0.0
-	boss_seed_first_cast_done = false
-	binding_check_timer = 0.0
-	binding_probability = BINDING_PROBABILITY
-	binding_first_check_pending = true
-	game_changed.emit()
+	clear_runtime_state()
 
 
 ## 상황: lock delay나 이동/회전 전후의 바닥 접촉을 판정할 때 호출한다.
@@ -1277,14 +1284,6 @@ func damage_boss(cleared_lines: int) -> void:
 	if boss_health > 0:
 		game_changed.emit()
 		return
-	meditation_active = false
-	_reset_active_piece_gimmick()
-	boss_seeds.clear()
-	boss_seed_timer = 0.0
-	boss_seed_first_cast_done = false
-	binding_check_timer = 0.0
-	binding_probability = BINDING_PROBABILITY
-	binding_first_check_pending = true
 	boss_fall_position = Vector2(
 		BOSS_POSITION.x,
 		BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
@@ -1296,7 +1295,7 @@ func damage_boss(cleared_lines: int) -> void:
 	boss_falling = false
 	boss_fallen = false
 	state = GameState.BOSS_FALLING
-	game_changed.emit()
+	clear_runtime_state()
 
 
 func _advance_boss_fall(delta: float) -> void:

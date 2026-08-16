@@ -7,6 +7,7 @@ signal progress_changed
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
+const SETTINGS_SCHEMA_VERSION: int = 1
 const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
@@ -126,6 +127,7 @@ func get_slot_text(action_name: StringName, slot_index: int) -> String:
 
 
 func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dictionary:
+	var previous_state: Dictionary = _snapshot_state()
 	var definition: Dictionary = _definition_for(action_name)
 	if definition.is_empty():
 		return _failure("알 수 없는 입력 동작입니다.")
@@ -151,7 +153,9 @@ func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dic
 	keys[slot_index] = key_code
 	_bindings[action_name] = keys
 	apply_bindings()
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return _failure("키 설정을 저장하지 못했습니다.")
 	bindings_changed.emit()
 	return {
 		"ok": true,
@@ -162,6 +166,7 @@ func set_binding(action_name: StringName, slot_index: int, key_code: int) -> Dic
 
 
 func clear_secondary_binding(action_name: StringName) -> Dictionary:
+	var previous_state: Dictionary = _snapshot_state()
 	var definition: Dictionary = _definition_for(action_name)
 	if definition.is_empty() or int(definition.get("slots", 1)) < 2:
 		return _failure("보조 키가 없는 동작입니다.")
@@ -172,7 +177,9 @@ func clear_secondary_binding(action_name: StringName) -> Dictionary:
 	keys[1] = KEY_NONE
 	_bindings[action_name] = keys
 	apply_bindings()
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return _failure("키 설정을 저장하지 못했습니다.")
 	bindings_changed.emit()
 	return {
 		"ok": true,
@@ -203,9 +210,12 @@ func find_conflict(
 
 
 func reset_bindings_to_defaults() -> void:
+	var previous_state: Dictionary = _snapshot_state()
 	_load_default_bindings()
 	apply_bindings()
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return
 	bindings_changed.emit()
 
 
@@ -214,25 +224,33 @@ func apply_bindings() -> void:
 
 
 func set_music_percent(value: float) -> void:
+	var previous_state: Dictionary = _snapshot_state()
 	music_percent = clampf(value, 0.0, 100.0)
 	_apply_bus_volume(MUSIC_BUS, music_percent)
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return
 	audio_changed.emit()
 
 
 func set_sfx_percent(value: float) -> void:
+	var previous_state: Dictionary = _snapshot_state()
 	sfx_percent = clampf(value, 0.0, 100.0)
 	_apply_bus_volume(SFX_BUS, sfx_percent)
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return
 	audio_changed.emit()
 
 
 func set_language(value: String) -> void:
+	var previous_state: Dictionary = _snapshot_state()
 	var next_language: String = value if value in [KOREAN, CHINESE] else ENGLISH
 	if language == next_language:
 		return
 	language = next_language
-	save_settings()
+	if save_settings() != OK:
+		_restore_state(previous_state)
 
 
 func get_stage_best_stars(stage_number: int) -> int:
@@ -388,14 +406,26 @@ func load_settings() -> void:
 			settings_error.emit("설정 파일을 읽지 못했습니다: %s" % error_string(load_error))
 		return
 
-	_load_bindings_from_config(config)
-	_restore_escape_bindings()
-	_migrate_rotation_kick_binding()
+	var needs_save: bool = false
+	if _load_bindings_from_config(config):
+		needs_save = true
+	if _restore_escape_bindings():
+		needs_save = true
+	if _migrate_rotation_kick_binding():
+		needs_save = true
 	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
-		_migrate_self_respawn_binding()
-	_load_audio_from_config(config)
-	_load_progress_from_config(config)
-	_restore_defaults_for_duplicate_keys()
+		if _migrate_self_respawn_binding():
+			needs_save = true
+	if _load_audio_from_config(config):
+		needs_save = true
+	if _load_progress_from_config(config):
+		needs_save = true
+	if _restore_defaults_for_duplicate_keys():
+		needs_save = true
+	if config.get_value("meta", "version", 0) != SETTINGS_SCHEMA_VERSION:
+		needs_save = true
+	if needs_save:
+		save_settings()
 
 
 func _reset_settings_to_defaults() -> void:
@@ -408,10 +438,14 @@ func _reset_settings_to_defaults() -> void:
 	passive_levels = [0, 0, 0, 0, 0, 0]
 
 
-func _load_bindings_from_config(config: ConfigFile) -> void:
+func _load_bindings_from_config(config: ConfigFile) -> bool:
+	var changed: bool = false
 	for definition: Dictionary in ACTION_DEFINITIONS:
 		var action_name: StringName = definition["action"]
 		var slot_count: int = int(definition.get("slots", 1))
+		if not config.has_section_key("input", String(action_name)):
+			changed = true
+			continue
 		var stored_value: Variant = config.get_value(
 			"input",
 			String(action_name),
@@ -423,17 +457,23 @@ func _load_bindings_from_config(config: ConfigFile) -> void:
 			action_name == SELF_RESPAWN_ACTION
 		)
 		if not parsed.is_empty():
+			changed = changed or parsed != get_action_keys(action_name)
 			_bindings[action_name] = parsed
+		else:
+			changed = true
+	return changed
 
 
 ## 상황: Esc가 저장된 이전 키 설정을 불러올 때 호출한다.
 ## 결과: Esc만 제거하고 다른 유효 키는 유지하며, 남은 키가 없을 때만 기본값을 쓴다.
-func _restore_escape_bindings() -> void:
+func _restore_escape_bindings() -> bool:
+	var changed: bool = false
 	for definition: Dictionary in ACTION_DEFINITIONS:
 		var action_name: StringName = definition["action"]
 		var keys: Array[int] = get_action_keys(action_name)
 		if KEY_ESCAPE not in keys:
 			continue
+		changed = true
 		var filtered_keys: Array[int] = []
 		for key_code: int in keys:
 			if key_code != KEY_ESCAPE:
@@ -448,76 +488,143 @@ func _restore_escape_bindings() -> void:
 			if has_valid_key
 			else INPUT_ACTIONS.get_default_keys(action_name)
 		)
+	return changed
 
 
 ## 상황: 기존 설정 파일에 새 자력 재스폰 동작이 아직 없을 때 한 번 계산한다.
 ## 순서: Q→K→Backspace 중 다른 동작이 쓰지 않는 첫 키 선택, 모두 충돌하면 미지정.
 ## 결과: 기존 사용자 키 전체를 기본값으로 되돌리지 않고 새 동작만 안전하게 보충한다.
-func _migrate_self_respawn_binding() -> void:
+func _migrate_self_respawn_binding() -> bool:
 	for key_code: int in SELF_RESPAWN_MIGRATION_KEYS:
 		if find_conflict(key_code, SELF_RESPAWN_ACTION, 0).is_empty():
 			_bindings[SELF_RESPAWN_ACTION] = [key_code]
-			return
+			return true
 	_bindings[SELF_RESPAWN_ACTION] = [KEY_NONE]
+	return true
 
 
 ## 상황: 블록 플립의 기존 기본키 V를 새 기본키 S로 옮길 때 호출한다.
 ## 결과: 기존 기본값만 S로 옮기고, 사용자가 지정한 다른 키는 유지한다.
-func _migrate_rotation_kick_binding() -> void:
+func _migrate_rotation_kick_binding() -> bool:
 	var rotation_action: StringName = &"character_rotation_kick"
 	var rotation_keys: Array[int] = get_action_keys(rotation_action)
 	if rotation_keys.size() == 1 and rotation_keys[0] == KEY_V:
 		_bindings[rotation_action] = [KEY_S]
+		return true
+	return false
 
 
-func _load_audio_from_config(config: ConfigFile) -> void:
-	music_percent = clampf(
-		float(config.get_value("audio", "music_percent", 100.0)),
-		0.0,
-		100.0
-	)
-	sfx_percent = clampf(
-		float(config.get_value("audio", "sfx_percent", 100.0)),
-		0.0,
-		100.0
-	)
-	language = String(config.get_value("options", "language", ENGLISH))
-	if language not in [KOREAN, CHINESE]:
+func _load_audio_from_config(config: ConfigFile) -> bool:
+	var changed: bool = false
+	var music_value: Variant = config.get_value("audio", "music_percent", 100.0)
+	if not config.has_section_key("audio", "music_percent"):
+		changed = true
+	if _is_finite_number(music_value):
+		music_percent = clampf(float(music_value), 0.0, 100.0)
+		changed = changed or not is_equal_approx(float(music_value), music_percent)
+	else:
+		music_percent = 100.0
+		changed = true
+	var sfx_value: Variant = config.get_value("audio", "sfx_percent", 100.0)
+	if not config.has_section_key("audio", "sfx_percent"):
+		changed = true
+	if _is_finite_number(sfx_value):
+		sfx_percent = clampf(float(sfx_value), 0.0, 100.0)
+		changed = changed or not is_equal_approx(float(sfx_value), sfx_percent)
+	else:
+		sfx_percent = 100.0
+		changed = true
+	var stored_language: Variant = config.get_value("options", "language", ENGLISH)
+	if not config.has_section_key("options", "language"):
+		changed = true
+	if stored_language in [KOREAN, CHINESE, ENGLISH]:
+		language = String(stored_language)
+	else:
 		language = ENGLISH
+		changed = true
+	return changed
 
 
-func _load_progress_from_config(config: ConfigFile) -> void:
-	star_currency = maxi(int(config.get_value("progress", "star_currency", 0)), 0)
+func _load_progress_from_config(config: ConfigFile) -> bool:
+	var changed: bool = false
+	var stored_currency: Variant = config.get_value("progress", "star_currency", 0)
+	if not config.has_section_key("progress", "star_currency"):
+		changed = true
+	if _is_finite_number(stored_currency):
+		star_currency = maxi(int(stored_currency), 0)
+		changed = changed or not is_equal_approx(float(stored_currency), float(star_currency))
+	else:
+		star_currency = 0
+		changed = true
 	for stage_number: int in range(1, STAGE_COUNT + 1):
-		stage_best_stars[stage_number - 1] = clampi(
-			int(config.get_value("progress", "stage_%d_best_stars" % stage_number, 0)),
-			0,
-			MAX_STAGE_STARS
+		var stored_stars: Variant = config.get_value(
+			"progress",
+			"stage_%d_best_stars" % stage_number,
+			0
 		)
+		if not config.has_section_key("progress", "stage_%d_best_stars" % stage_number):
+			changed = true
+		if _is_finite_number(stored_stars):
+			stage_best_stars[stage_number - 1] = clampi(
+				int(stored_stars),
+				0,
+				MAX_STAGE_STARS
+			)
+			changed = changed or not is_equal_approx(
+				float(stored_stars),
+				float(stage_best_stars[stage_number - 1])
+			)
+		else:
+			stage_best_stars[stage_number - 1] = 0
+			changed = true
 	var stored_passive_levels: Variant = config.get_value(
 		"progress",
 		"passive_levels",
-		passive_levels
+		[]
 	)
+	if not config.has_section_key("progress", "passive_levels"):
+		changed = true
 	if stored_passive_levels is Array:
 		var values: Array = stored_passive_levels as Array
-		for index: int in range(mini(values.size(), passive_levels.size())):
-			if values[index] is int or values[index] is float:
-				passive_levels[index] = clampi(
+		if values.size() != passive_levels.size():
+			changed = true
+		for index: int in range(passive_levels.size()):
+			if index >= values.size():
+				changed = true
+				continue
+			if _is_finite_number(values[index]):
+				var normalized_level: int = clampi(
 					int(values[index]),
 					0,
 					MAX_PASSIVE_LEVEL
 				)
+				passive_levels[index] = clampi(
+					normalized_level,
+					0,
+					MAX_PASSIVE_LEVEL
+				)
+				changed = changed or not is_equal_approx(
+					float(values[index]),
+					float(passive_levels[index])
+				)
+			else:
+				changed = true
+	else:
+		changed = true
+	return changed
 
 
-func _restore_defaults_for_duplicate_keys() -> void:
+func _restore_defaults_for_duplicate_keys() -> bool:
 	if _has_duplicate_keys():
 		_load_default_bindings()
 		settings_error.emit("저장된 키 설정에 중복이 있어 기본값으로 복원했습니다.")
+		return true
+	return false
 
 
 func save_settings() -> Error:
 	var config: ConfigFile = ConfigFile.new()
+	config.set_value("meta", "version", SETTINGS_SCHEMA_VERSION)
 	for definition: Dictionary in ACTION_DEFINITIONS:
 		var action_name: StringName = definition["action"]
 		config.set_value("input", String(action_name), get_action_keys(action_name))
@@ -536,6 +643,36 @@ func save_settings() -> Error:
 	if save_error != OK:
 		settings_error.emit("설정을 저장하지 못했습니다: %s" % error_string(save_error))
 	return save_error
+
+
+func _snapshot_state() -> Dictionary:
+	return {
+		"bindings": _bindings.duplicate(true),
+		"music_percent": music_percent,
+		"sfx_percent": sfx_percent,
+		"language": language,
+		"stage_best_stars": stage_best_stars.duplicate(),
+		"star_currency": star_currency,
+		"passive_levels": passive_levels.duplicate(),
+	}
+
+
+func _restore_state(snapshot: Dictionary) -> void:
+	_bindings = (snapshot["bindings"] as Dictionary).duplicate(true)
+	music_percent = float(snapshot["music_percent"])
+	sfx_percent = float(snapshot["sfx_percent"])
+	language = String(snapshot["language"])
+	stage_best_stars.clear()
+	var saved_stars: Array = snapshot["stage_best_stars"] as Array
+	for value: Variant in saved_stars:
+		stage_best_stars.append(int(value))
+	star_currency = int(snapshot["star_currency"])
+	passive_levels.clear()
+	var saved_passives: Array = snapshot["passive_levels"] as Array
+	for value: Variant in saved_passives:
+		passive_levels.append(int(value))
+	apply_bindings()
+	apply_audio()
 
 
 static func keycode_to_text(key_code: int) -> String:
@@ -578,11 +715,16 @@ func _parse_key_array(
 	if not (stored_value is Array):
 		return parsed
 	for value: Variant in stored_value:
-		if not (value is int or value is float):
+		if not _is_finite_number(value):
+			return []
+		if value is float and not is_equal_approx(float(value), roundf(float(value))):
 			return []
 		parsed.append(int(value))
 	if parsed.is_empty():
 		return []
+	for key_code: int in parsed:
+		if key_code < KEY_NONE:
+			return []
 	if parsed[0] == KEY_NONE:
 		return [KEY_NONE] if allow_unassigned_primary else []
 	while parsed.size() < slot_count:
@@ -590,6 +732,12 @@ func _parse_key_array(
 	if parsed.size() > slot_count:
 		parsed.resize(slot_count)
 	return parsed
+
+
+func _is_finite_number(value: Variant) -> bool:
+	if not (value is int or value is float):
+		return false
+	return is_finite(float(value))
 
 
 func _has_duplicate_keys() -> bool:

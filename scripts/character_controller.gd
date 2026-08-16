@@ -416,6 +416,35 @@ func _cancel_character_skill_effects() -> void:
 		controller.clear_water_path()
 
 
+func clear_runtime_state() -> void:
+	if is_instance_valid(controller):
+		_set_meditating(false)
+	_end_binding()
+	_exit_hang()
+	_cancel_jump_intent()
+	_cancel_wall_jump_control()
+	_cancel_character_skill_effects()
+	_attack_cooldown_remaining = 0.0
+	_attack_animation_remaining = 0.0
+	_special_animation_remaining = 0.0
+	_spin_remaining = 0.0
+	_spin_elapsed = 0.0
+	_pending_rotation_launch_velocity = 0.0
+	_post_spin_animation_seeded = false
+	_self_respawn_hold_time = 0.0
+	_self_respawn_requires_release = false
+	_invulnerability_remaining = 0.0
+	velocity = Vector2.ZERO
+	if is_instance_valid(sprite):
+		sprite.rotation = 0.0
+		sprite.modulate = Color.WHITE
+		sprite.visible = true
+	for player: AudioStreamPlayer in [_sfx_player, _sfx_cue_player, _meditation_loop_player]:
+		if is_instance_valid(player):
+			player.stop()
+	stats_changed.emit()
+
+
 ## 상황: Godot의 고정 physics timestep마다 호출되는 캐릭터 최상위 상태 기계다.
 ## 순서: 비PLAYING 조기 정지 → timers 감소 → 기존/신규 명상 branch
 ##       → punch 처리 → hanging 또는 normal movement → 공통 시각/위치 검증.
@@ -824,7 +853,7 @@ func _handle_hanging(delta: float) -> void:
 		_exit_hang()
 		velocity = Vector2.ZERO
 		return
-	if _has_fixed_support_underfoot():
+	if _has_fixed_support_underfoot() and _hang_climb_direction() >= 0.0:
 		_exit_hang()
 		return
 	if not _move_while_hanging(delta):
@@ -920,9 +949,36 @@ func _hang_follow_hits_fixed_geometry(body_delta: Vector2) -> bool:
 func _hang_surface_still_exists() -> bool:
 	if not is_instance_valid(_hang_body):
 		return false
+	if _hang_body.name == &"LockedBlocks":
+		return _locked_hang_surface_still_exists()
 	var hang_ray: RayCast2D = left_ray if _hang_jump_facing < 0 else right_ray
 	hang_ray.force_raycast_update()
 	return hang_ray.is_colliding() and hang_ray.get_collider() == _hang_body
+
+
+func _locked_hang_surface_still_exists() -> bool:
+	var parent: Node2D = get_parent() as Node2D
+	if parent == null:
+		return false
+	var local_face_x: float = parent.to_local(
+		Vector2(_hang_face_global_x, global_position.y)
+	).x
+	var local_hand_y: float = parent.to_local(global_position).y - HANG_HAND_OFFSET_Y
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			var cell_rect: Rect2 = _board_cell_rect(Vector2i(x, y))
+			var cell_face_x: float = (
+				cell_rect.position.x if _hang_jump_facing > 0 else cell_rect.end.x
+			)
+			if (
+				is_equal_approx(cell_face_x, local_face_x)
+				and local_hand_y >= cell_rect.position.y
+				and local_hand_y <= cell_rect.end.y
+			):
+				return true
+	return false
 
 
 ## 상황: 붙은 body를 따라간 뒤 사용자의 위/아래 매달림 이동을 적용할 때 호출한다.
@@ -933,9 +989,6 @@ func _move_while_hanging(delta: float = -1.0) -> bool:
 	var climb_direction: float = _hang_climb_direction() # 위 -1, 정지 0, 아래 +1.
 	_hang_animation_direction = climb_direction
 	velocity = Vector2.ZERO
-	var hang_ray: RayCast2D = (
-		left_ray if _hang_jump_facing < 0 else right_ray
-	)
 	if is_zero_approx(climb_direction):
 		return true
 
@@ -961,13 +1014,7 @@ func _move_while_hanging(delta: float = -1.0) -> bool:
 		and _try_start_hang_corner_climb()
 	):
 		return true
-	left_ray.force_raycast_update()
-	right_ray.force_raycast_update()
-	var still_touching_wall: bool = ( # 최초 매달린 벽 방향 RayCast의 최신 충돌 상태.
-		hang_ray.is_colliding()
-		and hang_ray.get_collider() == _hang_body
-	)
-	if still_touching_wall:
+	if _hang_surface_still_exists():
 		return true
 	_exit_hang()
 	return false

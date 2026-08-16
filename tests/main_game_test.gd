@@ -283,6 +283,7 @@ func _run() -> void:
 	_test_stage_rule_contracts()
 	_test_spawn_side_margin()
 	await _test_restart_state_invariance()
+	await _test_runtime_cleanup()
 	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
@@ -454,6 +455,52 @@ func _test_restart_state_invariance() -> void:
 				% restart_state
 		)
 	restart_controller.free()
+
+
+func _test_runtime_cleanup() -> void:
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	var controller: MainGameController = scene.get_node("GameController")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	character.is_meditating = true
+	character._meditation_loop_player.play()
+	character.is_bound = true
+	character.binding_timer = 2.0
+	character._barrier_remaining = 2.0
+	character._water_remaining = 2.0
+	character._ninja_projectile = {"active": true}
+	controller.transient_blocker_cells = [Vector2i(2, 2)]
+	controller.water_path_cells = [Vector2i(3, 3)]
+	controller.fall_freeze_remaining = 2.0
+	controller.future_gimmick_freeze_remaining = 2.0
+	controller.boss_seeds = [{"position": Vector2.ZERO}]
+	controller.end_game()
+	_expect(
+		controller.state == MainGameController.GameState.GAME_OVER
+			and not character.is_meditating
+			and not character.is_bound
+			and is_zero_approx(character.binding_timer)
+			and is_zero_approx(character._barrier_remaining)
+			and is_zero_approx(character._water_remaining)
+			and character._ninja_projectile.is_empty()
+			and controller.transient_blocker_cells.is_empty()
+			and controller.water_path_cells.is_empty()
+			and is_zero_approx(controller.fall_freeze_remaining)
+			and is_zero_approx(controller.future_gimmick_freeze_remaining)
+			and controller.boss_seeds.is_empty()
+			and not character._meditation_loop_player.playing,
+		"게임 종료는 명상·투사체·보호벽·물길·freeze·결박 상태를 한 번에 정리한다."
+	)
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	scene.free()
+	await process_frame
 
 
 func _test_spawn_side_margin() -> void:

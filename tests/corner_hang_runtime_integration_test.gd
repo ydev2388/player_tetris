@@ -89,8 +89,15 @@ func _run() -> void:
 	_set_up_pressed(false)
 	Input.action_release(&"character_grab")
 	print("CORNER_HANG_RUNTIME_RESULT failures=", failures)
-	game.queue_free()
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	game.free()
 	await process_frame
+	await physics_frame
 	if not failures.is_empty():
 		for failure: String in failures:
 			push_error(failure)

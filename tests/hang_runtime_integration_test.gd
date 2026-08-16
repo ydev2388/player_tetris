@@ -22,6 +22,7 @@ func _run() -> void:
 	for row: int in range(3, 18):
 		game.controller.board.cells[row][5] = MainTetrominoData.Type.J
 	board_physics._sync_from_model()
+	game.controller.set_physics_process(false)
 	await physics_frame
 
 	character.set_character_id("normal")
@@ -47,6 +48,8 @@ func _run() -> void:
 	var start_y: float = character.global_position.y
 	var observed_frames: Dictionary = {}
 	for physics_index: int in range(96):
+		# Keep the virtual grab action held for every simulated user frame.
+		Input.action_press(&"character_grab")
 		await physics_frame
 		var frame_index: int = int(character.sprite.region_rect.position.x / 128.0)
 		observed_frames[frame_index] = true

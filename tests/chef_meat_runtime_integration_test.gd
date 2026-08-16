@@ -39,7 +39,7 @@ func _run() -> void:
 		character.chef_meat_remaining() > 0.0
 		and character.chef_meat_guard_available()
 		and is_equal_approx(character.current_move_speed(), base_speed * 1.2)
-		and character.sprite.texture.resource_path.ends_with("chef_reference_atlas_v7.png")
+		and character.sprite.texture.resource_path.ends_with("saintess_reference_atlas_v2.png")
 	)
 	character.apply_binding(2.0)
 	var stage_gimmick_blocked: bool = (

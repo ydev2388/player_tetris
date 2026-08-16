@@ -17,6 +17,7 @@ const TUTORIAL_CANVAS_SCRIPT: Script = preload(
 const UI_SCRIPT: Script = preload("res://start_screen/scripts/start_screen_ui.gd")
 const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd")
+const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
 
 const BACKGROUND: Color = Color("#f7f8fb")
@@ -2183,7 +2184,9 @@ func _text(korean: String, english: String = "") -> String:
 		return korean
 	if settings.language == StartScreenSettings.CHINESE:
 		return String(CHINESE_TEXT.get(korean, korean))
-	return english if not english.is_empty() else String(ENGLISH_TEXT.get(korean, korean))
+	if not english.is_empty():
+		return english
+	return String(ENGLISH_TEXT.get(korean, LOCALIZATION.translated(korean)))
 
 
 func _set_language(language: String) -> void:
@@ -2277,11 +2280,11 @@ func _build_character_screen() -> void:
 		card.add_child(portrait)
 
 		var stat_text: String = (
-			"%s  [%s]\n%s\n\n공속 %d (S %.1f초)\n이동 %d (%.0fpx/s)  점프 %d (%d칸)\n스태미나 %d   특수 %d (%.1f초)\n무기: %s"
+			"%s  [%s]\n%s\n\n공속 %d (S %.1f초)\n이동 %d (%.0fpx/s)  점프 %d (%.1f칸)\n스태미나 %d   특수 %d (%.1f초)\n무기: %s"
 			% [
-				profile["display_name"],
-				profile["unlock_text"],
-				profile["role"],
+				_text(str(profile["display_name"])),
+				_text(str(profile["unlock_text"])),
+				_text(str(profile["role"])),
 				profile["attack_speed"],
 				MainCharacterData.rotation_cooldown(character_id),
 				profile["move"],
@@ -2291,7 +2294,7 @@ func _build_character_screen() -> void:
 				profile["stamina"],
 				profile["special_skill"],
 				MainCharacterData.special_cooldown(character_id),
-				profile["weapon"],
+				_text(str(profile["weapon"])),
 			]
 		)
 		var info: Label = _create_label(
@@ -2387,10 +2390,10 @@ func _refresh_character_selection() -> void:
 		var detail_text: String = (
 			"%s · %s\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
 			% [
-				profile["display_name"],
-				profile["description"],
-				profile["special_name"],
-				profile["special_description"],
+				_text(str(profile["display_name"])),
+				_text(str(profile["description"])),
+				_text(str(profile["special_name"])),
+				_text(str(profile["special_description"])),
 				float(profile["special_base_cooldown"]),
 				MainCharacterData.special_cooldown(_selected_character_id),
 			]
@@ -2399,11 +2402,11 @@ func _refresh_character_selection() -> void:
 			detail_text = (
 				"%s · %s\n해금 힌트: “%s”\n특수 스킬: %s — %s\n기본 쿨다운 %.1f초 / 능력치 적용 %.1f초"
 				% [
-					profile["display_name"],
-					profile["description"],
-					profile["unlock_hint"],
-					profile["special_name"],
-					profile["special_description"],
+					_text(str(profile["display_name"])),
+					_text(str(profile["description"])),
+					_text(str(profile["unlock_hint"])),
+					_text(str(profile["special_name"])),
+					_text(str(profile["special_description"])),
 					float(profile["special_base_cooldown"]),
 					MainCharacterData.special_cooldown(_selected_character_id),
 				]

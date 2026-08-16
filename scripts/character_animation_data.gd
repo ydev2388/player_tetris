@@ -40,8 +40,8 @@ const FIREFIGHTER_ATLAS: Texture2D = preload(
 const CLEANER_ATLAS: Texture2D = preload(
 	"res://assets/sprites/characters/cleaner/cleaner_reference_atlas_v6.png"
 )
-const CHEF_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/chef/chef_reference_atlas_v7.png"
+const SAINTESS_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/saintess/saintess_reference_atlas_v2.png"
 )
 const CLOCKMAKER_ATLAS: Texture2D = preload(
 	"res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v6.png"
@@ -104,13 +104,14 @@ const PROFILES: Dictionary = {
 	},
 	"chef": {
 		"character_id": "chef",
-		"display_name": "요리사",
-		"texture": CHEF_ATLAS,
+		"display_name": "성녀",
+		"texture": SAINTESS_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
 		"geometry_mode": "fixed_reference",
 		"fixed_scale": Vector2.ONE,
 		"fixed_offset": Vector2(0.0, 3.0),
+		"hang_frame_count": 8,
 	},
 	"clockmaker": {
 		"character_id": "clockmaker",

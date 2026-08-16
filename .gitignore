@@ -1,8 +1,14 @@
-# Godot 4+ specific ignores
+# Godot cache and generated output
 .godot/
 tools/__pycache__/
+/build/
+/dist/
+/exports/
 /android/
-build/
+*.log
+*.exe
+*.pck
+/design/
 /Godot_v4.7.1-stable_linux.x86_64
 /docs/research.md
 /docs/plan.md

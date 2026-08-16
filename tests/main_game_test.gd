@@ -15,6 +15,7 @@ const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmak
 const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
 const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
 const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
+const HANG_WALL_VISUAL_TOLERANCE: float = 2.0
 
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
@@ -214,7 +215,7 @@ func _run() -> void:
 	var chef_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
 	_expect(
 		ANIMATION_DATA.has_character("chef")
-			and ANIMATION_DATA.display_name_for("chef") == "요리사"
+			and ANIMATION_DATA.display_name_for("chef") == "성녀"
 			and chef_atlas.get_width() == 1024
 			and chef_atlas.get_height() == 768
 			and chef_atlas != normal_atlas
@@ -222,7 +223,7 @@ func _run() -> void:
 			and chef_atlas != shield_guard_atlas
 			and chef_atlas != firefighter_atlas
 			and chef_atlas != cleaner_atlas,
-		"요리사 profile은 독립된 1024×768 atlas를 사용한다."
+		"Saintess profile은 독립된 1024×768 atlas를 사용한다."
 	)
 	for beta_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		var beta_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, beta_id)
@@ -230,7 +231,7 @@ func _run() -> void:
 			"normal_reference_atlas_v8.png"
 			if beta_id == "normal"
 			else (
-				"chef_reference_atlas_v7.png"
+				"saintess_reference_atlas_v2.png"
 				if beta_id == "chef"
 				else "%s_reference_atlas_v6.png" % beta_id
 			)
@@ -247,14 +248,15 @@ func _run() -> void:
 			"%s 선택 캐릭터는 데이터와 1024×768 atlas를 함께 가진다." % beta_id
 		)
 	_expect(
-		CHARACTER_DATA.jump_cells("normal") == 2
-			and CHARACTER_DATA.jump_cells("chef") == 2
-			and CHARACTER_DATA.jump_cells("ninja") == 4
-			and is_equal_approx(CHARACTER_DATA.rotation_cooldown("boxer"), 1.7)
+		is_equal_approx(CHARACTER_DATA.jump_cells("normal"), 2.3333333)
+			and is_equal_approx(CHARACTER_DATA.jump_cells("chef"), 1.6666667)
+			and is_equal_approx(CHARACTER_DATA.jump_cells("ninja"), 3.0)
+			and is_equal_approx(CHARACTER_DATA.rotation_cooldown("boxer"), 1.2)
 			and is_equal_approx(CHARACTER_DATA.rotation_cooldown("ninja"), 1.3)
-			and is_equal_approx(CHARACTER_DATA.special_cooldown("chef"), 7.38)
-			and is_equal_approx(CHARACTER_DATA.special_cooldown("clockmaker"), 10.56)
-			and is_equal_approx(CHARACTER_DATA.special_cooldown("ninja"), 4.85)
+			and is_equal_approx(CHARACTER_DATA.special_cooldown("chef"), 7.92)
+			and is_equal_approx(CHARACTER_DATA.special_cooldown("clockmaker"), 9.84)
+			and is_equal_approx(CHARACTER_DATA.special_cooldown("ninja"), 5.0)
+			and is_equal_approx(CHARACTER_DATA.attack_cooldown("boxer"), 0.4)
 			and not CHARACTER_DATA.profile_for("normal").has("special_cost"),
 		"점프·공속·특수스킬 능력치가 지정된 칸 수와 쿨다운으로 변환된다."
 	)
@@ -919,85 +921,36 @@ func _test_release_punch() -> void:
 			and not character.set_character_id("missing_character"),
 		"알 수 없는 캐릭터 ID는 기본 profile을 바꾸지 않는다."
 	)
-	character._crush_mask_cache["stale"] = [Vector2.ZERO]
-	character._animation_image_cache["stale"] = Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	var crush_sensor: ShapeCast2D = character.get_node("CrushSensor")
+	var crush_sensor_shape: RectangleShape2D = crush_sensor.shape as RectangleShape2D
+	var crush_sensor_rect: Rect2 = character._crush_sensor_rect()
+	var character_rect: Rect2 = character._character_collider_rect()
 	_expect(
-		character.set_character_id("boxer")
-			and character.character_id == "boxer"
-			and character.sprite.texture
-			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
-			and character._crush_mask_cache.is_empty()
-			and not character._animation_image_cache.has("stale"),
-		"복서 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
-	)
-	character._crush_mask_cache["boxer_stale"] = [Vector2.ZERO]
-	character._animation_image_cache["boxer_stale"] = Image.create(
-		1,
-		1,
-		false,
-		Image.FORMAT_RGBA8
-	)
-	_expect(
-		character.set_character_id("shield_guard")
-			and character.character_id == "shield_guard"
-			and character.sprite.texture
-			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "shield_guard")
-			and character._crush_mask_cache.is_empty()
-			and not character._animation_image_cache.has("boxer_stale"),
-		"방패병 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
-	)
-	character._crush_mask_cache["shield_guard_stale"] = [Vector2.ZERO]
-	character._animation_image_cache["shield_guard_stale"] = Image.create(
-		1,
-		1,
-		false,
-		Image.FORMAT_RGBA8
-	)
-	_expect(
-		character.set_character_id("firefighter")
-			and character.character_id == "firefighter"
-			and character.sprite.texture
-			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "firefighter")
-			and character._crush_mask_cache.is_empty()
-			and not character._animation_image_cache.has("shield_guard_stale"),
-		"소방관 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
-	)
-	character._crush_mask_cache["firefighter_stale"] = [Vector2.ZERO]
-	character._animation_image_cache["firefighter_stale"] = Image.create(
-		1,
-		1,
-		false,
-		Image.FORMAT_RGBA8
-	)
-	_expect(
-		character.set_character_id("cleaner")
-			and character.character_id == "cleaner"
-			and character.sprite.texture
-			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "cleaner")
-			and character._crush_mask_cache.is_empty()
-			and not character._animation_image_cache.has("firefighter_stale"),
-		"청소부 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
-	)
-	character._crush_mask_cache["cleaner_stale"] = [Vector2.ZERO]
-	character._animation_image_cache["cleaner_stale"] = Image.create(
-		1,
-		1,
-		false,
-		Image.FORMAT_RGBA8
+		crush_sensor_shape != null
+			and crush_sensor_shape.size == Vector2(30.0, 12.0)
+			and crush_sensor_rect.position.y == character_rect.position.y
+			and crush_sensor_rect.end.y < character_rect.end.y
+			and crush_sensor_rect.position.x > character_rect.position.x
+			and crush_sensor_rect.end.x < character_rect.end.x,
+		"CrushSensor는 모든 캐릭터에 공통인 머리 상단 30x12px 영역이며 collider 안쪽에 있다."
 	)
 	_expect(
 		character.set_character_id("chef")
 			and character.character_id == "chef"
 			and character.sprite.texture
 			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
-			and character._crush_mask_cache.is_empty()
-			and not character._animation_image_cache.has("cleaner_stale"),
-		"요리사 전환은 atlas를 즉시 교체하고 이전 alpha mask cache를 비운다."
+			and character.character_profile()["display_name"] == "성녀",
+		"Chef 슬롯은 Saintess atlas와 프로필을 사용한다."
 	)
 	var crush_results: Array[bool] = []
 	for character_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		character.set_character_id(character_id)
-		crush_results.append(character._crush_mask_overlaps_active_piece(Vector2i(4, 18)))
+		crush_results.append(
+			character._active_piece_overlaps_crush_sensor(
+				Vector2i(4, 18),
+				crush_sensor_rect
+			)
+		)
 	var shared_crush_result: bool = true
 	for result: bool in crush_results:
 		if result != crush_results[0]:
@@ -1005,7 +958,7 @@ func _test_release_punch() -> void:
 			break
 	_expect(
 		shared_crush_result,
-		"모든 캐릭터는 외형 알파와 무관한 동일한 압사 충돌체를 사용한다."
+		"모든 캐릭터는 외형과 무관한 동일한 CrushSensor 판정을 사용한다."
 	)
 	character.play_special_animation()
 	_expect(
@@ -1381,7 +1334,7 @@ func _test_beta_specials() -> void:
 			and is_equal_approx(character.chef_meat_remaining(), 3.0)
 			and character.chef_meat_guard_available()
 			and is_equal_approx(character.current_move_speed(), chef_base_speed * 1.2),
-		"요리사 고기 섭취는 3초 동안 이동속도를 20% 높이고 다음 피해 방어를 준비한다."
+		"성녀의 성역의 가호는 3초 동안 이동속도를 20% 높이고 다음 피해 방어를 준비한다."
 	)
 	character.lives = 3
 	character._invulnerability_remaining = 0.0
@@ -1389,7 +1342,7 @@ func _test_beta_specials() -> void:
 	_expect(
 		character.lives == 2
 			and not character.chef_meat_guard_available(),
-		"요리사는 고기 섭취 강화 중이어도 블록 압착 피해로 목숨 1을 잃는다."
+		"성녀의 가호는 블록 압착 피해를 막지 못한다."
 	)
 	character.lives = 3
 	character._invulnerability_remaining = 0.0
@@ -1403,12 +1356,12 @@ func _test_beta_specials() -> void:
 			and character.lives == 3
 			and not character.chef_meat_guard_available()
 			and character.chef_meat_remaining() > 0.0,
-		"고기 섭취의 다음 위험 1회 방어는 확률 결박과 보스 씨앗 결박을 무효화하고 속도 강화는 유지한다."
+		"성녀의 다음 위험 1회 방어는 결박을 무효화하고 속도 강화는 유지한다."
 	)
 	character.apply_binding(2.0)
 	_expect(
 		character.is_bound,
-		"고기 섭취 방어를 소모한 뒤의 다음 스테이지 결박은 정상 적용된다."
+		"성녀의 가호를 소모한 뒤의 다음 결박은 정상 적용된다."
 	)
 	character._end_binding()
 	character.special_cooldown_remaining = 0.0
@@ -1419,12 +1372,12 @@ func _test_beta_specials() -> void:
 		character.lives == 3
 			and not character.chef_meat_guard_available()
 			and is_equal_approx(character.current_move_speed(), chef_base_speed * 1.2),
-		"요리사의 다음 피해 1회 무효는 가시 피해를 소비하고 이동 강화는 남은 시간 동안 유지한다."
+		"성녀의 다음 피해 1회 무효는 가시 피해를 소비하고 이동 강화는 남은 시간 동안 유지한다."
 	)
 	character.take_thorn_damage()
 	_expect(
 		character.lives == 2,
-		"고기 섭취 방어를 소비한 뒤의 다음 피해는 정상적으로 목숨을 차감한다."
+		"성녀의 가호를 소비한 뒤의 다음 피해는 정상적으로 목숨을 차감한다."
 	)
 	character._update_timers(3.0)
 	_expect(
@@ -2112,6 +2065,7 @@ func _test_character_frame_normalization(
 	character.position = Vector2(240.0, 912.0)
 	character.sprite.flip_h = false
 	character.sprite.rotation = 0.0
+	var crush_sensor_rect: Rect2 = character._crush_sensor_rect()
 
 	for profile_id: String in CHARACTER_DATA.CHARACTER_ORDER:
 		character.set_character_id(profile_id)
@@ -2171,10 +2125,10 @@ func _test_character_frame_normalization(
 				if state == ANIMATION_DATA.HANG:
 					hang_art_meets_collider_wall = (
 						hang_art_meets_collider_wall
-						and is_equal_approx(
-							frame_bounds.end.x - ANIMATION_DATA.FRAME_SIZE * 0.5,
-							MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5 + 2.0
-						)
+						and absf(
+							frame_bounds.end.x - ANIMATION_DATA.FRAME_SIZE * 0.5
+							- (MainCharacterController.CHARACTER_COLLIDER_WIDTH * 0.5 + 2.0)
+						) <= HANG_WALL_VISUAL_TOLERANCE
 					)
 				all_required_frames_are_opaque = (
 					all_required_frames_are_opaque and frame_bounds.has_area()
@@ -2203,8 +2157,14 @@ func _test_character_frame_normalization(
 				):
 					visible_bounds_are_stable = false
 				if (
-					not character._crush_mask_overlaps_active_piece(Vector2i(3, 19))
-					or character._crush_mask_overlaps_active_piece(Vector2i(7, 1))
+					not character._active_piece_overlaps_crush_sensor(
+						Vector2i(3, 19),
+						crush_sensor_rect
+					)
+					or character._active_piece_overlaps_crush_sensor(
+						Vector2i(7, 1),
+						crush_sensor_rect
+					)
 				):
 					collision_is_frame_independent = false
 		character.is_hanging = true
@@ -2275,7 +2235,7 @@ func _test_character_frame_normalization(
 	)
 	_expect(
 		collision_is_frame_independent,
-		"압사 판정은 캐릭터 sprite의 투명 공백과 animation frame에 영향받지 않는다."
+		"압착 판정은 캐릭터 sprite의 투명 공백과 animation frame에 영향받지 않는다."
 	)
 	var jump_speed: float = absf(character.current_jump_velocity())
 	_expect(

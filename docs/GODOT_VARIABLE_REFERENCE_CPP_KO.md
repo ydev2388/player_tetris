@@ -198,8 +198,8 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | stamina | `MAX_STAMINA`, `HANG_STAMINA_DRAIN` | 최대 100, 가득 찼을 때 약 3초 매달림. |
 | 블록 플립 | `ROTATION_COOLDOWN`, `ROTATION_FAILED_COOLDOWN`, `ROTATION_SPIN_DURATION`, `POST_SPIN_APEX_SPEED` | 성공/실패 재사용 시간, 0.42초 연출과 종료 frame 경계. |
 | 자력 재스폰·피해 | `SELF_RESPAWN_HOLD_SECONDS`, `INVULNERABILITY_SECONDS`, `MAX_LIVES` | hold 1초, 피해 무적 1.2초, 생명 3. |
-| 펀치 | `ATTACK_COOLDOWN`, `ATTACK_ANIMATION_DURATION`, `PUNCH_HIT_CONFIRM_SECONDS` | sequence 간격, sprite 우선 시간, release 판정 창. |
-| hitbox·압착 | `PUNCH_HITBOX_WIDTH`, `CRUSH_ALPHA_THRESHOLD`, `CRUSH_CORE_SIZE`, `FIXED_SUPPORT_TOLERANCE` | 주먹 범위와 sprite alpha 기반 몸통/발판 검사 규격. |
+| 펀치 | `ATTACK_ANIMATION_DURATION`, `PUNCH_HIT_CONFIRM_SECONDS` | sprite 우선 시간과 release 판정 창. sequence 간격은 캐릭터 데이터에서 계산한다. |
+| hitbox·압착 | `BASIC_ATTACK_FORWARD_REACH`, `FIXED_SUPPORT_FOOT_WIDTH`, `FIXED_SUPPORT_TOLERANCE` | 주먹 범위와 공통 CrushSensor 아래 고정 지지면 검사 규격. |
 | animation | `ANIMATION_DATA` | 상태별 texture/region table script. |
 | SFX resource | `SFX_HURT`부터 `SFX_WALL_CLIMB` | preload된 효과음 handle. 재생 상태가 아니라 immutable resource 참조다. |
 
@@ -226,7 +226,7 @@ snapshot을 먼저 잡아 mutation 전후를 비교한다.
 | 메뉴 입력 | `_ignore_initial_jump_until_released` | 메뉴 Z가 게임 첫 점프로 전파되는 것을 막는 latch. |
 | animation | `_animation_state`, `_animation_time` | 현재 frame table key와 그 상태 경과 초. |
 | 접지·재스폰 | `_respawn_airborne_pending`, `_was_grounded_for_stamina`, `_self_respawn_hold_time`, `_self_respawn_requires_release` | 순간이동 접지 cache, 착지 edge, Q hold와 반복 발동 방지. |
-| cache/RNG | `_crush_mask_cache`, `_animation_image_cache`, `_respawn_random` | CPU alpha 연산 재사용과 상단 위치 선택 전용 난수열. |
+| cache/RNG | `_frame_alpha_bounds_cache`, `_animation_image_cache`, `_respawn_random` | 표시 외곽 alpha 연산 재사용과 상단 위치 선택 전용 난수열. |
 
 지역 변수 중 `grounded`, `jump_pressed`, `was_playing` 같은 이름은 함수 시작 시점의 snapshot이고,
 `target_*`, `candidate`, `moved_rect`, `swept_rect`는 commit 전 검사용 임시 값이다. C++에서도

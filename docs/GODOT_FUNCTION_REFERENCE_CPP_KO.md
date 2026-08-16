@@ -197,9 +197,10 @@
 
 | 함수 | 호출과 내부 순서 | 결과 |
 | --- | --- | --- |
-| `handle_active_piece_descended(prev, current)` | 하강 전후 crush mask가 active와 겹치는지 검사한다. | 자연 낙하 압착이면 피해를 준다. |
-| `_crush_mask_overlaps_active_piece(origin)` | 현재 불투명 몸통 점과 active 네 셀을 비교한다. | 실제 sprite 몸통이 블록과 겹치면 true다. |
-| `_current_crush_mask_points()` | animation frame alpha를 읽어 cache하고 flip/rotation을 적용한다. | 현재 자세의 충돌 표본 점 배열을 반환한다. |
+| `handle_active_piece_descended(prev, current)` | 한 칸 하강, 이전 비접촉, 현재 `CrushSensor` 접촉, 위에서 통과, 고정 지지면 순서를 검사한다. | 자연 낙하 압착이면 피해를 준다. |
+| `_crush_sensor_rect()` | 씬의 `30×12` RectangleShape2D를 캐릭터 전역 Rect로 변환한다. | sprite와 무관한 공통 머리 압착 영역을 반환한다. |
+| `_active_piece_overlaps_crush_sensor(origin, sensor_rect)` | active 네 셀과 고정 센서 Rect의 양의 면적 교차를 검사한다. | 센서에 피스가 겹치면 true다. |
+| `_active_piece_crossed_crush_sensor_from_above(prev, current, sensor_rect)` | 이전·현재 셀 Rect의 수직 통과 방향과 수평 겹침을 검사한다. | 위에서 센서를 통과했으면 true다. |
 | `_has_fixed_support_underfoot()` | 발밑 표본 위치의 고정 보드 셀을 검사한다. | hang 중 고정 바닥 지지 여부를 반환한다. |
 | `validate_position()` | 보드 아래 이탈과 안전 위치를 검사한다. | 비정상 이탈을 무피해 복구한다. |
 | `_is_below_board()` | character y와 복구 경계를 비교한다. | 화면 아래 이탈 bool을 반환한다. |

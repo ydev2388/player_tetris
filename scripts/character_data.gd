@@ -29,11 +29,12 @@ const PROFILES: Dictionary = {
 		"weapon": "목제 연습봉",
 		"special_name": "전력 질주",
 		"special_description": "2초 동안 좌우 이동속도가 60% 증가한다.",
+		"special_short_description": "2초간 좌우 이동속도가\n60% 증가한다.",
 		"special_base_cooldown": 7.0,
-		"attack_speed": 3,
-		"move": 3,
-		"jump": 1,
-		"stamina": 4,
+		"attack_speed": 6,
+		"move": 5,
+		"jump": 5,
+		"stamina": 6,
 		"special_skill": 4,
 	},
 	"boxer": {
@@ -44,12 +45,13 @@ const PROFILES: Dictionary = {
 		"weapon": "복싱 글러브",
 		"special_name": "가드 브레이크",
 		"special_description": "전방 블록을 가능한 거리만큼 최대 3칸 민다.",
+		"special_short_description": "전방 블록을 최대 3칸\n밀어낸다.",
 		"special_base_cooldown": 6.0,
-		"attack_speed": 4,
-		"move": 3,
-		"jump": 1,
+		"attack_speed": 9,
+		"move": 7,
+		"jump": 5,
 		"stamina": 3,
-		"special_skill": 3,
+		"special_skill": 2,
 	},
 	"shield_guard": {
 		"display_name": "방패병",
@@ -59,12 +61,13 @@ const PROFILES: Dictionary = {
 		"weapon": "원형 방패",
 		"special_name": "전방 보호벽",
 		"special_description": "시전 방향 앞에 세로 3칸 보호벽을 2초 동안 유지한다.",
+		"special_short_description": "전방에 3칸 보호벽을\n2초간 세운다.",
 		"special_base_cooldown": 10.0,
-		"attack_speed": 3,
+		"attack_speed": 5,
 		"move": 3,
-		"jump": 1,
-		"stamina": 6,
-		"special_skill": 6,
+		"jump": 3,
+		"stamina": 10,
+		"special_skill": 5,
 	},
 	"firefighter": {
 		"display_name": "소방관",
@@ -74,12 +77,13 @@ const PROFILES: Dictionary = {
 		"weapon": "소방 도끼 옆면",
 		"special_name": "중력 물길",
 		"special_description": "전방에 3셀 물길을 4초 만들고 자동 낙하마다 흐르는 방향으로 1칸 이동시킨다.",
+		"special_short_description": "전방에 흐르는 물길을\n4초간 만든다.",
 		"special_base_cooldown": 13.0,
-		"attack_speed": 3,
-		"move": 3,
-		"jump": 1,
-		"stamina": 5,
-		"special_skill": 5,
+		"attack_speed": 7,
+		"move": 4,
+		"jump": 4,
+		"stamina": 8,
+		"special_skill": 3,
 	},
 	"cleaner": {
 		"display_name": "청소부",
@@ -89,27 +93,29 @@ const PROFILES: Dictionary = {
 		"weapon": "빗자루",
 		"special_name": "대청소",
 		"special_description": "발밑과 좌우 한 칸의 노출된 고정 블록을 최대 3개 제거한다.",
+		"special_short_description": "발밑 주변 고정 블록을\n최대 3개 제거한다.",
 		"special_base_cooldown": 12.0,
-		"attack_speed": 4,
-		"move": 4,
-		"jump": 1,
-		"stamina": 4,
-		"special_skill": 4,
+		"attack_speed": 6,
+		"move": 8,
+		"jump": 4,
+		"stamina": 6,
+		"special_skill": 2,
 	},
 	"chef": {
-		"display_name": "요리사",
+		"display_name": "성녀",
 		"unlock_text": "15별",
-		"role": "생존 강화형",
-		"description": "고기를 먹어 짧은 시간 빠르게 움직이고 다음 기믹이나 보스 공격을 버틴다.",
-		"weapon": "프라이팬",
-		"special_name": "고기 섭취",
-		"special_description": "3초 동안 이동속도 +20%, 다음 기믹·보스 공격 1회 무효. 압착은 막지 못한다.",
+		"role": "성스러운 수호형",
+		"description": "찬란한 가호로 짧은 시간 빠르게 움직이고 다음 기믹이나 보스 공격을 버틴다.",
+		"weapon": "성휘 지팡이",
+		"special_name": "성역의 가호",
+		"special_description": "3초 동안 이동속도 +20%, 노란 오라가 유지되는 동안 다음 기믹·보스 공격 1회 무효. 압착은 막지 못한다.",
+		"special_short_description": "3초간 이동속도 +20%,\n공격 1회를 무효화한다.",
 		"special_base_cooldown": 9.0,
 		"attack_speed": 3,
-		"move": 4,
-		"jump": 1,
-		"stamina": 7,
-		"special_skill": 7,
+		"move": 6,
+		"jump": 3,
+		"stamina": 9,
+		"special_skill": 5,
 	},
 	"clockmaker": {
 		"display_name": "시계공",
@@ -120,12 +126,13 @@ const PROFILES: Dictionary = {
 		"weapon": "태엽 열쇠 지팡이",
 		"special_name": "정지 태엽",
 		"special_description": "활성 블록과 다음 가시·결박·씨앗 발동을 3초 동안 늦춘다.",
+		"special_short_description": "활성 블록과 다음 기믹을\n3초간 멈춘다.",
 		"special_base_cooldown": 12.0,
-		"attack_speed": 4,
+		"attack_speed": 5,
 		"move": 3,
-		"jump": 1,
-		"stamina": 5,
-		"special_skill": 5,
+		"jump": 4,
+		"stamina": 7,
+		"special_skill": 7,
 	},
 	"ninja": {
 		"display_name": "닌자",
@@ -136,12 +143,13 @@ const PROFILES: Dictionary = {
 		"weapon": "단봉",
 		"special_name": "표창",
 		"special_description": "전방 6칸으로 표창을 던져 활성 블록 덩어리 전체를 정확히 1칸 민다. 고정 블록에는 막힌다.",
+		"special_short_description": "전방 표창으로 활성 블록을\n1칸 밀어낸다.",
 		"special_base_cooldown": 5.0,
 		"attack_speed": 8,
 		"move": 9,
 		"jump": 7,
-		"stamina": 2,
-		"special_skill": 2,
+		"stamina": 1,
+		"special_skill": 1,
 	},
 }
 
@@ -165,8 +173,8 @@ static func move_speed(character_id: String, passive_levels: Array = []) -> floa
 	return base_speed * passive_speed_multiplier(passive_levels, 1)
 
 
-static func jump_cells(character_id: String) -> int:
-	return 2 + (stat(character_id, "jump") - 1) / 3
+static func jump_cells(character_id: String) -> float:
+	return 1.0 + float(stat(character_id, "jump") - 1) / 3.0
 
 
 static func stamina_drain_multiplier(character_id: String, passive_levels: Array = []) -> float:
@@ -184,6 +192,11 @@ static func special_cooldown_multiplier(
 
 static func rotation_cooldown(character_id: String, passive_levels: Array = []) -> float:
 	var base_cooldown: float = 2.1 - float(stat(character_id, "attack_speed")) * 0.1
+	return base_cooldown * passive_cooldown_multiplier(passive_levels, 0)
+
+
+static func attack_cooldown(character_id: String, passive_levels: Array = []) -> float:
+	var base_cooldown: float = 0.60 - float(stat(character_id, "attack_speed") - 1) * 0.025
 	return base_cooldown * passive_cooldown_multiplier(passive_levels, 0)
 
 

@@ -1017,8 +1017,9 @@ func throw_shuriken_at_active_piece(
 
 ## 상황: 새 피스의 무작위 spawn x 후보 집합을 지정한 좌우 여백으로 계산할 때 호출한다.
 ## 순서: 기본 모양 조회 → 빈 모양 조기 반환 → local min/max x 계산
-##       → 실제 점유 셀이 여백 안쪽에 드는 원점 x 순회 → `can_place()` 후보만 append.
-## 결과: 원점이 아니라 네 실제 셀을 기준으로 여백과 기존 블록 충돌을 모두 만족한 후보를 반환한다.
+##       → 실제 점유 셀이 여백 안쪽에 드는 원점 x 순회
+##       → 고정 블록과 캐릭터 충돌을 모두 통과한 후보만 append.
+## 결과: 스폰 순간에 새 활성 충돌체가 캐릭터 몸을 덮지 않는 후보를 반환한다.
 func _valid_spawn_origins(
 	piece_type: int,
 	side_margin_cells: int = SPAWN_SIDE_MARGIN_CELLS
@@ -1041,15 +1042,47 @@ func _valid_spawn_origins(
 	)
 	for origin_x: int in range(first_origin_x, end_origin_x):
 		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 현재 검사 중인 spawn 원점.
-		if board.can_place(piece_type, 0, origin):
+		if (
+			board.can_place(piece_type, 0, origin)
+			and not _spawn_origin_overlaps_character(cells, origin)
+		):
 			candidates.append(origin)
 	return candidates
 
 
+## 상황: 고정 블록 배치가 가능한 spawn 후보가 현재 캐릭터를 덮는지 추가 검사한다.
+## 순서: 캐릭터 유효성 확인 → 42×90px 충돌 Rect 조회 → spawn 셀 Rect와 양의 면적 교차 검사.
+## 결과: 변/모서리 접촉은 허용하고 실제 면적이 겹치는 후보만 true다.
+func _spawn_origin_overlaps_character(
+	local_cells: Array[Vector2i],
+	origin: Vector2i
+) -> bool:
+	if not is_instance_valid(character):
+		return false
+	var character_rect: Rect2 = character._character_collider_rect()
+	for local_cell: Vector2i in local_cells:
+		var board_cell: Vector2i = origin + local_cell
+		var cell_rect: Rect2 = Rect2(
+			Vector2(
+				float(board_cell.x) * MainLayout.CELL_SIZE,
+				float(board_cell.y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+			),
+			Vector2.ONE * MainLayout.CELL_SIZE
+		)
+		if (
+			character_rect.position.x < cell_rect.end.x
+			and character_rect.end.x > cell_rect.position.x
+			and character_rect.position.y < cell_rect.end.y
+			and character_rect.end.y > cell_rect.position.y
+		):
+			return true
+	return false
+
+
 ## 상황: `spawn_next_piece()`가 후보 중 실제 spawn 한 곳을 정할 때 호출한다.
-## 순서: 한 칸 여백 후보 계산 → 있으면 그 집합 사용 → 없으면 여백 0 후보로 fallback
+## 순서: 한 칸 여백+캐릭터 비겹침 후보 계산 → 없으면 여백 0으로 fallback
 ##       → fallback도 비면 null → 아니면 선택된 집합에서 균등 random index 조회.
-## 결과: 평소에는 벽과 한 칸 떨어진 원점, 중앙이 막히면 벽 옆 예외 원점, 전부 막히면 null을 반환한다.
+## 결과: 안전한 X가 있으면 무작위 선택하고, 고정 블록/캐릭터로 전부 막히면 null로 명시적 top-out한다.
 func _choose_random_spawn_origin(piece_type: int) -> Variant:
 	var candidates: Array[Vector2i] = _valid_spawn_origins( # 벽과 한 칸 떨어진 우선 후보.
 		piece_type,

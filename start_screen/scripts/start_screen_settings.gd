@@ -11,6 +11,7 @@ const SETTINGS_SCHEMA_VERSION: int = 1
 const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
+const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
@@ -249,8 +250,10 @@ func set_language(value: String) -> void:
 	if language == next_language:
 		return
 	language = next_language
+	LOCALIZATION.install(language)
 	if save_settings() != OK:
 		_restore_state(previous_state)
+		LOCALIZATION.install(language)
 
 
 func get_stage_best_stars(stage_number: int) -> int:
@@ -398,6 +401,7 @@ func apply_audio() -> void:
 
 func load_settings() -> void:
 	_reset_settings_to_defaults()
+	LOCALIZATION.install(language)
 
 	var config: ConfigFile = ConfigFile.new()
 	var load_error: Error = config.load(settings_path)

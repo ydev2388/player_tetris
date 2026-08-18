@@ -84,6 +84,7 @@ func _run() -> void:
 	Input.action_release(&"character_special")
 	game.queue_free()
 	await process_frame
+	await create_timer(0.25).timeout
 	if (
 		not input_was_accepted
 		or not buff_started

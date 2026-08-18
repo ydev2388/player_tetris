@@ -19,6 +19,13 @@ const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd")
 const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
+const START_STORY_TEXTURE: Texture2D = preload("res://assets/story/start_story.png")
+const START_STORY_REGIONS: Array[Rect2] = [
+	Rect2(8.0, 8.0, 720.0, 527.0),
+	Rect2(733.0, 8.0, 720.0, 527.0),
+	Rect2(8.0, 541.0, 720.0, 527.0),
+	Rect2(733.0, 541.0, 720.0, 527.0),
+]
 
 const BACKGROUND: Color = Color("#f7f8fb")
 const PANEL: Color = Color("#ffffff")
@@ -47,11 +54,10 @@ const _SHOP_ICON_FILES: Array[String] = [
 ]
 const ENGLISH_TEXT: Dictionary = {
 	"게임 설명": "GAME GUIDE", "↑ ↓ 선택    Z 확인": "UP/DOWN Select    Z Confirm",
-	"클리어한 스테이지의 별은 다음 도전에 이어집니다": "Cleared-stage stars carry into your next challenge.",
 	"별 0개": "0 Stars", "캐릭터 선택": "SELECT CHARACTER", "블록 깨러 가기": "START STAGE",
 	"상점": "SHOP", "메인으로": "MAIN MENU", "상점 선택": "SHOP",
-	"전역 패시브 강화": "GLOBAL PASSIVE UPGRADES",
-	"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.": "Select an icon to view its details below.",
+	"강화": "UPGRADES", "도전 모드": "CHALLENGE MODE",
+	"최고 기록 %d줄": "BEST %d LINES", "1-5 클리어 후 해금": "CLEAR 1-5 TO UNLOCK",
 	"선택 후 Z로 강화": "Press Z to upgrade", "스테이지 선택으로": "STAGE SELECT",
 	"패시브 초기화": "RESET PASSIVES", "키 설정과 사운드 크기를 조절합니다": "Adjust key bindings, language, and sound.",
 	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "Change movement, action, and\nsystem keys.",
@@ -66,18 +72,17 @@ const ENGLISH_TEXT: Dictionary = {
 	"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.": "BGM will be added later.\n0% is muted.",
 	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% is muted. Music uses BGM and effects use SFX.",
 	"새 키 입력": "NEW KEY", "취소": "CANCEL", "안내": "NOTICE", "확인": "OK",
-	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금, 별 재화와 패시브가 초기화됩니다.": "Stage unlocks, stars, and passives will be reset.",
+	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.": "Stage unlocks, challenge records, stars, and passives will be reset.",
 	"삭제": "DELETE", "패시브를 초기화할까요?": "Reset passive upgrades?",
 	"투자한 별을 모두 돌려받습니다.": "All invested stars will be refunded.", "초기화": "RESET",
-	"메뉴로 나가겠습니까?": "Return to the main menu?", "선택 완료": "CONFIRM", "뒤로": "BACK",
-	"실패": "FAILED", "보스 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
+	"메뉴로 나가겠습니까?": "Return to the main menu?", "뒤로": "BACK",
+	"실패": "FAILED", "스테이지 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
 }
 const CHINESE_TEXT: Dictionary = {
 	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
-	"클리어한 스테이지의 별은 다음 도전에 이어집니다": "通关关卡获得的星星会延续到下一次挑战。",
 	"캐릭터 선택": "选择角色", "블록 깨러 가기": "开始关卡", "상점": "商店", "메인으로": "主菜单",
-	"상점 선택": "选择商店", "전역 패시브 강화": "全局被动强化",
-	"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.": "选择图标可在下方查看详细信息。",
+	"상점 선택": "选择商店", "강화": "强化", "도전 모드": "挑战模式",
+	"최고 기록 %d줄": "最高纪录 %d 行", "1-5 클리어 후 해금": "通关 1-5 后解锁",
 	"선택 후 Z로 강화": "选择后按 Z 强化", "스테이지 선택으로": "关卡选择",
 	"패시브 초기화": "重置被动", "키 설정과 사운드 크기를 조절합니다": "调整按键、语言和音量。",
 	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "修改移动、动作和\n系统按键。",
@@ -92,11 +97,11 @@ const CHINESE_TEXT: Dictionary = {
 	"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.": "背景音乐将在之后添加。\n0% 为静音。",
 	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% 为静音。音乐使用 BGM 总线，\n音效使用 SFX 总线。",
 	"새 키 입력": "输入新按键", "취소": "取消", "안내": "提示", "확인": "确定",
-	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금, 별 재화와 패시브가 초기화됩니다.": "关卡解锁、星星和被动强化将被重置。",
+	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.": "关卡解锁、挑战记录、星星和被动强化将被重置。",
 	"삭제": "删除", "패시브를 초기화할까요?": "要重置被动强化吗？",
 	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
-	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "선택 완료": "确认", "뒤로": "返回",
-	"실패": "失败", "보스 제한시간이 끝났습니다.": "首领限制时间已结束。", "재시도": "重试",
+	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "뒤로": "返回",
+	"실패": "失败", "스테이지 제한시간이 끝났습니다.": "关卡限制时间已结束。", "재시도": "重试",
 	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言",
 	"GAME START": "开始游戏", "OPTION": "选项", "EXIT": "退出", "STAGE SELECT": "关卡选择",
 	"KEY": "按键", "VOLUME": "音量", "KEY CUSTOM": "按键设置", "BGM": "背景音乐", "SFX": "音效",
@@ -133,9 +138,11 @@ var _font: SystemFont
 var _ui: RefCounted
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
+var _stage_panels: Array[Panel] = []
 var _stage_buttons: Array[Button] = []
 var _stage_labels: Array[Label] = []
 var _stage_currency_label: Label
+var _challenge_button: Button
 var _shop_currency_label: Label
 var _shop_cards: Array[Button] = []
 var _shop_level_labels: Array[Label] = []
@@ -148,7 +155,6 @@ var _shop_detail_cost: Label
 var _shop_reset_button: Button
 var _shop_back_button: Button
 var _character_buttons: Array[Button] = []
-var _character_confirm_button: Button
 var _character_back_button: Button
 var _character_position_labels: Array[Label] = []
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
@@ -176,6 +182,11 @@ var _game_exit_was_playing: bool = false
 var _select_sfx_player: AudioStreamPlayer
 var _select_sfx_timer: Timer
 var _skip_initial_select_sfx: bool = true
+var _start_story_seen: bool = false
+var _start_story_overlay: Control
+var _start_story_frame: TextureRect
+var _start_story_index: int = -1
+var _start_story_fade_tween: Tween
 
 var _capture_overlay: Control
 var _capture_label: Label
@@ -228,6 +239,14 @@ func _ready() -> void:
 	_build_interface()
 	_refresh_key_buttons()
 	show_main_menu()
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_select_sfx_timer):
+		_select_sfx_timer.stop()
+	if is_instance_valid(_select_sfx_player):
+		_select_sfx_player.stop()
+		_select_sfx_player.stream = null
 
 
 func _draw() -> void:
@@ -303,7 +322,7 @@ func previous_tutorial_page() -> void:
 	_refresh_tutorial()
 
 
-func start_game(stage_number: int = -1) -> bool:
+func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 	if _selected_character_id.is_empty() or not MainCharacterData.has_character(_selected_character_id):
 		_show_message(_text("먼저 캐릭터를 선택하세요.", "Select a character first."))
 		return false
@@ -311,7 +330,10 @@ func start_game(stage_number: int = -1) -> bool:
 		return true
 	if stage_number < 1:
 		stage_number = selected_stage_number
-	if not settings.is_stage_unlocked(stage_number):
+	if challenge_mode and not settings.is_challenge_unlocked():
+		_show_message(_text("1-5 클리어 후 해금", "CLEAR 1-5 TO UNLOCK"))
+		return false
+	if not challenge_mode and not settings.is_stage_unlocked(stage_number):
 		_show_message(_text("아직 잠긴 스테이지입니다.", "This stage is locked."))
 		return false
 	if not ResourceLoader.exists(game_scene_path, "PackedScene"):
@@ -326,6 +348,7 @@ func start_game(stage_number: int = -1) -> bool:
 	_game_instance = (game_resource as PackedScene).instantiate()
 	_game_instance.name = "LoadedGame"
 	_game_instance.set_meta("stage_number", stage_number)
+	_game_instance.set_meta("challenge_mode", challenge_mode)
 	_game_instance.set_meta("language", settings.language)
 	selected_stage_number = stage_number
 	_game_host.add_child(_game_instance)
@@ -339,7 +362,12 @@ func start_game(stage_number: int = -1) -> bool:
 	if game_controller != null:
 		game_controller.stage_cleared.connect(_on_survival_stage_cleared)
 		game_controller.stage_failed.connect(_on_stage_failed)
+		if challenge_mode:
+			game_controller.game_changed.connect(_on_challenge_game_changed)
 	_show_screen(Screen.GAME)
+	if not _start_story_seen:
+		_start_story_seen = true
+		_show_start_story()
 	game_loaded.emit(_game_instance)
 	return true
 
@@ -378,7 +406,9 @@ func _input(event: InputEvent) -> void:
 	var key_event: InputEventKey = event as InputEventKey
 	if not key_event.pressed or key_event.echo:
 		return
-	if _handle_game_exit_prompt_input(key_event):
+	if _handle_start_story_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -422,6 +452,17 @@ func _handle_key_capture(key_event: InputEventKey) -> bool:
 	_show_binding_result(result)
 	if bool(result.get("ok", false)):
 		cancel_key_capture()
+	return true
+
+
+func _handle_start_story_input(_key_event: InputEventKey) -> bool:
+	if _start_story_overlay == null or not _start_story_overlay.visible:
+		return false
+	if _start_story_index >= START_STORY_REGIONS.size() - 1:
+		_hide_start_story()
+	else:
+		_start_story_index += 1
+		_set_start_story_frame(_start_story_index, true)
 	return true
 
 
@@ -577,6 +618,8 @@ func _handle_passive_reset_prompt_input(key_event: InputEventKey) -> bool:
 	var key_code: int = key_event.physical_keycode
 	if key_code == KEY_NONE:
 		key_code = key_event.keycode
+	if key_code == KEY_UP or key_code == KEY_DOWN:
+		return true
 	if key_code == KEY_LEFT or key_code == KEY_RIGHT:
 		if _passive_reset_yes_button.has_focus():
 			_passive_reset_no_button.grab_focus()
@@ -677,6 +720,7 @@ func _build_interface() -> void:
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 	_build_stage_fail_overlay()
+	_build_start_story_overlay()
 
 
 func _build_main_screen() -> void:
@@ -729,7 +773,16 @@ func _build_main_screen() -> void:
 
 func _build_stage_select_screen() -> void:
 	var screen: Control = _create_screen("StageSelectScreen", Screen.STAGE_SELECT)
-	_add_screen_title(screen, "STAGE SELECT", "클리어한 스테이지의 별은 다음 도전에 이어집니다")
+	_challenge_button = _create_button(
+		screen,
+		"도전 모드",
+		Rect2(300.0, 48.0, 360.0, 82.0),
+		CYAN,
+		17
+	)
+	_challenge_button.name = "ChallengeModeButton"
+	_challenge_button.pressed.connect(_on_challenge_selected)
+	_challenge_button.focus_entered.connect(_play_select_sfx)
 	_stage_currency_label = _create_label(
 		screen,
 		"별 0개",
@@ -760,6 +813,7 @@ func _build_stage_select_screen() -> void:
 			accents[stage_number - 1],
 			10
 		)
+		_stage_panels.append(panel)
 		_create_label(
 			panel,
 			"1-%d%s" % [stage_number, _text("  보스", "  BOSS") if stage_number == 5 else ""],
@@ -832,21 +886,12 @@ func _build_shop_screen() -> void:
 	_create_panel(screen, Rect2(60.0, 64.0, 840.0, 44.0), PANEL, SHOP_GOLD, 8)
 	_create_label(
 		screen,
-		"전역 패시브 강화",
+		"강화",
 		Rect2(60.0, 70.0, 840.0, 32.0),
 		19,
 		TEXT,
 		HORIZONTAL_ALIGNMENT_CENTER
 	)
-	_create_label(
-		screen,
-		"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.",
-		Rect2(180.0, 108.0, 600.0, 22.0),
-		13,
-		MUTED,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
-
 	_shop_icon_textures.clear()
 	for file_name: String in _SHOP_ICON_FILES:
 		var path: String = _SHOP_ICON_DIR + file_name
@@ -1434,7 +1479,7 @@ func _build_progress_reset_overlay() -> void:
 	)
 	_create_label(
 		panel,
-		"스테이지 해금, 별 재화와 패시브가 초기화됩니다.",
+		"스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.",
 		Rect2(40.0, 92.0, 440.0, 32.0),
 		15,
 		MUTED,
@@ -1642,7 +1687,7 @@ func _build_stage_fail_overlay() -> void:
 	)
 	_create_label(
 		panel,
-		"보스 제한시간이 끝났습니다.",
+		"스테이지 제한시간이 끝났습니다.",
 		Rect2(40.0, 140.0, 440.0, 42.0),
 		17,
 		ORANGE,
@@ -1668,6 +1713,89 @@ func _build_stage_fail_overlay() -> void:
 	_stage_fail_select_button.pressed.connect(_on_stage_fail_select)
 
 
+func _build_start_story_overlay() -> void:
+	_start_story_overlay = Control.new()
+	_start_story_overlay.name = "StartStoryOverlay"
+	_start_story_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_start_story_overlay.z_as_relative = false
+	_start_story_overlay.z_index = 300
+	_start_story_overlay.visible = false
+	_start_story_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_start_story_overlay)
+
+	var background: ColorRect = ColorRect.new()
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	background.color = Color("#101318")
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_story_overlay.add_child(background)
+
+	_start_story_frame = TextureRect.new()
+	_start_story_frame.name = "StartStoryFrame"
+	_start_story_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_start_story_frame.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_start_story_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_start_story_frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_start_story_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_story_overlay.add_child(_start_story_frame)
+
+
+func _show_start_story() -> void:
+	if _start_story_overlay == null:
+		return
+	_start_story_index = 0
+	_set_start_story_frame(_start_story_index, false)
+	_start_story_overlay.visible = true
+	_start_story_overlay.move_to_front()
+	_set_game_story_paused(true)
+
+
+func _hide_start_story() -> void:
+	if _start_story_overlay == null:
+		return
+	_start_story_overlay.visible = false
+	if _start_story_fade_tween != null:
+		_start_story_fade_tween.kill()
+		_start_story_fade_tween = null
+	_set_game_story_paused(false)
+
+
+func _set_start_story_frame(frame_index: int, fade_in: bool) -> void:
+	var atlas_frame: AtlasTexture = AtlasTexture.new()
+	atlas_frame.atlas = START_STORY_TEXTURE
+	atlas_frame.region = START_STORY_REGIONS[frame_index]
+	_start_story_frame.texture = atlas_frame
+	if not fade_in:
+		_start_story_frame.modulate = Color.WHITE
+		return
+	_start_story_frame.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	if _start_story_fade_tween != null:
+		_start_story_fade_tween.kill()
+		_start_story_fade_tween = null
+	_start_story_fade_tween = create_tween()
+	_start_story_fade_tween.tween_property(
+		_start_story_frame,
+		"modulate:a",
+		1.0,
+		0.35
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _set_game_story_paused(paused: bool) -> void:
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.set_physics_process(not paused)
+	var game_character: MainCharacterController = null
+	if _game_instance != null and is_instance_valid(_game_instance):
+		game_character = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+	if game_character != null:
+		game_character.set_physics_process(not paused)
+	var game_view: MainGameView = _game_instance as MainGameView
+	if game_view != null:
+		game_view.set_process(not paused)
+
+
 func _show_stage_fail() -> void:
 	if _stage_fail_overlay == null:
 		return
@@ -1681,7 +1809,7 @@ func _hide_stage_fail() -> void:
 		_stage_fail_overlay.visible = false
 
 
-## 상황: 보스 제한시간이 끝나 game_controller가 stage_failed를 방송했을 때 호출한다.
+## 상황: 스테이지 제한시간이 끝나 game_controller가 stage_failed를 방송했을 때 호출한다.
 ## 순서: 게임 제거 → 메뉴 창 복원 → 스테이지 선택 아래에 실패 overlay 표시.
 ## 결과: 별·해금·별 재화는 지급되지 않으며 재시도/스테이지 선택 버튼이 입력을 받는다.
 func _on_stage_failed() -> void:
@@ -1747,6 +1875,13 @@ func _on_survival_stage_cleared(cleared_lines: int) -> void:
 	_complete_stage(stars, remaining_lives)
 
 
+func _on_challenge_game_changed() -> void:
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller == null or game_controller.state != MainGameController.GameState.GAME_OVER:
+		return
+	settings.record_challenge_lines(game_controller.total_lines)
+
+
 func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
 	var result: Dictionary = settings.complete_stage(
 		selected_stage_number,
@@ -1764,6 +1899,8 @@ func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
 
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
+	if screen_type != Screen.GAME:
+		_hide_start_story()
 	for stored_screen: Variant in _screens.values():
 		(stored_screen as Control).visible = false
 	_game_host.visible = screen_type == Screen.GAME
@@ -1811,17 +1948,35 @@ func _refresh_tutorial() -> void:
 
 
 func _refresh_stage_select() -> void:
-	if settings == null or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT:
+	if (
+		settings == null
+		or _stage_panels.size() != StartScreenSettings.STAGE_COUNT
+		or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT
+		or _challenge_button == null
+	):
 		return
 	_stage_currency_label.text = _text("별 %d개" % settings.star_currency, "%d Stars" % settings.star_currency)
+	var challenge_unlocked: bool = settings.is_challenge_unlocked()
+	_challenge_button.text = (
+		"%s\n%s" % [
+			_text("도전 모드"),
+			_text("최고 기록 %d줄") % settings.challenge_best_lines,
+		]
+		if challenge_unlocked
+		else "🔒 %s\n%s" % [_text("도전 모드"), _text("1-5 클리어 후 해금")]
+	)
 	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
 		var index: int = stage_number - 1
 		var unlocked: bool = settings.is_stage_unlocked(stage_number)
-		_stage_labels[index].text = "%s\n%s" % [
-			_star_text(settings.get_stage_best_stars(stage_number)),
-			_text("입장 가능", "AVAILABLE") if unlocked else _text("잠김", "LOCKED"),
-		]
-		_stage_buttons[index].disabled = not unlocked
+		_stage_panels[index].modulate = Color.WHITE if unlocked else Color(0.62, 0.66, 0.72, 0.72)
+		_stage_labels[index].text = (
+			"%s\n%s" % [
+				_star_text(settings.get_stage_best_stars(stage_number)),
+				_text("입장 가능", "AVAILABLE"),
+			]
+			if unlocked
+			else "🔒\n%s" % _text("잠김", "LOCKED")
+		)
 		_stage_buttons[index].text = _text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")
 
 
@@ -1960,6 +2115,11 @@ func _on_stage_selected(stage_number: int) -> void:
 		start_game(stage_number)
 
 
+func _on_challenge_selected() -> void:
+	if settings.is_challenge_unlocked():
+		start_game(1, true)
+
+
 func _star_text(stars: int) -> String:
 	var result: String = ""
 	for star_index: int in range(StartScreenSettings.MAX_STAGE_STARS):
@@ -2089,6 +2249,7 @@ func _dispose_game_instance() -> void:
 	if _game_instance == null or not is_instance_valid(_game_instance):
 		_game_instance = null
 		return
+	_hide_start_story()
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.clear_runtime_state()
@@ -2116,6 +2277,7 @@ func _play_select_sfx() -> void:
 	if _skip_initial_select_sfx:
 		_skip_initial_select_sfx = false
 		return
+	_select_sfx_player.stop()
 	_select_sfx_player.stream = SFX_SELECT
 	_select_sfx_player.play()
 	_select_sfx_timer.start()
@@ -2133,7 +2295,8 @@ func _create_screen(screen_name: String, screen_type: Screen) -> Control:
 
 func _add_screen_title(parent: Control, title: String, subtitle: String) -> void:
 	_create_label(parent, title, Rect2(70.0, 48.0, 430.0, 52.0), 34, TEXT)
-	_create_label(parent, subtitle, Rect2(72.0, 98.0, 700.0, 28.0), 15, MUTED)
+	if not subtitle.is_empty():
+		_create_label(parent, subtitle, Rect2(72.0, 98.0, 700.0, 28.0), 15, MUTED)
 	var line: ColorRect = ColorRect.new()
 	line.position = Vector2(70.0, 125.0)
 	line.size = Vector2(820.0, 2.0)
@@ -2239,7 +2402,7 @@ func _draw_decorative_blocks(origin: Vector2, color: Color, alpha: float) -> voi
 
 func _build_character_screen() -> void:
 	var screen: Control = _create_screen("CharacterScreen", Screen.CHARACTER)
-	_add_screen_title(screen, "캐릭터 선택", "이미지와 다섯 능력치, 특수 스킬을 비교하세요")
+	_add_screen_title(screen, "캐릭터 선택", "")
 
 	for index: int in range(MainCharacterData.CHARACTER_ORDER.size()):
 		var character_id: String = MainCharacterData.CHARACTER_ORDER[index]
@@ -2334,15 +2497,6 @@ func _build_character_screen() -> void:
 	_character_next_button.focus_mode = Control.FOCUS_NONE
 	_character_next_button.pressed.connect(_move_character_focus.bind(1))
 
-	_character_confirm_button = _create_button(
-		screen,
-		"선택 완료",
-		Rect2(472.0, 630.0, 238.0, 46.0),
-		CYAN,
-		16
-	)
-	_character_confirm_button.focus_mode = Control.FOCUS_NONE
-	_character_confirm_button.pressed.connect(show_stage_select)
 	var back_button: Button = _create_button(
 		screen,
 		"뒤로",
@@ -2410,16 +2564,12 @@ func _select_character(character_id: String) -> void:
 
 
 func _refresh_character_selection() -> void:
-	if _character_confirm_button == null or _character_buttons.is_empty():
+	if _character_buttons.is_empty():
 		return
 	var has_selection: bool = (
 		not _selected_character_id.is_empty()
 		and MainCharacterData.has_character(_selected_character_id)
 	)
-	if has_selection:
-		var profile: Dictionary = MainCharacterData.profile_for(_selected_character_id)
-		_character_confirm_button.text = _text("%s 선택") % _text(str(profile["display_name"]))
-	_character_confirm_button.disabled = not has_selection
 	_character_prev_button.disabled = not has_selection
 	_character_next_button.disabled = not has_selection
 	var character_count: int = MainCharacterData.CHARACTER_ORDER.size()

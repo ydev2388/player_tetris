@@ -109,6 +109,7 @@ func create_button(
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
 	button.add_theme_color_override("font_pressed_color", Color.WHITE)
 	button.add_theme_color_override("font_focus_color", Color.WHITE)
+	button.add_theme_color_override("font_disabled_color", Color("#536174"))
 
 	button.add_theme_stylebox_override(
 		"normal",

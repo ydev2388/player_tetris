@@ -65,6 +65,7 @@ func _run() -> void:
 	Input.action_release(&"character_special")
 	game.queue_free()
 	await process_frame
+	await create_timer(0.25).timeout
 	if not stood_on_fixed_blocks or not input_was_accepted or not original_targets_removed:
 		push_error("Cleaner V input did not clean its cast-time support cells.")
 		quit(1)

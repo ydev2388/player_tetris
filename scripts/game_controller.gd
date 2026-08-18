@@ -43,7 +43,7 @@ const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙�
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
 const SURVIVAL_TIME_SECONDS: float = 90.0
-const BOSS_TIME_SECONDS: float = 180.0
+const BOSS_TIME_SECONDS: float = 300.0
 const THORN_ON_SECONDS: float = 1.0
 const THORN_OFF_SECONDS: float = 2.0
 const BINDING_CHECK_INTERVAL_SECONDS: float = 10.0
@@ -85,7 +85,7 @@ const STAGE_GIMMICKS: Dictionary = {
 		"binding_first_delay": 10.0,
 	},
 	5: {
-		"time_limit": 180.0,
+		"time_limit": 300.0,
 		"thorn_probability": 0.33,
 		"binding_enabled": true,
 		"binding_first_delay": 5.0,
@@ -144,6 +144,7 @@ var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
 var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
 var total_lines: int = 0 # 제거한 누적 행 수. 10줄마다 level이 증가한다.
 var stage_number: int = 1
+var challenge_mode: bool = false
 var stage_time_remaining: float = SURVIVAL_TIME_SECONDS
 var boss_health: int = 0
 var boss_fall_position: Vector2 = Vector2(
@@ -183,6 +184,7 @@ func _ready() -> void:
 	var game_root: Node = get_parent()
 	if game_root != null:
 		stage_number = int(game_root.get_meta("stage_number", 1))
+		challenge_mode = bool(game_root.get_meta("challenge_mode", false))
 	reset_game()
 
 
@@ -285,7 +287,7 @@ func reset_game(seed_value: int = -1) -> void:
 	boss_down = false
 	boss_falling = false
 	boss_fallen = false
-	stage_time_remaining = stage_time_limit()
+	stage_time_remaining = 0.0 if challenge_mode else stage_time_limit()
 	_shown_stage_seconds = ceili(stage_time_remaining)
 	state = GameState.PLAYING
 	meditation_active = false
@@ -306,11 +308,15 @@ func reset_game(seed_value: int = -1) -> void:
 
 
 func is_survival_stage() -> bool:
-	return stage_number < 5
+	return not challenge_mode and stage_number < 5
 
 
 func is_boss_stage() -> bool:
-	return stage_number == 5
+	return not challenge_mode and stage_number == 5
+
+
+func is_challenge_mode() -> bool:
+	return challenge_mode
 
 
 func is_boss_alive() -> bool:
@@ -387,7 +393,7 @@ func stage_time_limit() -> float:
 
 
 func _advance_stage_gimmicks(delta: float, future_triggers_frozen: bool = false) -> void:
-	if state != GameState.PLAYING:
+	if challenge_mode or state != GameState.PLAYING:
 		return
 	var config: Dictionary = get_stage_gimmick_config()
 	if float(config.get("thorn_probability", 0.0)) > 0.0:
@@ -434,6 +440,9 @@ func _advance_thorn_timer(delta: float, future_triggers_frozen: bool = false) ->
 
 
 func _initialize_active_piece_gimmick() -> void:
+	if challenge_mode:
+		_reset_active_piece_gimmick()
+		return
 	var probability: float = float(get_stage_gimmick_config().get("thorn_probability", 0.0))
 	active_piece_has_thorns = probability > 0.0 and _gimmick_random.randf() < probability
 	thorn_visible = active_piece_has_thorns
@@ -678,6 +687,8 @@ func _remove_boss_seeds_overlapping_cells(locked_cells: Array[Vector2i]) -> bool
 
 
 func _advance_stage_timer(delta: float) -> void:
+	if challenge_mode:
+		return
 	stage_time_remaining = maxf(stage_time_remaining - delta, 0.0)
 	var shown_seconds: int = ceili(stage_time_remaining)
 	if shown_seconds != _shown_stage_seconds:
@@ -688,6 +699,10 @@ func _advance_stage_timer(delta: float) -> void:
 	if is_boss_stage():
 		if boss_health <= 0:
 			return
+		end_game()
+		stage_failed.emit()
+		return
+	if is_survival_stage() and total_lines < 1:
 		end_game()
 		stage_failed.emit()
 		return

@@ -98,6 +98,7 @@ func _run() -> void:
 	game.free()
 	await process_frame
 	await physics_frame
+	await create_timer(0.25).timeout
 	if not failures.is_empty():
 		for failure: String in failures:
 			push_error(failure)

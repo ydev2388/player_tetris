@@ -1,5 +1,6 @@
 # Godot cache and generated output
 .godot/
+/.qa/
 tools/__pycache__/
 /build/
 /dist/
@@ -13,3 +14,6 @@ tools/__pycache__/
 /docs/research.md
 /docs/plan.md
 dssign/
+.commandcode/
+.codex/
+/build_web.sh

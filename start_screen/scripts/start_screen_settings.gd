@@ -7,7 +7,7 @@ signal progress_changed
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
-const SETTINGS_SCHEMA_VERSION: int = 1
+const SETTINGS_SCHEMA_VERSION: int = 2
 const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
@@ -64,6 +64,7 @@ var language: String = ENGLISH
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
+var challenge_best_lines: int = 0
 
 var _bindings: Dictionary = {}
 
@@ -270,6 +271,10 @@ func is_stage_unlocked(stage_number: int) -> bool:
 	return get_stage_best_stars(stage_number - 1) > 0
 
 
+func is_challenge_unlocked() -> bool:
+	return get_stage_best_stars(STAGE_COUNT) > 0
+
+
 func get_passive_level(passive_id: String) -> int:
 	var index: int = PASSIVE_IDS.find(passive_id)
 	if index < 0:
@@ -371,18 +376,35 @@ func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) ->
 	}
 
 
+func record_challenge_lines(lines: int) -> Error:
+	var normalized_lines: int = maxi(lines, 0)
+	if normalized_lines <= challenge_best_lines:
+		return OK
+	var previous_best: int = challenge_best_lines
+	challenge_best_lines = normalized_lines
+	var save_error: Error = save_settings()
+	if save_error != OK:
+		challenge_best_lines = previous_best
+		return save_error
+	progress_changed.emit()
+	return OK
+
+
 func reset_stage_progress() -> Error:
 	var previous_stars: Array[int] = stage_best_stars.duplicate()
 	var previous_currency: int = star_currency
 	var previous_passive_levels: Array[int] = passive_levels.duplicate()
+	var previous_challenge_best: int = challenge_best_lines
 	stage_best_stars.fill(0)
 	star_currency = 0
 	passive_levels.fill(0)
+	challenge_best_lines = 0
 	var save_error: Error = save_settings()
 	if save_error != OK:
 		stage_best_stars = previous_stars
 		star_currency = previous_currency
 		passive_levels = previous_passive_levels
+		challenge_best_lines = previous_challenge_best
 		return save_error
 	progress_changed.emit()
 	return OK
@@ -440,6 +462,7 @@ func _reset_settings_to_defaults() -> void:
 	stage_best_stars = [0, 0, 0, 0, 0]
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
+	challenge_best_lines = 0
 
 
 func _load_bindings_from_config(config: ConfigFile) -> bool:
@@ -551,6 +574,17 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 
 func _load_progress_from_config(config: ConfigFile) -> bool:
 	var changed: bool = false
+	var stored_challenge_best: Variant = config.get_value("progress", "challenge_best_lines", 0)
+	if not config.has_section_key("progress", "challenge_best_lines"):
+		changed = true
+	if _is_finite_number(stored_challenge_best):
+		challenge_best_lines = maxi(int(stored_challenge_best), 0)
+		changed = changed or not is_equal_approx(
+			float(stored_challenge_best), float(challenge_best_lines)
+		)
+	else:
+		challenge_best_lines = 0
+		changed = true
 	var stored_currency: Variant = config.get_value("progress", "star_currency", 0)
 	if not config.has_section_key("progress", "star_currency"):
 		changed = true
@@ -637,6 +671,7 @@ func save_settings() -> Error:
 	config.set_value("options", "language", language)
 	config.set_value("progress", "star_currency", star_currency)
 	config.set_value("progress", "passive_levels", passive_levels)
+	config.set_value("progress", "challenge_best_lines", challenge_best_lines)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
 		config.set_value(
 			"progress",
@@ -658,6 +693,7 @@ func _snapshot_state() -> Dictionary:
 		"stage_best_stars": stage_best_stars.duplicate(),
 		"star_currency": star_currency,
 		"passive_levels": passive_levels.duplicate(),
+		"challenge_best_lines": challenge_best_lines,
 	}
 
 
@@ -671,6 +707,7 @@ func _restore_state(snapshot: Dictionary) -> void:
 	for value: Variant in saved_stars:
 		stage_best_stars.append(int(value))
 	star_currency = int(snapshot["star_currency"])
+	challenge_best_lines = int(snapshot["challenge_best_lines"])
 	passive_levels.clear()
 	var saved_passives: Array = snapshot["passive_levels"] as Array
 	for value: Variant in saved_passives:

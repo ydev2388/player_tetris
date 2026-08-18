@@ -20,10 +20,15 @@ const HANG_WALL_VISUAL_TOLERANCE: float = 2.0
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
 var _stage_cleared_captured: bool = false # stage_cleared 발생 감지용. lambda는 지역 변수를 값 캡처하므로 멤버를 쓴다.
+var _stage_failed_captured: bool = false # stage_failed 발생 감지용.
 
 
 func _on_stage_cleared_captured(_cleared_lines: int) -> void:
 	_stage_cleared_captured = true
+
+
+func _on_stage_failed_captured() -> void:
+	_stage_failed_captured = true
 
 
 ## 상황: SceneTree test runner가 생성될 때 자동 호출된다.
@@ -160,10 +165,19 @@ func _run() -> void:
 			and normal_atlas.get_height() == 768
 			and normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png")
 			and ANIMATION_DATA.uses_fixed_geometry("normal")
-			and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
+		and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
 			and ANIMATION_DATA.fixed_offset_for("normal").is_equal_approx(Vector2(0.0, 3.0)),
 		"일반인 atlas는 1024×768 균일 격자다."
 	)
+	var scene_atlas_check: MainGameView = GAME_SCENE.instantiate()
+	var scene_normal_atlas: Texture2D = (
+		scene_atlas_check.get_node("BoardPhysics/Character/Sprite") as Sprite2D
+	).texture
+	_expect(
+		scene_normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png"),
+		"게임 씬의 초기 일반인 Sprite도 runtime v8 atlas를 사용한다."
+	)
+	scene_atlas_check.free()
 	var boxer_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
 	_expect(
 		ANIMATION_DATA.has_character("boxer")
@@ -296,6 +310,7 @@ func _run() -> void:
 	custom_events.clear()
 	custom_event = null
 	await process_frame
+	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -333,7 +348,7 @@ func _test_stage_rule_contracts() -> void:
 		)
 		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
 			controller.stage_time_limit(),
-			180.0 if stage_number == 5 else 90.0
+			300.0 if stage_number == 5 else 90.0
 		)
 	_expect(stage_data_is_complete, "1-1~1-5의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
 	_expect(
@@ -357,22 +372,43 @@ func _test_stage_rule_contracts() -> void:
 			and MainGameController.BOSS_ATTACK_HITBOX_OFFSET == Vector2(0.0, -16.0),
 		"보스 공격 판정은 54×132px이며 표시 중심보다 16px 위에 있다."
 	)
-	controller.stage_number = 1
-	controller.reset_game(7)
-	controller.total_lines = 0
-	controller.stage_time_remaining = 0.01
-	controller._advance_stage_timer(0.01)
-	_expect(
-		controller.state == MainGameController.GameState.PAUSED,
-		"생존 스테이지는 0줄이어도 90초 생존 시 클리어 상태가 된다."
-	)
+	controller.stage_cleared.connect(_on_stage_cleared_captured)
+	controller.stage_failed.connect(_on_stage_failed_captured)
+	for stage_number: int in range(1, 5):
+		controller.stage_number = stage_number
+		controller.reset_game(7)
+		_stage_cleared_captured = false
+		_stage_failed_captured = false
+		controller.total_lines = 0
+		controller.stage_time_remaining = 0.01
+		controller._advance_stage_timer(0.01)
+		_expect(
+			controller.state == MainGameController.GameState.GAME_OVER
+				and _stage_failed_captured
+				and not _stage_cleared_captured,
+			"1-%d는 0줄로 제한시간이 끝나면 클리어하지 않고 실패한다." % stage_number
+		)
+		controller.reset_game(7)
+		_stage_cleared_captured = false
+		_stage_failed_captured = false
+		controller.total_lines = 1
+		controller.stage_time_remaining = 0.01
+		controller._advance_stage_timer(0.01)
+		_expect(
+			controller.state == MainGameController.GameState.PAUSED
+				and _stage_cleared_captured
+				and not _stage_failed_captured,
+			"1-%d는 1줄 이상 파괴하면 제한시간 종료 시 클리어한다." % stage_number
+		)
 	controller.stage_number = 5
 	controller.reset_game(7)
+	_stage_failed_captured = false
 	controller.stage_time_remaining = 0.01
 	controller._advance_stage_timer(0.01)
 	_expect(
-		controller.state == MainGameController.GameState.GAME_OVER,
-		"1-5는 180초 경계에서 보스가 살아 있으면 실패한다."
+		controller.state == MainGameController.GameState.GAME_OVER
+			and _stage_failed_captured,
+		"1-5는 300초 경계에서 보스가 살아 있으면 실패한다."
 	)
 	controller.reset_game(7)
 	controller.boss_health = 0
@@ -382,6 +418,28 @@ func _test_stage_rule_contracts() -> void:
 		controller.state == MainGameController.GameState.PLAYING,
 		"보스 HP 0과 제한시간 0이 겹치면 제한시간 실패를 적용하지 않는다."
 	)
+	controller.challenge_mode = true
+	controller.stage_number = 4
+	controller.reset_game(7)
+	var challenge_started_without_gimmick: bool = (
+		not controller.active_piece_has_thorns and not controller.thorn_visible
+	)
+	controller.active_piece_has_thorns = true
+	controller.thorn_visible = false
+	controller.thorn_phase_timer = 0.0
+	controller.stage_time_remaining = 0.0
+	controller._advance_stage_gimmicks(999.0)
+	controller._advance_stage_timer(999.0)
+	_expect(
+		controller.is_challenge_mode()
+			and not controller.is_survival_stage()
+			and not controller.is_boss_stage()
+			and challenge_started_without_gimmick
+			and controller.state == MainGameController.GameState.PLAYING
+			and not controller.thorn_visible,
+		"도전 모드는 시간 제한·스테이지 기믹·보스 없이 계속 진행한다."
+	)
+	controller.challenge_mode = false
 
 	controller.binding_probability = MainGameController.BINDING_PROBABILITY
 	controller._gimmick_roll_overrides = [false, false, true]
@@ -492,7 +550,10 @@ func _test_runtime_cleanup() -> void:
 			and is_zero_approx(controller.fall_freeze_remaining)
 			and is_zero_approx(controller.future_gimmick_freeze_remaining)
 			and controller.boss_seeds.is_empty()
-			and not character._meditation_loop_player.playing,
+			and not character._meditation_loop_player.playing
+			and character._sfx_player.stream == null
+			and character._sfx_cue_player.stream == null
+			and character._meditation_loop_player.stream == null,
 		"게임 종료는 명상·투사체·보호벽·물길·freeze·결박 상태를 한 번에 정리한다."
 	)
 	character._sfx_player.stop()

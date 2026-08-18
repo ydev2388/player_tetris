@@ -773,7 +773,7 @@ func _refresh() -> void:
 	_lives_label.text = _text("목숨: %d", "LIVES: %d") % character.lives
 	var remaining_seconds: int = ceili(controller.stage_time_remaining)
 	_timer_label.text = "%02d:%02d" % [remaining_seconds / 60, remaining_seconds % 60]
-	_timer_label.visible = true
+	_timer_label.visible = not controller.is_challenge_mode()
 	var self_respawn_ratio: float = character.self_respawn_hold_ratio()
 	_self_respawn_panel.visible = self_respawn_ratio > 0.0
 	_self_respawn_fill.size.x = SELF_RESPAWN_BAR_RECT.size.x * self_respawn_ratio
@@ -1072,7 +1072,7 @@ func _refresh_boss_display() -> void:
 			_boss_fallen_frame_timer = 0.0
 		_boss_sprite.position = Vector2(
 			controller.boss_fall_position.x,
-			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5 + BOSS_VISUAL_OFFSET.y
+			controller.boss_fall_position.y - BOSS_FALLEN_DISPLAY_SIZE.y * 0.5
 		)
 		_apply_boss_fallen_frame()
 		return

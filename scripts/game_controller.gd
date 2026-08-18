@@ -43,7 +43,7 @@ const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙�
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
 const SURVIVAL_TIME_SECONDS: float = 90.0
-const BOSS_TIME_SECONDS: float = 180.0
+const BOSS_TIME_SECONDS: float = 300.0
 const THORN_ON_SECONDS: float = 1.0
 const THORN_OFF_SECONDS: float = 2.0
 const BINDING_CHECK_INTERVAL_SECONDS: float = 10.0
@@ -85,7 +85,7 @@ const STAGE_GIMMICKS: Dictionary = {
 		"binding_first_delay": 10.0,
 	},
 	5: {
-		"time_limit": 180.0,
+		"time_limit": 300.0,
 		"thorn_probability": 0.33,
 		"binding_enabled": true,
 		"binding_first_delay": 5.0,
@@ -688,6 +688,10 @@ func _advance_stage_timer(delta: float) -> void:
 	if is_boss_stage():
 		if boss_health <= 0:
 			return
+		end_game()
+		stage_failed.emit()
+		return
+	if is_survival_stage() and total_lines < 1:
 		end_game()
 		stage_failed.emit()
 		return

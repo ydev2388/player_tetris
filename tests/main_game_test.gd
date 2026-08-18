@@ -20,10 +20,15 @@ const HANG_WALL_VISUAL_TOLERANCE: float = 2.0
 var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
 var _stage_cleared_captured: bool = false # stage_cleared 발생 감지용. lambda는 지역 변수를 값 캡처하므로 멤버를 쓴다.
+var _stage_failed_captured: bool = false # stage_failed 발생 감지용.
 
 
 func _on_stage_cleared_captured(_cleared_lines: int) -> void:
 	_stage_cleared_captured = true
+
+
+func _on_stage_failed_captured() -> void:
+	_stage_failed_captured = true
 
 
 ## 상황: SceneTree test runner가 생성될 때 자동 호출된다.
@@ -333,7 +338,7 @@ func _test_stage_rule_contracts() -> void:
 		)
 		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
 			controller.stage_time_limit(),
-			180.0 if stage_number == 5 else 90.0
+			300.0 if stage_number == 5 else 90.0
 		)
 	_expect(stage_data_is_complete, "1-1~1-5의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
 	_expect(
@@ -357,22 +362,43 @@ func _test_stage_rule_contracts() -> void:
 			and MainGameController.BOSS_ATTACK_HITBOX_OFFSET == Vector2(0.0, -16.0),
 		"보스 공격 판정은 54×132px이며 표시 중심보다 16px 위에 있다."
 	)
-	controller.stage_number = 1
-	controller.reset_game(7)
-	controller.total_lines = 0
-	controller.stage_time_remaining = 0.01
-	controller._advance_stage_timer(0.01)
-	_expect(
-		controller.state == MainGameController.GameState.PAUSED,
-		"생존 스테이지는 0줄이어도 90초 생존 시 클리어 상태가 된다."
-	)
+	controller.stage_cleared.connect(_on_stage_cleared_captured)
+	controller.stage_failed.connect(_on_stage_failed_captured)
+	for stage_number: int in range(1, 5):
+		controller.stage_number = stage_number
+		controller.reset_game(7)
+		_stage_cleared_captured = false
+		_stage_failed_captured = false
+		controller.total_lines = 0
+		controller.stage_time_remaining = 0.01
+		controller._advance_stage_timer(0.01)
+		_expect(
+			controller.state == MainGameController.GameState.GAME_OVER
+				and _stage_failed_captured
+				and not _stage_cleared_captured,
+			"1-%d는 0줄로 제한시간이 끝나면 클리어하지 않고 실패한다." % stage_number
+		)
+		controller.reset_game(7)
+		_stage_cleared_captured = false
+		_stage_failed_captured = false
+		controller.total_lines = 1
+		controller.stage_time_remaining = 0.01
+		controller._advance_stage_timer(0.01)
+		_expect(
+			controller.state == MainGameController.GameState.PAUSED
+				and _stage_cleared_captured
+				and not _stage_failed_captured,
+			"1-%d는 1줄 이상 파괴하면 제한시간 종료 시 클리어한다." % stage_number
+		)
 	controller.stage_number = 5
 	controller.reset_game(7)
+	_stage_failed_captured = false
 	controller.stage_time_remaining = 0.01
 	controller._advance_stage_timer(0.01)
 	_expect(
-		controller.state == MainGameController.GameState.GAME_OVER,
-		"1-5는 180초 경계에서 보스가 살아 있으면 실패한다."
+		controller.state == MainGameController.GameState.GAME_OVER
+			and _stage_failed_captured,
+		"1-5는 300초 경계에서 보스가 살아 있으면 실패한다."
 	)
 	controller.reset_game(7)
 	controller.boss_health = 0

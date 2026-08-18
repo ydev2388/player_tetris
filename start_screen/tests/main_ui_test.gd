@@ -647,7 +647,7 @@ func _run() -> void:
 			and boss_controller.boss_health == MainGameController.BOSS_MAX_HEALTH
 			and boss_timer_label != null
 			and boss_timer_label.visible
-			and boss_timer_label.text == "03:00",
+			and boss_timer_label.text == "05:00",
 		"Stage 5 Enter 테스트에서 보스 체력 3으로 게임을 시작한다."
 	)
 	screen._input(debug_enter_event)
@@ -693,7 +693,7 @@ func _run() -> void:
 			and fail_overlay != null
 			and fail_overlay.visible
 			and screen.settings.star_currency == stars_before_fail,
-		"보스 제한시간 초과가 실패 UI를 표시하고 별·해금을 지급하지 않는다."
+		"스테이지 제한시간 초과가 실패 UI를 표시하고 별·해금을 지급하지 않는다."
 	)
 	if fail_retry_button != null:
 		fail_retry_button.pressed.emit()

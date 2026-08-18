@@ -70,7 +70,7 @@ const ENGLISH_TEXT: Dictionary = {
 	"삭제": "DELETE", "패시브를 초기화할까요?": "Reset passive upgrades?",
 	"투자한 별을 모두 돌려받습니다.": "All invested stars will be refunded.", "초기화": "RESET",
 	"메뉴로 나가겠습니까?": "Return to the main menu?", "선택 완료": "CONFIRM", "뒤로": "BACK",
-	"실패": "FAILED", "보스 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
+	"실패": "FAILED", "스테이지 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
 }
 const CHINESE_TEXT: Dictionary = {
 	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
@@ -96,7 +96,7 @@ const CHINESE_TEXT: Dictionary = {
 	"삭제": "删除", "패시브를 초기화할까요?": "要重置被动强化吗？",
 	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
 	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "선택 완료": "确认", "뒤로": "返回",
-	"실패": "失败", "보스 제한시간이 끝났습니다.": "首领限制时间已结束。", "재시도": "重试",
+	"실패": "失败", "스테이지 제한시간이 끝났습니다.": "关卡限制时间已结束。", "재시도": "重试",
 	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言",
 	"GAME START": "开始游戏", "OPTION": "选项", "EXIT": "退出", "STAGE SELECT": "关卡选择",
 	"KEY": "按键", "VOLUME": "音量", "KEY CUSTOM": "按键设置", "BGM": "背景音乐", "SFX": "音效",
@@ -1642,7 +1642,7 @@ func _build_stage_fail_overlay() -> void:
 	)
 	_create_label(
 		panel,
-		"보스 제한시간이 끝났습니다.",
+		"스테이지 제한시간이 끝났습니다.",
 		Rect2(40.0, 140.0, 440.0, 42.0),
 		17,
 		ORANGE,
@@ -1681,7 +1681,7 @@ func _hide_stage_fail() -> void:
 		_stage_fail_overlay.visible = false
 
 
-## 상황: 보스 제한시간이 끝나 game_controller가 stage_failed를 방송했을 때 호출한다.
+## 상황: 스테이지 제한시간이 끝나 game_controller가 stage_failed를 방송했을 때 호출한다.
 ## 순서: 게임 제거 → 메뉴 창 복원 → 스테이지 선택 아래에 실패 overlay 표시.
 ## 결과: 별·해금·별 재화는 지급되지 않으며 재시도/스테이지 선택 버튼이 입력을 받는다.
 func _on_stage_failed() -> void:

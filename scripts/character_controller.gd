@@ -81,6 +81,7 @@ const ROTATION_SPIN_DURATION: float = 0.42 # 전용 8 frame과 한 바퀴 회전
 const SELF_RESPAWN_HOLD_SECONDS: float = 1.0 # 자력 재스폰을 확정하기 위한 연속 입력 시간.
 const POST_SPIN_APEX_SPEED: float = 40.0 * MainLayout.DISPLAY_SCALE # 종료 후 jump frame 경계.
 const INVULNERABILITY_SECONDS: float = 1.2 # 피해 직후 추가 피해를 무시하는 초.
+const CRUSH_PUSH_CLEARANCE: float = 0.5 * MainLayout.DISPLAY_SCALE # 낙하 블록에서 밀려난 뒤 재겹침 방지 여백.
 const ATTACK_ANIMATION_DURATION: float = 0.4 # 공격 animation 우선 표시 초.
 const SPECIAL_ANIMATION_DURATION: float = 0.8 # 8 frame 특수 스킬 표시 초.
 const PUNCH_HIT_CONFIRM_SECONDS: float = 0.1 # 공격 시작 뒤 주먹 판정을 유지하는 시간.
@@ -110,6 +111,16 @@ const SFX_MEDITATION_LOOP: AudioStream = preload("res://assets/sfx/05b_meditatio
 const SFX_MEDITATION_END: AudioStream = preload("res://assets/sfx/05c_meditation_end.wav")
 const SFX_BLOCK_ELIMINATION: AudioStream = preload("res://assets/sfx/07_block_elimination.wav")
 const SFX_WALL_CLIMB: AudioStream = preload("res://assets/sfx/09_wall_climb.wav")
+const CHARACTER_SPECIAL_SFX: Dictionary = {
+	"normal": preload("res://assets/sfx/special_casts/normal/special_full_sprint.wav"),
+	"boxer": preload("res://assets/sfx/special_casts/boxer/special_guard_break.wav"),
+	"shield_guard": preload("res://assets/sfx/special_casts/shield_guard/special_front_barrier.wav"),
+	"firefighter": preload("res://assets/sfx/special_casts/firefighter/special_gravity_stream.wav"),
+	"cleaner": preload("res://assets/sfx/special_casts/cleaner/special_grand_cleanup.wav"),
+	"chef": preload("res://assets/sfx/special_casts/chef_saintess/special_sanctuary_blessing.wav"),
+	"clockmaker": preload("res://assets/sfx/special_casts/clockmaker/special_time_stop.wav"),
+	"ninja": preload("res://assets/sfx/special_casts/ninja/special_shuriken.wav"),
+}
 
 const BASIC_ATTACK_FORWARD_REACH: float = CELL_SIZE # 무기 외형과 무관한 전방 한 블록 판정 길이.
 const ROTATION_KICK_BOSS_REACH: float = 27.2 # 기본 공격 확장의 영향을 받지 않는 기존 발차기 보스 판정.
@@ -134,6 +145,7 @@ const FIXED_SUPPORT_TOLERANCE: float = MainLayout.DISPLAY_SCALE
 var _sfx_player: AudioStreamPlayer
 var _sfx_cue_player: AudioStreamPlayer
 var _meditation_loop_player: AudioStreamPlayer
+var _special_sfx_player: AudioStreamPlayer
 var _saintess_aura_material: ShaderMaterial
 var _saintess_barrier_sprite: Sprite2D
 
@@ -221,6 +233,8 @@ func _ready() -> void:
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
 	_meditation_loop_player = _create_sfx_player()
+	_special_sfx_player = _create_sfx_player()
+	_special_sfx_player.name = "SpecialSfx"
 	_setup_saintess_aura_material()
 	_meditation_loop_player.finished.connect(_restart_meditation_loop)
 	_respawn_random.randomize()
@@ -321,6 +335,7 @@ func _attempt_special_skill() -> bool:
 
 	special_cooldown_remaining = current_special_cooldown()
 	play_special_animation()
+	_play_character_special_sfx()
 	if delay > 0.0:
 		_pending_special_id = character_id
 		_pending_special_remaining = delay
@@ -412,6 +427,8 @@ func _cancel_character_skill_effects() -> void:
 	_last_special_succeeded = true
 	_ninja_special_result.clear()
 	_ninja_projectile.clear()
+	if is_instance_valid(_special_sfx_player):
+		_special_sfx_player.stop()
 	if is_instance_valid(controller):
 		controller.clear_fall_freeze()
 		controller.clear_transient_blockers()
@@ -441,7 +458,12 @@ func clear_runtime_state() -> void:
 		sprite.rotation = 0.0
 		sprite.modulate = Color.WHITE
 		sprite.visible = true
-	for player: AudioStreamPlayer in [_sfx_player, _sfx_cue_player, _meditation_loop_player]:
+	for player: AudioStreamPlayer in [
+		_sfx_player,
+		_sfx_cue_player,
+		_meditation_loop_player,
+		_special_sfx_player,
+	]:
 		if is_instance_valid(player):
 			player.stop()
 	stats_changed.emit()
@@ -1098,13 +1120,7 @@ func _advance_hang_corner_climb(delta: float) -> void:
 		)
 	global_position = corner_position
 	velocity = Vector2.ZERO
-	stamina = maxf(
-		0.0,
-		stamina
-		- HANG_STAMINA_DRAIN
-		* CHARACTER_DATA.stamina_drain_multiplier(character_id)
-		* maxf(delta, 0.0)
-	)
+	_drain_hang_stamina(delta)
 	if _hang_corner_climb_progress >= 1.0:
 		var completed_local_position: Vector2 = get_parent().to_local(
 			_hang_corner_climb_target_global
@@ -1156,16 +1172,22 @@ func _hang_climb_direction() -> float:
 ## 결과: 정지 매달림도 stamina를 소비하며 HUD가 매 frame 최신 값을 표시한다.
 func _finish_hanging_frame(delta: float) -> void:
 	velocity = Vector2.ZERO
+	_drain_hang_stamina(delta)
+	if Input.is_action_just_pressed(&"character_jump"):
+		_perform_wall_jump()
+	stats_changed.emit()
+
+
+## 일반 매달리기와 모서리 자동 오르기가 동일한 캐릭터·패시브 배율로 stamina를 소비한다.
+## 음수 delta는 0으로 취급하고 결과는 항상 0 이상으로 고정한다.
+func _drain_hang_stamina(delta: float) -> void:
 	stamina = maxf(
 		0.0,
 		stamina
 		- HANG_STAMINA_DRAIN
 		* CHARACTER_DATA.stamina_drain_multiplier(character_id, passive_levels)
-		* delta
+		* maxf(delta, 0.0)
 	)
-	if Input.is_action_just_pressed(&"character_jump"):
-		_perform_wall_jump()
-	stats_changed.emit()
 
 
 ## 상황: 매달린 중 jump 또는 grab 해제 후 grace 안의 jump가 들어오면 호출한다.
@@ -1459,8 +1481,8 @@ func _try_start_hang() -> void:
 
 
 ## 상황: grab 해제, stamina 소진, 벽 끝, 벽점프 또는 피해로 hang을 끝낼 때 호출한다.
-## 순서: is_hanging=false → `_hang_body=null` → 외부 옆면 범위 초기화.
-## 결과: 다음 physics frame은 일반 이동 branch를 실행하고 body를 더 이상 추적하지 않는다.
+## 순서: is_hanging=false → `_hang_body=null` → 외부 옆면 범위 초기화 → 현재 상태 색상 재계산.
+## 결과: 다음 physics frame은 일반 이동 branch를 실행하며 외부 signal에서 종료돼도 hang 적색이 남지 않는다.
 func _exit_hang() -> void:
 	is_hanging = false
 	_hang_animation_direction = 0.0
@@ -1471,6 +1493,8 @@ func _exit_hang() -> void:
 	_hang_corner_climb_duration = 0.0
 	_hang_body = null
 	_clear_hang_vertical_bounds()
+	if is_instance_valid(sprite):
+		_update_sprite_modulation()
 
 
 ## 상황: C로 잡은 충돌 지점에서 세로로 이어진 외부 옆면 범위를 저장할 때 호출한다.
@@ -1632,6 +1656,44 @@ func handle_active_piece_descended(
 		return
 	if _has_fixed_support_underfoot():
 		take_damage()
+		return
+	if not _push_character_down_from_descending_piece(current_origin):
+		take_damage()
+
+
+## 자연 낙하 블록이 공중 또는 매달린 캐릭터의 머리 센서로 진입했을 때 호출한다.
+## 겹친 활성 셀의 아래쪽으로 몸체가 완전히 빠질 수 있으면 매달림을 해제하고 이동한다.
+func _push_character_down_from_descending_piece(origin: Vector2i) -> bool:
+	var body_rect: Rect2 = _character_collider_rect()
+	var down_shift: float = 0.0
+	for local_cell: Vector2i in controller.active_local_cells():
+		var cell_rect: Rect2 = _board_cell_rect(origin + local_cell)
+		if not _rects_overlap_with_area(body_rect, cell_rect):
+			continue
+		down_shift = maxf(
+			down_shift,
+			cell_rect.end.y - body_rect.position.y + CRUSH_PUSH_CLEARANCE
+		)
+	if down_shift <= 0.0:
+		return false
+
+	var candidate_position: Vector2 = position + Vector2(0.0, down_shift)
+	if (
+		candidate_position.x < BOARD_MIN_X
+		or candidate_position.x > BOARD_MAX_X
+		or candidate_position.y < BOARD_MIN_Y
+		or candidate_position.y > BOARD_MAX_Y
+		or _character_position_overlaps_solid(candidate_position)
+	):
+		return false
+
+	_set_meditating(false)
+	_exit_hang()
+	position = candidate_position
+	velocity = Vector2.ZERO
+	_was_grounded_for_stamina = false
+	stats_changed.emit()
+	return true
 
 
 ## 상황: 캐릭터의 공통 머리 압착 영역을 계산할 때 호출한다.
@@ -2838,6 +2900,15 @@ func _play_sfx(stream: AudioStream) -> void:
 func _play_sfx_cue(stream: AudioStream) -> void:
 	_sfx_cue_player.stream = stream
 	_sfx_cue_player.play()
+
+
+## 특수기 입력이 정상 접수된 최초 시전 순간에 캐릭터 고유음을 한 번 재생한다.
+func _play_character_special_sfx() -> void:
+	var stream: AudioStream = CHARACTER_SPECIAL_SFX.get(character_id) as AudioStream
+	if stream == null or not is_instance_valid(_special_sfx_player):
+		return
+	_special_sfx_player.stream = stream
+	_special_sfx_player.play()
 
 
 ## 상황: GameController의 lines_cleared signal을 받았을 때 호출되는 adapter다.

@@ -237,9 +237,10 @@ func _run() -> void:
 	screen.show_volume()
 	await process_frame
 	_expect(
-		screen.find_child("MusicSlider", true, false) == null
-			and screen.find_child("SfxSlider", true, false) != null,
-		"BGM을 추가하기 전에는 BGM slider를 표시하지 않는다."
+		screen.find_child("MusicSlider", true, false) != null
+			and screen.find_child("SfxSlider", true, false) != null
+			and screen._music_manager._active_mode == &"menu",
+		"BGM과 SFX slider를 함께 표시하고 메뉴 음악을 유지한다."
 	)
 	screen.show_options()
 	screen._show_progress_reset_prompt()
@@ -515,6 +516,10 @@ func _run() -> void:
 	if stage_button != null:
 		stage_button.pressed.emit()
 	_expect(screen.current_screen == BlockFighterStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
+	_expect(
+		screen._music_manager._active_mode == &"battle",
+		"게임 화면을 열면 전투 BGM으로 전환한다."
+	)
 	await process_frame
 	await physics_frame
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
@@ -587,7 +592,8 @@ func _run() -> void:
 		_expect(
 			screen.current_screen == BlockFighterStartScreen.Screen.MAIN
 				and screen._game_instance == null
-				and screen.find_child("LoadedGame", true, false) == null,
+				and screen.find_child("LoadedGame", true, false) == null
+				and screen._music_manager._active_mode == &"menu",
 			"Yes는 게임 인스턴스를 제거하고 메인 메뉴로 돌아간다."
 		)
 

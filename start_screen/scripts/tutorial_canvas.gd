@@ -288,6 +288,8 @@ func _draw_block_action_page() -> void:
 		clampf(sin(kick_ratio * PI) + kick_impact * 0.5, 0.0, 1.0)
 	)
 	_draw_floor(Vector2(442.0, 360.0), 336.0)
+	# 오른쪽 카드의 원래 데모 좌표를 사용한다. 이 묶음을 200px 왼쪽으로 옮기면
+	# 회전 캐릭터와 잔상이 기본 밀치기 카드까지 침범한다.
 	if kick_active:
 		for trail_index: int in range(2, 0, -1):
 			var trail_elapsed: float = maxf(
@@ -296,7 +298,7 @@ func _draw_block_action_page() -> void:
 			)
 			_draw_animated_character(
 				Rect2(
-					300.0 - float(trail_index) * 5.0,
+					500.0 - float(trail_index) * 5.0,
 					236.0,
 					88.0,
 					111.0
@@ -314,7 +316,7 @@ func _draw_block_action_page() -> void:
 	)
 	_draw_animated_character(
 		Rect2(
-			300.0 + sin(kick_ratio * PI) * 10.0,
+			500.0 + sin(kick_ratio * PI) * 10.0,
 			236.0,
 			88.0,
 			111.0
@@ -325,14 +327,14 @@ func _draw_block_action_page() -> void:
 		_rotation_demo_angle(kick_character_elapsed) if kick_active else 0.0
 	)
 	_draw_tetromino(
-		Vector2(450.0, 279.0 - sin(kick_ratio * PI) * 22.0),
+		Vector2(650.0, 279.0 - sin(kick_ratio * PI) * 22.0),
 		RED,
 		kick_loop_alpha,
 		-kick_ratio * PI * 0.5
 	)
 	if kick_impact > 0.0:
 		draw_circle(
-			Vector2(445.0, 289.0),
+			Vector2(645.0, 289.0),
 			8.0 + kick_impact * 15.0,
 			Color(1.0, 0.72, 0.2, kick_impact * 0.32),
 			false,
@@ -340,9 +342,9 @@ func _draw_block_action_page() -> void:
 			true
 		)
 	_draw_arc_arrow(
-		Vector2(438.0, 260.0),
-		Vector2(548.0, 246.0),
-		Vector2(504.0, 205.0),
+		Vector2(638.0, 260.0),
+		Vector2(748.0, 246.0),
+		Vector2(704.0, 205.0),
 		PURPLE,
 		0.25 + 0.75 * sin(kick_ratio * PI)
 	)
@@ -350,7 +352,7 @@ func _draw_block_action_page() -> void:
 		_smooth_ratio(_animation_time, 0.88, 1.12) * kick_loop_alpha
 	)
 	_text(
-		Vector2(450.0, 190.0),
+		Vector2(650.0, 190.0),
 		"90° 플립",
 		14,
 		Color(PURPLE.r, PURPLE.g, PURPLE.b, rotation_label_alpha)

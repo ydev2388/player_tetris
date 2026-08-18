@@ -408,6 +408,28 @@ func _test_stage_rule_contracts() -> void:
 		controller.state == MainGameController.GameState.PLAYING,
 		"보스 HP 0과 제한시간 0이 겹치면 제한시간 실패를 적용하지 않는다."
 	)
+	controller.challenge_mode = true
+	controller.stage_number = 4
+	controller.reset_game(7)
+	var challenge_started_without_gimmick: bool = (
+		not controller.active_piece_has_thorns and not controller.thorn_visible
+	)
+	controller.active_piece_has_thorns = true
+	controller.thorn_visible = false
+	controller.thorn_phase_timer = 0.0
+	controller.stage_time_remaining = 0.0
+	controller._advance_stage_gimmicks(999.0)
+	controller._advance_stage_timer(999.0)
+	_expect(
+		controller.is_challenge_mode()
+			and not controller.is_survival_stage()
+			and not controller.is_boss_stage()
+			and challenge_started_without_gimmick
+			and controller.state == MainGameController.GameState.PLAYING
+			and not controller.thorn_visible,
+		"도전 모드는 시간 제한·스테이지 기믹·보스 없이 계속 진행한다."
+	)
+	controller.challenge_mode = false
 
 	controller.binding_probability = MainGameController.BINDING_PROBABILITY
 	controller._gimmick_roll_overrides = [false, false, true]

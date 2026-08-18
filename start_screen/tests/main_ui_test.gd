@@ -76,8 +76,10 @@ func _run() -> void:
 	_expect(
 		screen.settings.is_stage_unlocked(1)
 			and not screen.settings.is_stage_unlocked(2)
+			and not screen.settings.is_challenge_unlocked()
+			and screen.settings.challenge_best_lines == 0
 			and screen.settings.star_currency == 0,
-		"처음에는 1-1만 열리고 별 화폐는 0이다."
+		"처음에는 1-1만 열리고 도전 모드와 다음 스테이지는 잠겨 있다."
 	)
 	var zero_clear: Dictionary = screen.settings.complete_stage(1, 0)
 	_expect(
@@ -219,6 +221,14 @@ func _run() -> void:
 		MainCharacterData.health_life_bonus([0, 0, 0, 0, 0, 2]) == 2,
 		"체력 패시브 레벨마다 캐릭터 목숨이 1개씩 증가한다."
 	)
+	screen.settings.record_challenge_lines(8)
+	var challenge_reloaded: StartScreenSettings = StartScreenSettings.new(TEST_SETTINGS_PATH)
+	challenge_reloaded.load_settings()
+	_expect(
+		challenge_reloaded.challenge_best_lines == 8,
+		"도전 모드 최고 삭제 줄 수를 설정 파일에 저장한다."
+	)
+	challenge_reloaded.free()
 	var back_event: InputEventKey = InputEventKey.new()
 	back_event.pressed = true
 	back_event.physical_keycode = KEY_X
@@ -247,10 +257,11 @@ func _run() -> void:
 	_expect(
 		screen.settings.star_currency == 0
 			and screen.settings.get_stage_best_stars(1) == 0
+			and screen.settings.challenge_best_lines == 0
 			and screen.settings.get_passive_level("move") == 0
 			and screen.settings.get_passive_level("health") == 0
 			and not screen.settings.is_stage_unlocked(2),
-		"진행 데이터 삭제는 스테이지 별, 해금, 별 재화와 패시브를 초기화한다."
+		"진행 데이터 삭제는 스테이지 별, 도전 기록, 해금, 별 재화와 패시브를 초기화한다."
 	)
 	screen._hide_progress_reset_prompt()
 	await process_frame
@@ -277,13 +288,32 @@ func _run() -> void:
 		"CharacterSelectButton", true, false
 	) as Button
 	var shop_button: Button = screen.find_child("ShopButton", true, false) as Button
+	var challenge_button: Button = screen.find_child("ChallengeModeButton", true, false) as Button
+	var locked_stage_label: Label = screen._stage_labels[1]
 	_expect(
 		character_select_button != null
 			and shop_button != null
+			and challenge_button != null
+			and not challenge_button.disabled
+			and challenge_button.position.y < 140.0
+			and locked_stage_label.text.contains("🔒")
+			and screen._stage_panels[1].modulate.a < 1.0
+			and not screen._stage_buttons[1].disabled
+			and screen._stage_buttons[1].get_theme_color("font_color").a == 1.0
+			and screen._stage_buttons[1].get_theme_color("font_focus_color").a == 1.0
+			and screen._stage_buttons[1].focus_mode == Control.FOCUS_ALL
+			and screen._stage_buttons[0].focus_mode == Control.FOCUS_ALL
 			and character_select_button.position.x > shop_button.position.x
 			and character_select_button.position.y >= 640.0
 			and shop_button.position.y >= 640.0,
-		"스테이지 선택 하단에 상점은 좌측, 캐릭터 선택은 우측에 있다."
+		"잠긴 스테이지는 자물쇠와 낮은 명도로 표시하고 상하단 메뉴를 유지한다."
+	)
+	screen._stage_buttons[1].grab_focus()
+	await process_frame
+	_expect(
+		screen._stage_buttons[1].has_focus()
+			and screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT,
+		"잠긴 스테이지도 포커스할 수 있지만 입장 상태는 바뀌지 않는다."
 	)
 	if shop_button != null:
 		shop_button.pressed.emit()
@@ -348,6 +378,34 @@ func _run() -> void:
 		cards_cleared_on_bottom_focus,
 		"하단 버튼에 초점을 옮기면 기존 스탯 카드 선택 표시가 사라진다."
 	)
+	screen._show_passive_reset_prompt()
+	await process_frame
+	screen._passive_reset_no_button.grab_focus()
+	var passive_reset_up_event: InputEventKey = InputEventKey.new()
+	passive_reset_up_event.pressed = true
+	passive_reset_up_event.physical_keycode = KEY_UP
+	var passive_reset_down_event: InputEventKey = InputEventKey.new()
+	passive_reset_down_event.pressed = true
+	passive_reset_down_event.physical_keycode = KEY_DOWN
+	var passive_reset_left_event: InputEventKey = InputEventKey.new()
+	passive_reset_left_event.pressed = true
+	passive_reset_left_event.physical_keycode = KEY_LEFT
+	var passive_reset_arrows_blocked: bool = (
+		screen._handle_passive_reset_prompt_input(passive_reset_up_event)
+		and screen._handle_passive_reset_prompt_input(passive_reset_down_event)
+		and screen._passive_reset_no_button.has_focus()
+	)
+	_expect(
+		passive_reset_arrows_blocked,
+		"패시브 초기화 확인창에서는 위아래 방향키가 포커스를 이동시키지 않는다."
+	)
+	screen._handle_passive_reset_prompt_input(passive_reset_left_event)
+	_expect(
+		screen._passive_reset_yes_button.has_focus(),
+		"패시브 초기화 확인창에서는 좌우 방향키로만 버튼을 전환한다."
+	)
+	screen._hide_passive_reset_prompt()
+	await process_frame
 	var attack_card: Button = screen.find_child(
 		"ShopCard_attack_speed", true, false
 	) as Button
@@ -492,12 +550,11 @@ func _run() -> void:
 		_expect(
 			screen._character_prev_button.focus_mode == Control.FOCUS_NONE
 				and screen._character_next_button.focus_mode == Control.FOCUS_NONE
-				and screen._character_confirm_button.focus_mode == Control.FOCUS_NONE
 				and screen._character_buttons[2].focus_neighbor_right
 				== screen._character_buttons[2].get_path_to(screen._character_buttons[2])
 				and screen._character_buttons[2].focus_neighbor_bottom
 				== screen._character_buttons[2].get_path_to(screen._character_back_button),
-			"좌우 화살표와 선택완료 버튼은 포커스 상호작용을 받지 않는다."
+			"좌우 화살표는 포커스 상호작용을 받지 않고 캐릭터 카드는 BACK으로 이동한다."
 		)
 		screen._input(right_event)
 		await process_frame
@@ -672,6 +729,52 @@ func _run() -> void:
 			and result_overlay.visible
 			and screen.settings.get_stage_best_stars(5) == 3,
 		"Stage 5 보스가 쓰러지면 3별 결과 화면으로 전환한다."
+	)
+	if result_button != null:
+		result_button.pressed.emit()
+	_expect(
+		challenge_button != null
+			and not challenge_button.disabled
+			and screen.settings.is_challenge_unlocked(),
+		"1-5를 클리어하면 스테이지 선택 상단의 도전 모드가 해금된다."
+	)
+	var stars_before_challenge: int = screen.settings.star_currency
+	if challenge_button != null:
+		challenge_button.pressed.emit()
+	await process_frame
+	var challenge_controller: MainGameController = screen._loaded_game_controller()
+	var challenge_character: MainCharacterController
+	if screen._game_instance != null:
+		challenge_character = screen._game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+	var challenge_timer_label: Label = screen.find_child("TimerLabel", true, false) as Label
+	_expect(
+		challenge_controller != null
+			and challenge_controller.is_challenge_mode()
+			and challenge_controller.state == MainGameController.GameState.PLAYING
+			and challenge_timer_label != null
+			and not challenge_timer_label.visible
+			and challenge_character != null
+			and challenge_character.character_id == screen._selected_character_id
+			and challenge_character.lives == challenge_character.get_max_lives(),
+		"도전 모드는 선택 캐릭터·패시브 목숨을 적용하고 타이머 없이 시작한다."
+	)
+	if challenge_controller != null:
+		challenge_controller.total_lines = 12
+		challenge_controller.end_game()
+	await process_frame
+	_expect(
+		screen.settings.challenge_best_lines == 12
+			and screen.settings.star_currency == stars_before_challenge,
+		"도전 모드 게임오버는 최고 줄만 기록하고 별 재화는 지급하지 않는다."
+	)
+	screen._dispose_game_instance()
+	screen.show_stage_select()
+	await process_frame
+	_expect(
+		challenge_button != null and challenge_button.text.contains("12"),
+		"도전 모드 버튼에 저장된 최고 삭제 줄 수를 표시한다."
 	)
 
 	screen.start_game(5)

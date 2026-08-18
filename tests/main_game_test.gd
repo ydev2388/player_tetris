@@ -165,10 +165,19 @@ func _run() -> void:
 			and normal_atlas.get_height() == 768
 			and normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png")
 			and ANIMATION_DATA.uses_fixed_geometry("normal")
-			and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
+		and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
 			and ANIMATION_DATA.fixed_offset_for("normal").is_equal_approx(Vector2(0.0, 3.0)),
 		"일반인 atlas는 1024×768 균일 격자다."
 	)
+	var scene_atlas_check: MainGameView = GAME_SCENE.instantiate()
+	var scene_normal_atlas: Texture2D = (
+		scene_atlas_check.get_node("BoardPhysics/Character/Sprite") as Sprite2D
+	).texture
+	_expect(
+		scene_normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png"),
+		"게임 씬의 초기 일반인 Sprite도 runtime v8 atlas를 사용한다."
+	)
+	scene_atlas_check.free()
 	var boxer_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
 	_expect(
 		ANIMATION_DATA.has_character("boxer")
@@ -301,6 +310,7 @@ func _run() -> void:
 	custom_events.clear()
 	custom_event = null
 	await process_frame
+	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
 	else:
@@ -540,7 +550,10 @@ func _test_runtime_cleanup() -> void:
 			and is_zero_approx(controller.fall_freeze_remaining)
 			and is_zero_approx(controller.future_gimmick_freeze_remaining)
 			and controller.boss_seeds.is_empty()
-			and not character._meditation_loop_player.playing,
+			and not character._meditation_loop_player.playing
+			and character._sfx_player.stream == null
+			and character._sfx_cue_player.stream == null
+			and character._meditation_loop_player.stream == null,
 		"게임 종료는 명상·투사체·보호벽·물길·freeze·결박 상태를 한 번에 정리한다."
 	)
 	character._sfx_player.stop()

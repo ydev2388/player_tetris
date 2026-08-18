@@ -19,6 +19,13 @@ const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd")
 const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
+const START_STORY_TEXTURE: Texture2D = preload("res://assets/story/start_story.png")
+const START_STORY_REGIONS: Array[Rect2] = [
+	Rect2(8.0, 8.0, 720.0, 527.0),
+	Rect2(733.0, 8.0, 720.0, 527.0),
+	Rect2(8.0, 541.0, 720.0, 527.0),
+	Rect2(733.0, 541.0, 720.0, 527.0),
+]
 
 const BACKGROUND: Color = Color("#f7f8fb")
 const PANEL: Color = Color("#ffffff")
@@ -175,6 +182,11 @@ var _game_exit_was_playing: bool = false
 var _select_sfx_player: AudioStreamPlayer
 var _select_sfx_timer: Timer
 var _skip_initial_select_sfx: bool = true
+var _start_story_seen: bool = false
+var _start_story_overlay: Control
+var _start_story_frame: TextureRect
+var _start_story_index: int = -1
+var _start_story_fade_tween: Tween
 
 var _capture_overlay: Control
 var _capture_label: Label
@@ -227,6 +239,14 @@ func _ready() -> void:
 	_build_interface()
 	_refresh_key_buttons()
 	show_main_menu()
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_select_sfx_timer):
+		_select_sfx_timer.stop()
+	if is_instance_valid(_select_sfx_player):
+		_select_sfx_player.stop()
+		_select_sfx_player.stream = null
 
 
 func _draw() -> void:
@@ -345,6 +365,9 @@ func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 		if challenge_mode:
 			game_controller.game_changed.connect(_on_challenge_game_changed)
 	_show_screen(Screen.GAME)
+	if not _start_story_seen:
+		_start_story_seen = true
+		_show_start_story()
 	game_loaded.emit(_game_instance)
 	return true
 
@@ -383,7 +406,9 @@ func _input(event: InputEvent) -> void:
 	var key_event: InputEventKey = event as InputEventKey
 	if not key_event.pressed or key_event.echo:
 		return
-	if _handle_game_exit_prompt_input(key_event):
+	if _handle_start_story_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -427,6 +452,17 @@ func _handle_key_capture(key_event: InputEventKey) -> bool:
 	_show_binding_result(result)
 	if bool(result.get("ok", false)):
 		cancel_key_capture()
+	return true
+
+
+func _handle_start_story_input(_key_event: InputEventKey) -> bool:
+	if _start_story_overlay == null or not _start_story_overlay.visible:
+		return false
+	if _start_story_index >= START_STORY_REGIONS.size() - 1:
+		_hide_start_story()
+	else:
+		_start_story_index += 1
+		_set_start_story_frame(_start_story_index, true)
 	return true
 
 
@@ -684,6 +720,7 @@ func _build_interface() -> void:
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 	_build_stage_fail_overlay()
+	_build_start_story_overlay()
 
 
 func _build_main_screen() -> void:
@@ -1676,6 +1713,89 @@ func _build_stage_fail_overlay() -> void:
 	_stage_fail_select_button.pressed.connect(_on_stage_fail_select)
 
 
+func _build_start_story_overlay() -> void:
+	_start_story_overlay = Control.new()
+	_start_story_overlay.name = "StartStoryOverlay"
+	_start_story_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_start_story_overlay.z_as_relative = false
+	_start_story_overlay.z_index = 300
+	_start_story_overlay.visible = false
+	_start_story_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_start_story_overlay)
+
+	var background: ColorRect = ColorRect.new()
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	background.color = Color("#101318")
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_story_overlay.add_child(background)
+
+	_start_story_frame = TextureRect.new()
+	_start_story_frame.name = "StartStoryFrame"
+	_start_story_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_start_story_frame.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_start_story_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_start_story_frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_start_story_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_start_story_overlay.add_child(_start_story_frame)
+
+
+func _show_start_story() -> void:
+	if _start_story_overlay == null:
+		return
+	_start_story_index = 0
+	_set_start_story_frame(_start_story_index, false)
+	_start_story_overlay.visible = true
+	_start_story_overlay.move_to_front()
+	_set_game_story_paused(true)
+
+
+func _hide_start_story() -> void:
+	if _start_story_overlay == null:
+		return
+	_start_story_overlay.visible = false
+	if _start_story_fade_tween != null:
+		_start_story_fade_tween.kill()
+		_start_story_fade_tween = null
+	_set_game_story_paused(false)
+
+
+func _set_start_story_frame(frame_index: int, fade_in: bool) -> void:
+	var atlas_frame: AtlasTexture = AtlasTexture.new()
+	atlas_frame.atlas = START_STORY_TEXTURE
+	atlas_frame.region = START_STORY_REGIONS[frame_index]
+	_start_story_frame.texture = atlas_frame
+	if not fade_in:
+		_start_story_frame.modulate = Color.WHITE
+		return
+	_start_story_frame.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	if _start_story_fade_tween != null:
+		_start_story_fade_tween.kill()
+		_start_story_fade_tween = null
+	_start_story_fade_tween = create_tween()
+	_start_story_fade_tween.tween_property(
+		_start_story_frame,
+		"modulate:a",
+		1.0,
+		0.35
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _set_game_story_paused(paused: bool) -> void:
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.set_physics_process(not paused)
+	var game_character: MainCharacterController = null
+	if _game_instance != null and is_instance_valid(_game_instance):
+		game_character = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+	if game_character != null:
+		game_character.set_physics_process(not paused)
+	var game_view: MainGameView = _game_instance as MainGameView
+	if game_view != null:
+		game_view.set_process(not paused)
+
+
 func _show_stage_fail() -> void:
 	if _stage_fail_overlay == null:
 		return
@@ -1779,6 +1899,8 @@ func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
 
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
+	if screen_type != Screen.GAME:
+		_hide_start_story()
 	for stored_screen: Variant in _screens.values():
 		(stored_screen as Control).visible = false
 	_game_host.visible = screen_type == Screen.GAME
@@ -2127,6 +2249,7 @@ func _dispose_game_instance() -> void:
 	if _game_instance == null or not is_instance_valid(_game_instance):
 		_game_instance = null
 		return
+	_hide_start_story()
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.clear_runtime_state()
@@ -2154,6 +2277,7 @@ func _play_select_sfx() -> void:
 	if _skip_initial_select_sfx:
 		_skip_initial_select_sfx = false
 		return
+	_select_sfx_player.stop()
 	_select_sfx_player.stream = SFX_SELECT
 	_select_sfx_player.play()
 	_select_sfx_timer.start()

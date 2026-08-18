@@ -50,6 +50,7 @@ func _run() -> void:
 	)
 	game.queue_free()
 	await process_frame
+	await create_timer(0.25).timeout
 	if not reached_terminal_fall or not terminal_is_extended or not fixed_scale:
 		push_error("Long fall did not hold the extended terminal-fall sprite.")
 		quit(1)

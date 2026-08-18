@@ -572,6 +572,32 @@ func _run() -> void:
 	if stage_button != null:
 		stage_button.pressed.emit()
 	_expect(screen.current_screen == BlockFighterStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
+	var story_controller: MainGameController = screen._loaded_game_controller()
+	_expect(
+		screen._start_story_overlay.visible
+			and screen._start_story_index == 0
+			and story_controller != null
+			and not story_controller.is_physics_processing(),
+		"첫 게임 시작은 1번 story panel을 띄우고 게임 진행을 잠근다."
+	)
+	var story_next_event: InputEventKey = InputEventKey.new()
+	story_next_event.pressed = true
+	story_next_event.physical_keycode = KEY_A
+	for story_index: int in range(1, 4):
+		screen._input(story_next_event)
+		_expect(
+			screen._start_story_overlay.visible
+				and screen._start_story_index == story_index
+				and screen._start_story_frame.modulate.a < 1.0,
+				"아무 키로 story panel %d가 fade-in 전환을 시작한다." % (story_index + 1)
+		)
+	screen._input(story_next_event)
+	_expect(
+		not screen._start_story_overlay.visible
+			and story_controller != null
+			and story_controller.is_physics_processing(),
+		"4번 story panel 뒤 아무 키로 story를 닫고 게임을 재개한다."
+	)
 	await process_frame
 	await physics_frame
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
@@ -824,6 +850,7 @@ func _run() -> void:
 	var corrupt_settings_path: String = ProjectSettings.globalize_path(corrupt_path)
 	if FileAccess.file_exists(corrupt_settings_path):
 		DirAccess.remove_absolute(corrupt_settings_path)
+	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 UI 테스트 %d개 통과" % _checks)
 	else:

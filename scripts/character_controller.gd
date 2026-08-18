@@ -230,6 +230,13 @@ func _ready() -> void:
 	_reset_character()
 
 
+func _exit_tree() -> void:
+	for player: AudioStreamPlayer in [_sfx_player, _sfx_cue_player, _meditation_loop_player]:
+		if is_instance_valid(player):
+			player.stop()
+			player.stream = null
+
+
 ## 후속 캐릭터 선택 UI가 시각 profile을 교체할 때 사용한다.
 func set_character_id(value: String) -> bool:
 	if not ANIMATION_DATA.has_character(value) or not CHARACTER_DATA.has_character(value):
@@ -444,6 +451,7 @@ func clear_runtime_state() -> void:
 	for player: AudioStreamPlayer in [_sfx_player, _sfx_cue_player, _meditation_loop_player]:
 		if is_instance_valid(player):
 			player.stop()
+			player.stream = null
 	stats_changed.emit()
 
 
@@ -2829,6 +2837,7 @@ func _create_sfx_player() -> AudioStreamPlayer:
 ## 상황: 점프·피격·펀치처럼 직전 효과음을 교체해도 되는 단발음을 재생할 때 호출된다.
 ## 결과: 주 SFX player의 stream을 교체하고 즉시 처음부터 재생한다.
 func _play_sfx(stream: AudioStream) -> void:
+	_sfx_player.stop()
 	_sfx_player.stream = stream
 	_sfx_player.play()
 
@@ -2836,6 +2845,7 @@ func _play_sfx(stream: AudioStream) -> void:
 ## 상황: 줄 삭제처럼 주 효과음과 겹쳐야 하는 보조 cue를 재생할 때 호출된다.
 ## 결과: 별도 cue player를 사용하므로 `_play_sfx()` 재생을 끊지 않는다.
 func _play_sfx_cue(stream: AudioStream) -> void:
+	_sfx_cue_player.stop()
 	_sfx_cue_player.stream = stream
 	_sfx_cue_player.play()
 
@@ -2849,6 +2859,7 @@ func _play_block_elimination_sfx() -> void:
 ## 상황: 명상 시작 원샷 뒤 지속음을 반복 재생해야 할 때 호출된다.
 ## 결과: 명상 loop stream을 전용 player에 지정하고 재생한다.
 func _start_meditation_loop() -> void:
+	_meditation_loop_player.stop()
 	_meditation_loop_player.stream = SFX_MEDITATION_LOOP
 	_meditation_loop_player.play()
 

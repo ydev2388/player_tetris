@@ -68,6 +68,7 @@ func _run() -> void:
 	_cleanup_input()
 	game.queue_free()
 	await process_frame
+	await create_timer(0.25).timeout
 	if not climbed or not animated:
 		push_error("Hanging runtime did not climb through all eight sprite frames.")
 		quit(1)

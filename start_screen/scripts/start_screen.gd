@@ -18,6 +18,9 @@ const UI_SCRIPT: Script = preload("res://start_screen/scripts/start_screen_ui.gd
 const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd")
 const LOCALIZATION: Script = preload("res://scripts/localization.gd")
+const MUSIC_MANAGER_SCRIPT: Script = preload(
+	"res://start_screen/scripts/music_manager.gd"
+)
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
 const START_STORY_TEXTURE: Texture2D = preload("res://assets/story/start_story.png")
 const START_STORY_REGIONS: Array[Rect2] = [
@@ -187,6 +190,7 @@ var _start_story_overlay: Control
 var _start_story_frame: TextureRect
 var _start_story_index: int = -1
 var _start_story_fade_tween: Tween
+var _music_manager: BlockFighterMusicManager
 
 var _capture_overlay: Control
 var _capture_label: Label
@@ -226,6 +230,9 @@ func _ready() -> void:
 	settings.progress_changed.connect(_refresh_stage_select)
 	settings.progress_changed.connect(_refresh_shop)
 	add_child(settings)
+	_music_manager = MUSIC_MANAGER_SCRIPT.new() as BlockFighterMusicManager
+	_music_manager.name = "MusicManager"
+	add_child(_music_manager)
 	_select_sfx_player = AudioStreamPlayer.new()
 	_select_sfx_player.bus = &"SFX"
 	_select_sfx_player.volume_db = -20.0
@@ -273,6 +280,14 @@ func show_main_menu() -> void:
 	_hide_stage_result()
 	_hide_stage_fail()
 	_show_screen(Screen.MAIN)
+
+
+func _on_main_game_start_pressed() -> void:
+	if _start_story_seen:
+		show_stage_select()
+		return
+	_start_story_seen = true
+	_show_start_story()
 
 
 func show_stage_select() -> void:
@@ -365,9 +380,6 @@ func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 		if challenge_mode:
 			game_controller.game_changed.connect(_on_challenge_game_changed)
 	_show_screen(Screen.GAME)
-	if not _start_story_seen:
-		_start_story_seen = true
-		_show_start_story()
 	game_loaded.emit(_game_instance)
 	return true
 
@@ -460,6 +472,7 @@ func _handle_start_story_input(_key_event: InputEventKey) -> bool:
 		return false
 	if _start_story_index >= START_STORY_REGIONS.size() - 1:
 		_hide_start_story()
+		show_stage_select()
 	else:
 		_start_story_index += 1
 		_set_start_story_frame(_start_story_index, true)
@@ -743,7 +756,7 @@ func _build_main_screen() -> void:
 	).add_theme_constant_override("line_spacing", -4)
 
 	var button_data: Array = [
-		["GAME START", CYAN, show_stage_select],
+		["GAME START", CYAN, _on_main_game_start_pressed],
 		["게임 설명", ORANGE, show_tutorial],
 		["OPTION", PURPLE, show_options],
 		["EXIT", DANGER, request_exit],
@@ -1291,7 +1304,7 @@ func _build_key_footer(screen: Control) -> void:
 
 func _build_volume_screen() -> void:
 	var screen: Control = _create_screen("VolumeScreen", Screen.VOLUME)
-	_add_screen_title(screen, "VOLUME", "BGM은 추후 추가되며 현재는 효과음만 조절합니다.")
+	_add_screen_title(screen, "VOLUME", "BGM과 효과음의 크기를\n각각 조절합니다.")
 	var panel: Panel = _create_panel(
 		screen,
 		Rect2(150.0, 190.0, 660.0, 390.0),
@@ -1300,10 +1313,19 @@ func _build_volume_screen() -> void:
 		12
 	)
 
+	_music_value_label = _create_volume_row(
+		panel,
+		"BGM",
+		69.0,
+		settings.music_percent,
+		CYAN,
+		"MusicSlider",
+		_on_music_changed
+	)
 	_sfx_value_label = _create_volume_row(
 		panel,
 		"SFX",
-		100.0,
+		149.0,
 		settings.sfx_percent,
 		ORANGE,
 		"SfxSlider",
@@ -1312,8 +1334,8 @@ func _build_volume_screen() -> void:
 
 	_create_label(
 		panel,
-		"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.",
-		Rect2(54.0, 190.0, 552.0, 64.0),
+		"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.",
+		Rect2(54.0, 238.0, 552.0, 64.0),
 		14,
 		MUTED,
 		HORIZONTAL_ALIGNMENT_CENTER
@@ -1901,6 +1923,11 @@ func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
 	if screen_type != Screen.GAME:
 		_hide_start_story()
+	if _music_manager != null:
+		if screen_type == Screen.GAME:
+			_music_manager.play_battle()
+		else:
+			_music_manager.play_menu()
 	for stored_screen: Variant in _screens.values():
 		(stored_screen as Control).visible = false
 	_game_host.visible = screen_type == Screen.GAME

@@ -303,6 +303,7 @@ func _run() -> void:
 	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
+	await _test_hanging_character_is_pushed_below_descending_piece()
 	await _test_fixed_support_grab()
 	await _test_standing_wall_visual_alignment()
 	await _test_hang_face_bounds()
@@ -942,13 +943,35 @@ func _test_release_punch() -> void:
 	character.stamina = 0.0
 	character._update_sprite_modulation()
 	var exhausted_hang_is_red: bool = character.sprite.modulate.is_equal_approx(Color(1.0, 0.0, 0.0, 1.0))
-	character.is_hanging = false
+	character._exit_hang()
+	var hang_exit_restores_color: bool = character.sprite.modulate.is_equal_approx(Color.WHITE)
 	character.stamina = MainCharacterController.MAX_STAMINA
-	character._update_sprite_modulation()
 	_expect(
-		exhausted_hang_is_red and character.sprite.modulate.is_equal_approx(Color.WHITE),
-		"스테미나가 소진된 매달리기는 고정 빨간색이고 평상시는 기존 색으로 돌아온다."
+		exhausted_hang_is_red and hang_exit_restores_color,
+		"스테미나가 소진된 매달리기는 빨간색이고 종료 함수가 즉시 기존 색으로 되돌린다."
 	)
+	character.set_character_id("normal")
+	character.set_passive_levels([0, 0, 0, 3, 0, 0])
+	character.stamina = MainCharacterController.MAX_STAMINA
+	var hang_stamina_before: float = character.stamina
+	character._drain_hang_stamina(0.1)
+	var expected_passive_hang_drain: float = (
+		MainCharacterController.HANG_STAMINA_DRAIN
+		* MainCharacterData.stamina_drain_multiplier(
+			"normal",
+			character.passive_levels
+		)
+		* 0.1
+	)
+	_expect(
+		is_equal_approx(
+			hang_stamina_before - character.stamina,
+			expected_passive_hang_drain
+		),
+		"일반 매달리기와 모서리 오르기는 같은 스태미나 패시브 배율을 사용한다."
+	)
+	character.set_passive_levels([0, 0, 0, 0, 0, 0])
+	character.stamina = MainCharacterController.MAX_STAMINA
 	_expect(
 		MainGameView.SPECIAL_BAR_RECT.position.y
 			> MainLayout.BOARD_ORIGIN.y + MainLayout.BOARD_SIZE.y
@@ -1020,6 +1043,15 @@ func _test_release_punch() -> void:
 	_expect(
 		shared_crush_result,
 		"모든 캐릭터는 외형과 무관한 동일한 CrushSensor 판정을 사용한다."
+	)
+	character.set_character_id("normal")
+	character._play_character_special_sfx()
+	_expect(
+		MainCharacterController.CHARACTER_SPECIAL_SFX.size() == 8
+			and character._special_sfx_player.name == &"SpecialSfx"
+			and character._special_sfx_player.stream
+			== MainCharacterController.CHARACTER_SPECIAL_SFX["normal"],
+		"기본 8개 캐릭터는 특수 스킬 전용 효과음을 독립 SFX 채널로 재생한다."
 	)
 	character.play_special_animation()
 	_expect(
@@ -1652,6 +1684,68 @@ func _test_beta_specials() -> void:
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
 	scene.free()
+	await process_frame
+
+
+func _test_hanging_character_is_pushed_below_descending_piece() -> void:
+	var game: MainGameView = GAME_SCENE.instantiate()
+	game.set_meta("stage_number", 1)
+	root.add_child(game)
+	await process_frame
+	await physics_frame
+	var controller: MainGameController = game.controller
+	var character: MainCharacterController = game.character
+	controller.board.reset()
+	controller.state = MainGameController.GameState.PLAYING
+	controller.active_type = MainTetrominoData.Type.J
+	controller.active_rotation = 0
+	controller.active_cell_indices = [0]
+	controller.active_origin = Vector2i(5, 13)
+	character.position = Vector2(264.0, 600.0)
+	character.velocity = Vector2.ZERO
+	character.lives = 3
+	character.is_hanging = true
+	character.stamina = 0.0
+	character._update_sprite_modulation()
+	character._hang_body = game.get_node("BoardPhysics/ActivePiece") as Node2D
+	character._hang_last_global_position = character._hang_body.global_position
+	var position_before: Vector2 = character.position
+
+	character.handle_active_piece_descended(Vector2i(5, 12), Vector2i(5, 13))
+	_expect(
+		character.lives == 3
+			and not character.is_hanging
+			and character.position.y > position_before.y
+			and is_equal_approx(character.position.x, position_before.x)
+			and not character._character_position_overlaps_solid(character.position)
+			and character.sprite.modulate.is_equal_approx(Color.WHITE),
+		"매달리는 중 활성 블록이 머리로 내려오면 아래로 밀려나며 매달림 적색도 즉시 해제된다."
+	)
+	controller.board.reset()
+	controller.board.cells[15][5] = MainTetrominoData.Type.O
+	controller.active_type = MainTetrominoData.Type.J
+	controller.active_rotation = 0
+	controller.active_cell_indices = [0]
+	controller.active_origin = Vector2i(5, 13)
+	character.position = Vector2(264.0, 570.0)
+	character.velocity = Vector2.ZERO
+	character.lives = 3
+	character._invulnerability_remaining = 0.0
+	character.is_hanging = true
+	character._hang_body = game.get_node("BoardPhysics/ActivePiece") as Node2D
+	var blocked_push_has_no_direct_support: bool = not character._has_fixed_support_underfoot()
+
+	character.handle_active_piece_descended(Vector2i(5, 12), Vector2i(5, 13))
+	_expect(
+		blocked_push_has_no_direct_support
+			and character.lives == 2
+			and not character.is_hanging
+			and not character._active_piece_overlaps_rect(
+				character._character_collider_rect()
+			),
+		"낙하 블록 아래 안전 공간이 부족하면 겹침을 남기지 않고 압착 피해로 전환한다."
+	)
+	game.queue_free()
 	await process_frame
 
 

@@ -247,9 +247,10 @@ func _run() -> void:
 	screen.show_volume()
 	await process_frame
 	_expect(
-		screen.find_child("MusicSlider", true, false) == null
-			and screen.find_child("SfxSlider", true, false) != null,
-		"BGM을 추가하기 전에는 BGM slider를 표시하지 않는다."
+		screen.find_child("MusicSlider", true, false) != null
+			and screen.find_child("SfxSlider", true, false) != null
+			and screen._music_manager._active_mode == &"menu",
+		"BGM과 SFX slider를 함께 표시하고 메뉴 음악을 유지한다."
 	)
 	screen.show_options()
 	screen._show_progress_reset_prompt()
@@ -282,7 +283,30 @@ func _run() -> void:
 	menu_confirm_event.physical_keycode = KEY_Z
 	Input.action_press(&"character_jump")
 	_expect(screen._handle_menu_confirm_input(menu_confirm_event), "Z가 초점 메뉴 버튼을 선택한다.")
-	_expect(screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT, "GAME START가 스테이지 선택을 연다.")
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.MAIN
+			and screen._start_story_overlay.visible
+			and screen._start_story_index == 0,
+		"메인 메뉴 GAME START가 첫 story panel을 연다."
+	)
+	var story_next_event: InputEventKey = InputEventKey.new()
+	story_next_event.pressed = true
+	story_next_event.physical_keycode = KEY_A
+	for story_index: int in range(1, 4):
+		screen._input(story_next_event)
+		_expect(
+			screen.current_screen == BlockFighterStartScreen.Screen.MAIN
+				and screen._start_story_overlay.visible
+				and screen._start_story_index == story_index
+				and screen._start_story_frame.modulate.a < 1.0,
+				"아무 키로 story panel %d가 fade-in 전환을 시작한다." % (story_index + 1)
+		)
+	screen._input(story_next_event)
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and not screen._start_story_overlay.visible,
+		"4번 story panel 뒤 아무 키로 story를 닫고 스테이지 선택으로 이동한다."
+	)
 	await process_frame
 	var character_select_button: Button = screen.find_child(
 		"CharacterSelectButton", true, false
@@ -572,31 +596,10 @@ func _run() -> void:
 	if stage_button != null:
 		stage_button.pressed.emit()
 	_expect(screen.current_screen == BlockFighterStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
-	var story_controller: MainGameController = screen._loaded_game_controller()
-	_expect(
-		screen._start_story_overlay.visible
-			and screen._start_story_index == 0
-			and story_controller != null
-			and not story_controller.is_physics_processing(),
-		"첫 게임 시작은 1번 story panel을 띄우고 게임 진행을 잠근다."
-	)
-	var story_next_event: InputEventKey = InputEventKey.new()
-	story_next_event.pressed = true
-	story_next_event.physical_keycode = KEY_A
-	for story_index: int in range(1, 4):
-		screen._input(story_next_event)
-		_expect(
-			screen._start_story_overlay.visible
-				and screen._start_story_index == story_index
-				and screen._start_story_frame.modulate.a < 1.0,
-				"아무 키로 story panel %d가 fade-in 전환을 시작한다." % (story_index + 1)
-		)
-	screen._input(story_next_event)
 	_expect(
 		not screen._start_story_overlay.visible
-			and story_controller != null
-			and story_controller.is_physics_processing(),
-		"4번 story panel 뒤 아무 키로 story를 닫고 게임을 재개한다."
+			and screen._music_manager._active_mode == &"battle",
+		"게임 화면을 열면 story가 닫히고 전투 BGM으로 전환한다."
 	)
 	await process_frame
 	await physics_frame
@@ -670,7 +673,8 @@ func _run() -> void:
 		_expect(
 			screen.current_screen == BlockFighterStartScreen.Screen.MAIN
 				and screen._game_instance == null
-				and screen.find_child("LoadedGame", true, false) == null,
+				and screen.find_child("LoadedGame", true, false) == null
+				and screen._music_manager._active_mode == &"menu",
 			"Yes는 게임 인스턴스를 제거하고 메인 메뉴로 돌아간다."
 		)
 

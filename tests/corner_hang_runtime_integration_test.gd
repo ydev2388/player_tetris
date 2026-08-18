@@ -69,7 +69,29 @@ func _run() -> void:
 		if not character.is_hanging:
 			failures.append("%s: locked block grab failed" % character_id)
 			continue
+		if character_id == "normal":
+			character.set_passive_levels([0, 0, 0, 3, 0, 0])
 		character.global_position.y = character._hang_top_global_y
+		character._handle_hanging(1.0 / 60.0)
+		if character_id == "normal":
+			var stamina_before_corner_frame: float = character.stamina
+			character._handle_hanging(1.0 / 60.0)
+			var expected_corner_drain: float = (
+				MainCharacterController.HANG_STAMINA_DRAIN
+				* MainCharacterData.stamina_drain_multiplier(
+					character_id,
+					character.passive_levels
+				)
+				/ 60.0
+			)
+			if not is_equal_approx(
+				stamina_before_corner_frame - character.stamina,
+				expected_corner_drain
+			):
+				failures.append(
+					"normal: corner climb ignored stamina passive"
+				)
+			character.set_passive_levels([0, 0, 0, 0, 0, 0])
 		for frame_index: int in range(120):
 			if not character.is_hanging:
 				break

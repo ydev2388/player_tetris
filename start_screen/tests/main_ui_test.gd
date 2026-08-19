@@ -81,6 +81,10 @@ func _run() -> void:
 			and screen.settings.star_currency == 0,
 		"처음에는 1-1만 열리고 도전 모드와 다음 스테이지는 잠겨 있다."
 	)
+	_expect(
+		screen.settings.is_stage_unlocked(6) == false,
+		"6층은 5층을 클리어하기 전에는 잠겨 있다."
+	)
 	var zero_clear: Dictionary = screen.settings.complete_stage(1, 0)
 	_expect(
 		not bool(zero_clear.get("ok", false))
@@ -303,16 +307,45 @@ func _run() -> void:
 		)
 	screen._input(story_next_event)
 	_expect(
-		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+		screen.current_screen == BlockFighterStartScreen.Screen.FLOOR_SELECT
 			and not screen._start_story_overlay.visible,
-		"4번 story panel 뒤 아무 키로 story를 닫고 스테이지 선택으로 이동한다."
+		"4번 story panel 뒤 아무 키로 story를 닫고 탑 선택 화면으로 이동한다."
 	)
 	await process_frame
+	var floor_group_two: Button = screen.find_child(
+		"FloorGroupButton2", true, false
+	) as Button
+	var floor_group_one: Button = screen.find_child(
+		"FloorGroupButton1", true, false
+	) as Button
+	_expect(
+		floor_group_two != null
+			and floor_group_one != null
+			and floor_group_two.position.y < floor_group_one.position.y,
+		"탑 선택 화면은 위에 높은 층(6-10), 아래에 낮은 층(1-5)을 세로로 배치한다."
+	)
+	_expect(
+		floor_group_one != null
+			and floor_group_two != null
+			and floor_group_one.text.contains(screen._floor_group_label(0))
+			and floor_group_two.text.contains(screen._floor_group_label(1)),
+		"아래 버튼은 1구역(1-5층), 위 버튼은 2구역(6-10층) 라벨을 표시한다."
+	)
 	var character_select_button: Button = screen.find_child(
 		"CharacterSelectButton", true, false
 	) as Button
 	var shop_button: Button = screen.find_child("ShopButton", true, false) as Button
 	var challenge_button: Button = screen.find_child("ChallengeModeButton", true, false) as Button
+	if floor_group_one != null:
+		floor_group_one.pressed.emit()
+	await process_frame
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and screen._selected_floor_group == 0
+			and screen._stage_title_labels[0].text == "1층"
+			and screen._stage_title_labels[4].text == "5층" + screen._text("  보스", "  BOSS"),
+		"1구역(1-5층) 선택이 해당 층 선택 화면을 연다."
+	)
 	var locked_stage_label: Label = screen._stage_labels[1]
 	_expect(
 		character_select_button != null
@@ -587,10 +620,13 @@ func _run() -> void:
 	z_character_event.physical_keycode = KEY_Z
 	screen._input(z_character_event)
 	_expect(
-		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+		screen.current_screen == BlockFighterStartScreen.Screen.FLOOR_SELECT
 			and screen._selected_character_id == "boxer",
-		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정한다."
+		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정하고 탑 선택으로 간다."
 	)
+	if floor_group_one != null:
+		floor_group_one.pressed.emit()
+	await process_frame
 	var stage_button: Button = screen.find_child("StageButton1", true, false) as Button
 	_expect(stage_button != null and not stage_button.disabled, "1-1 스테이지 버튼을 선택할 수 있다.")
 	if stage_button != null:
@@ -764,9 +800,59 @@ func _run() -> void:
 		result_button.pressed.emit()
 	_expect(
 		challenge_button != null
+			and not screen.settings.is_challenge_unlocked()
+			and screen.settings.is_stage_unlocked(6),
+		"5층을 클리어하면 6층이 해금되지만 도전 모드는 아직 잠겨 있다."
+	)
+	for stage_number: int in range(6, 10):
+		var floor_unlock_result: Dictionary = screen.settings.complete_stage(stage_number, 3)
+		_expect(
+			bool(floor_unlock_result.get("ok", false)),
+			"Floor %d 디버그 테스트를 위해 이전 층을 해금한다." % stage_number
+		)
+	screen.start_game(10)
+	await process_frame
+	boss_controller = screen._loaded_game_controller()
+	boss_timer_label = screen.find_child("TimerLabel", true, false) as Label
+	_expect(
+		boss_controller != null
+			and boss_controller.is_boss_stage()
+			and boss_controller.boss_health == MainGameController.BOSS_MAX_HEALTH
+			and boss_timer_label != null
+			and boss_timer_label.visible
+			and boss_timer_label.text == "05:00",
+		"Floor 10 테스트에서 보스 체력 3으로 게임을 시작한다."
+	)
+	screen._input(debug_enter_event)
+	_expect(
+		boss_controller != null
+			and boss_controller.boss_health == 0
+			and boss_controller.state == MainGameController.GameState.BOSS_FALLING
+			and screen.current_screen == BlockFighterStartScreen.Screen.GAME
+			and screen._game_instance != null,
+		"Floor 10의 Enter는 즉시 결과 처리 대신 보스 체력을 0으로 만든다."
+	)
+	if boss_controller != null:
+		boss_controller._advance_boss_fall(
+			MainGameController.BOSS_DOWN_DURATION_SECONDS + 2.0
+		)
+		boss_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+	await process_frame
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and screen._game_instance == null
+			and result_overlay != null
+			and result_overlay.visible
+			and screen.settings.get_stage_best_stars(10) == 3,
+		"Floor 10 보스가 쓰러지면 3별 결과 화면으로 전환한다."
+	)
+	if result_button != null:
+		result_button.pressed.emit()
+	_expect(
+		challenge_button != null
 			and not challenge_button.disabled
 			and screen.settings.is_challenge_unlocked(),
-		"1-5를 클리어하면 스테이지 선택 상단의 도전 모드가 해금된다."
+		"10층을 클리어하면 스테이지 선택 상단의 도전 모드가 해금된다."
 	)
 	var stars_before_challenge: int = screen.settings.star_currency
 	if challenge_button != null:
@@ -805,6 +891,32 @@ func _run() -> void:
 	_expect(
 		challenge_button != null and challenge_button.text.contains("12"),
 		"도전 모드 버튼에 저장된 최고 삭제 줄 수를 표시한다."
+	)
+
+	screen.show_floor_select()
+	await process_frame
+	if floor_group_two != null:
+		floor_group_two.pressed.emit()
+	await process_frame
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and screen._selected_floor_group == 1
+			and screen._stage_title_labels[0].text == "6층"
+			and screen._stage_title_labels[4].text == "10층" + screen._text("  보스", "  BOSS")
+			and screen.settings.is_stage_unlocked(6),
+		"2구역을 선택하면 6~10층 카드가 표시되고 6층은 해금 상태다."
+	)
+	screen.show_floor_select()
+	await process_frame
+	if floor_group_one != null:
+		floor_group_one.pressed.emit()
+	await process_frame
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
+			and screen._selected_floor_group == 0
+			and screen._stage_title_labels[0].text == "1층"
+			and screen._stage_title_labels[4].text == "5층" + screen._text("  보스", "  BOSS"),
+		"1구역을 다시 선택하면 1~5층 카드로 돌아온다."
 	)
 
 	screen.start_game(5)

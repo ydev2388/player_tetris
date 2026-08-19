@@ -8,7 +8,7 @@ func _init() -> void:
 
 
 func _capture() -> void:
-	for stage_number: int in range(1, 6):
+	for stage_number: int in range(1, 11):
 		var game: MainGameView = GAME_SCENE.instantiate()
 		game.set_meta("stage_number", stage_number)
 		root.add_child(game)
@@ -20,7 +20,7 @@ func _capture() -> void:
 			controller.thorn_visible = stage_number != 3
 		if stage_number == 4:
 			game.character.apply_binding(2.0)
-		if stage_number == 5:
+		if stage_number % MainGameController.FLOORS_PER_THEME == 0:
 			controller._spawn_boss_seeds()
 		controller.game_changed.emit()
 		game.queue_redraw()

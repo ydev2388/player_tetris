@@ -42,6 +42,7 @@ const MEDITATION_TIME_SCALE: float = 2.0 # 명상 시 기본 속도에 추가로
 const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙하 간격(초).
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
+const FLOORS_PER_THEME: int = 5 # 테마(보스 층)마다 묶는 층 수. 5층마다 보스가 나온다.
 const SURVIVAL_TIME_SECONDS: float = 90.0
 const BOSS_TIME_SECONDS: float = 300.0
 const THORN_ON_SECONDS: float = 1.0
@@ -91,6 +92,12 @@ const STAGE_GIMMICKS: Dictionary = {
 		"binding_first_delay": 5.0,
 		"boss_seed_enabled": true,
 	},
+	# 6층~10층은 아직 기믹 없음(1층과 동일). 10층은 보스 층이라 시간 제한만 길다.
+	6: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
+	7: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
+	8: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
+	9: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
+	10: {"time_limit": 300.0, "thorn_probability": 0.0, "binding_enabled": false},
 }
 
 # SRS(Super Rotation System) wall-kick 표.
@@ -308,11 +315,11 @@ func reset_game(seed_value: int = -1) -> void:
 
 
 func is_survival_stage() -> bool:
-	return not challenge_mode and stage_number < 5
+	return not challenge_mode and stage_number % FLOORS_PER_THEME != 0
 
 
 func is_boss_stage() -> bool:
-	return not challenge_mode and stage_number == 5
+	return not challenge_mode and stage_number % FLOORS_PER_THEME == 0
 
 
 func is_challenge_mode() -> bool:

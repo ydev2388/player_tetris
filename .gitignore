@@ -12,8 +12,10 @@ tools/__pycache__/
 /design/
 /Godot_v4.7.1-stable_linux.x86_64
 /docs/research.md
+/docs/research_full.md
 /docs/plan.md
 dssign/
 .commandcode/
 .codex/
 /build_web.sh
+.env

@@ -43,6 +43,8 @@ const DANGER: Color = Color("#d9485f")
 const SHOP_GOLD: Color = Color("#d8b23a")
 const _CHARACTER_INSELECT_MODULATE: Color = Color(0.82, 0.85, 0.90, 0.88)
 const _SHOP_CARD_COLUMNS: int = 4
+const _FLOORS_PER_GROUP: int = 5
+const _FLOOR_GROUP_COUNT: int = 2
 const _SHOP_CARD_SIZE: Vector2 = Vector2(160.0, 158.0)
 const _SHOP_CARD_GAP: float = 16.0
 const _SHOP_GRID_WIDTH: float = 760.0
@@ -60,7 +62,7 @@ const ENGLISH_TEXT: Dictionary = {
 	"별 0개": "0 Stars", "캐릭터 선택": "SELECT CHARACTER", "블록 깨러 가기": "START STAGE",
 	"상점": "SHOP", "메인으로": "MAIN MENU", "상점 선택": "SHOP",
 	"강화": "UPGRADES", "도전 모드": "CHALLENGE MODE",
-	"최고 기록 %d줄": "BEST %d LINES", "1-5 클리어 후 해금": "CLEAR 1-5 TO UNLOCK",
+	"최고 기록 %d줄": "BEST %d LINES", "10층 클리어 후 해금": "CLEAR 10F TO UNLOCK",
 	"선택 후 Z로 강화": "Press Z to upgrade", "스테이지 선택으로": "STAGE SELECT",
 	"패시브 초기화": "RESET PASSIVES", "키 설정과 사운드 크기를 조절합니다": "Adjust key bindings, language, and sound.",
 	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "Change movement, action, and\nsystem keys.",
@@ -85,7 +87,7 @@ const CHINESE_TEXT: Dictionary = {
 	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
 	"캐릭터 선택": "选择角色", "블록 깨러 가기": "开始关卡", "상점": "商店", "메인으로": "主菜单",
 	"상점 선택": "选择商店", "강화": "强化", "도전 모드": "挑战模式",
-	"최고 기록 %d줄": "最高纪录 %d 行", "1-5 클리어 후 해금": "通关 1-5 后解锁",
+	"최고 기록 %d줄": "最高纪录 %d 行", "10층 클리어 후 해금": "通关 10 层后解锁",
 	"선택 후 Z로 강화": "选择后按 Z 强化", "스테이지 선택으로": "关卡选择",
 	"패시브 초기화": "重置被动", "키 설정과 사운드 크기를 조절합니다": "调整按键、语言和音量。",
 	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "修改移动、动作和\n系统按键。",
@@ -113,11 +115,12 @@ const CHINESE_TEXT: Dictionary = {
 	"현재 효과: 목숨 +%d · Lv. %d / %d": "当前效果：生命 +%d · 等级 %d / %d",
 	"현재 효과: %s%d%% · Lv. %d / %d": "当前效果：%s%d%% · 等级 %d / %d",
 	"최대 레벨": "最高等级", "다음 비용 ★ %d": "下一级费用 ★ %d",
-	"1-%d 클리어!\n%s": "1-%d 通关！\n%s", "별 보상 +%d   (보유 %d)": "星星奖励 +%d   (持有 %d)",
+	"%d층 클리어!\n%s": "%d层通关！\n%s", "별 보상 +%d   (보유 %d)": "星星奖励 +%d   (持有 %d)",
 }
 
 enum Screen {
 	MAIN,
+	FLOOR_SELECT,
 	STAGE_SELECT,
 	CHARACTER,
 	SHOP,
@@ -144,6 +147,9 @@ var _main_buttons: Array[Button] = []
 var _stage_panels: Array[Panel] = []
 var _stage_buttons: Array[Button] = []
 var _stage_labels: Array[Label] = []
+var _stage_title_labels: Array[Label] = []
+var _floor_group_buttons: Array[Button] = []
+var _selected_floor_group: int = 0
 var _stage_currency_label: Label
 var _challenge_button: Button
 var _shop_currency_label: Label
@@ -284,7 +290,7 @@ func show_main_menu() -> void:
 
 func _on_main_game_start_pressed() -> void:
 	if _start_story_seen:
-		show_stage_select()
+		show_floor_select()
 		return
 	_start_story_seen = true
 	_show_start_story()
@@ -292,6 +298,11 @@ func _on_main_game_start_pressed() -> void:
 
 func show_stage_select() -> void:
 	_hide_stage_result()
+	_selected_floor_group = clampi(
+		(selected_stage_number - 1) / _FLOORS_PER_GROUP,
+		0,
+		_FLOOR_GROUP_COUNT - 1
+	)
 	_refresh_stage_select()
 	_show_screen(Screen.STAGE_SELECT)
 
@@ -346,7 +357,7 @@ func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 	if stage_number < 1:
 		stage_number = selected_stage_number
 	if challenge_mode and not settings.is_challenge_unlocked():
-		_show_message(_text("1-5 클리어 후 해금", "CLEAR 1-5 TO UNLOCK"))
+		_show_message(_text("10층 클리어 후 해금", "CLEAR 10F TO UNLOCK"))
 		return false
 	if not challenge_mode and not settings.is_stage_unlocked(stage_number):
 		_show_message(_text("아직 잠긴 스테이지입니다.", "This stage is locked."))
@@ -472,7 +483,7 @@ func _handle_start_story_input(_key_event: InputEventKey) -> bool:
 		return false
 	if _start_story_index >= START_STORY_REGIONS.size() - 1:
 		_hide_start_story()
-		show_stage_select()
+		show_floor_select()
 	else:
 		_start_story_index += 1
 		_set_start_story_frame(_start_story_index, true)
@@ -538,7 +549,7 @@ func _handle_character_select_input(key_event: InputEventKey) -> bool:
 		return true
 	if key_code == KEY_Z:
 		if not _selected_character_id.is_empty() and MainCharacterData.has_character(_selected_character_id):
-			show_stage_select()
+			show_floor_select()
 		return true
 	return false
 
@@ -696,8 +707,10 @@ func _handle_back_navigation(key_event: InputEventKey) -> bool:
 		return false
 
 	match current_screen:
-		Screen.STAGE_SELECT:
+		Screen.FLOOR_SELECT:
 			show_main_menu()
+		Screen.STAGE_SELECT:
+			show_floor_select()
 		Screen.CHARACTER:
 			show_stage_select()
 		Screen.SHOP:
@@ -719,6 +732,7 @@ func _build_interface() -> void:
 	add_child(_game_host)
 
 	_build_main_screen()
+	_build_floor_select_screen()
 	_build_stage_select_screen()
 	_build_character_screen()
 	_build_shop_screen()
@@ -817,28 +831,29 @@ func _build_stage_select_screen() -> void:
 	character_button.focus_entered.connect(_play_select_sfx)
 
 	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
-	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
-		var x_position: float = 70.0 + float(stage_number - 1) * 166.0
+	for card_index: int in range(_FLOORS_PER_GROUP):
+		var x_position: float = 145.0 + float(card_index) * 152.0
 		var panel: Panel = _create_panel(
 			screen,
-			Rect2(x_position, 190.0, 150.0, 340.0),
+			Rect2(x_position, 190.0, 140.0, 340.0),
 			PANEL,
-			accents[stage_number - 1],
+			accents[card_index],
 			10
 		)
 		_stage_panels.append(panel)
-		_create_label(
+		var title_label: Label = _create_label(
 			panel,
-			"1-%d%s" % [stage_number, _text("  보스", "  BOSS") if stage_number == 5 else ""],
-			Rect2(10.0, 26.0, 130.0, 38.0),
+			"",
+			Rect2(5.0, 26.0, 130.0, 38.0),
 			19,
 			TEXT,
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
+		_stage_title_labels.append(title_label)
 		var status_label: Label = _create_label(
 			panel,
 			"",
-			Rect2(10.0, 102.0, 130.0, 72.0),
+			Rect2(5.0, 102.0, 130.0, 72.0),
 			17,
 			ORANGE,
 			HORIZONTAL_ALIGNMENT_CENTER
@@ -846,13 +861,13 @@ func _build_stage_select_screen() -> void:
 		_stage_labels.append(status_label)
 		var stage_button: Button = _create_button(
 			panel,
-			"블록 깨러 가기",
-			Rect2(10.0, 235.0, 130.0, 48.0),
-			accents[stage_number - 1],
+			"",
+			Rect2(15.0, 235.0, 110.0, 48.0),
+			accents[card_index],
 			12
 		)
-		stage_button.name = "StageButton%d" % stage_number
-		stage_button.pressed.connect(_on_stage_selected.bind(stage_number))
+		stage_button.name = "StageButton%d" % (card_index + 1)
+		stage_button.pressed.connect(_on_stage_card_pressed.bind(card_index))
 		stage_button.focus_entered.connect(_play_select_sfx)
 		_stage_buttons.append(stage_button)
 
@@ -869,13 +884,114 @@ func _build_stage_select_screen() -> void:
 
 	var back_button: Button = _create_button(
 		screen,
+		"구역 선택",
+		Rect2(390.0, 650.0, 180.0, 48.0),
+		PURPLE,
+		14
+	)
+	back_button.name = "BackToFloorSelectButton"
+	back_button.pressed.connect(show_floor_select)
+	_refresh_stage_select()
+
+
+## 상황: GAME START 후 처음 도착하는 층 구역 선택 화면을 만들 때 호출된다.
+## 순서: 탑 모양 세로 배치(위=높은 층, 아래=낮은 층)로 구역 버튼을 생성한다.
+## 결과: 구역 버튼을 누르면 해당 구역의 층 선택 화면(STAGE_SELECT)으로 이동한다.
+func _build_floor_select_screen() -> void:
+	var screen: Control = _create_screen("FloorSelectScreen", Screen.FLOOR_SELECT)
+	_create_label(
+		screen,
+		_text("탑 선택", "SELECT TOWER"),
+		Rect2(0.0, 16.0, 960.0, 40.0),
+		30,
+		TEXT,
+		HORIZONTAL_ALIGNMENT_CENTER
+	)
+	var accents: Array[Color] = [CYAN, ORANGE, PURPLE, CYAN, DANGER]
+	# 위(높은 층)에서 아래(낮은 층) 순서로 세로 배치해 탑을 오르는 느낌을 낸다.
+	for group_index: int in range(_FLOOR_GROUP_COUNT):
+		var button_y: float = 130.0 + float(group_index) * 170.0
+		var group_button: Button = _create_button(
+			screen,
+			_floor_group_label(_FLOOR_GROUP_COUNT - 1 - group_index),
+			Rect2(330.0, button_y, 300.0, 150.0),
+			accents[group_index],
+			18
+		)
+		group_button.name = "FloorGroupButton%d" % (_FLOOR_GROUP_COUNT - group_index)
+		group_button.pressed.connect(
+			_on_floor_group_selected.bind(_FLOOR_GROUP_COUNT - 1 - group_index)
+		)
+		group_button.focus_entered.connect(_play_select_sfx)
+		_floor_group_buttons.append(group_button)
+
+	var back_button: Button = _create_button(
+		screen,
 		"메인으로",
 		Rect2(390.0, 650.0, 180.0, 48.0),
 		PURPLE,
 		14
 	)
 	back_button.pressed.connect(show_main_menu)
+
+
+func show_floor_select() -> void:
+	_hide_stage_result()
+	_selected_floor_group = clampi(
+		(selected_stage_number - 1) / _FLOORS_PER_GROUP,
+		0,
+		_FLOOR_GROUP_COUNT - 1
+	)
+	_refresh_floor_select()
+	_show_screen(Screen.FLOOR_SELECT)
+
+
+func _refresh_floor_select() -> void:
+	if settings == null or _floor_group_buttons.size() != _FLOOR_GROUP_COUNT:
+		return
+	for button_index: int in range(_FLOOR_GROUP_COUNT):
+		# 버튼 배열은 화면 위(높은 층)부터 저장되므로 그룹 인덱스로 변환한다.
+		var group_index: int = _FLOOR_GROUP_COUNT - 1 - button_index
+		var first_floor: int = group_index * _FLOORS_PER_GROUP + 1
+		var last_floor: int = (group_index + 1) * _FLOORS_PER_GROUP
+		var unlocked_count: int = 0
+		for stage_number: int in range(first_floor, last_floor + 1):
+			if settings.is_stage_unlocked(stage_number):
+				unlocked_count += 1
+		_floor_group_buttons[button_index].text = "%s\n%s" % [
+			_floor_group_label(group_index),
+			_text(
+				"%d/%d층 해금" % [unlocked_count, _FLOORS_PER_GROUP],
+				"%d/%d floors open" % [unlocked_count, _FLOORS_PER_GROUP],
+			),
+		]
+
+
+func _floor_group_label(group_index: int) -> String:
+	var first_floor: int = group_index * _FLOORS_PER_GROUP + 1
+	var last_floor: int = (group_index + 1) * _FLOORS_PER_GROUP
+	return _text(
+		"%d구역\n%d-%d층" % [group_index + 1, first_floor, last_floor],
+		"AREA %d\nFLOORS %d-%d" % [group_index + 1, first_floor, last_floor]
+	)
+
+
+func _floor_number_for_card(card_index: int) -> int:
+	return _selected_floor_group * _FLOORS_PER_GROUP + card_index + 1
+
+
+func _on_floor_group_selected(group_index: int) -> void:
+	if group_index < 0 or group_index >= _FLOOR_GROUP_COUNT:
+		return
+	_selected_floor_group = group_index
 	_refresh_stage_select()
+	_show_screen(Screen.STAGE_SELECT)
+
+
+func _on_stage_card_pressed(card_index: int) -> void:
+	var stage_number: int = _floor_number_for_card(card_index)
+	if settings != null and settings.is_stage_unlocked(stage_number):
+		start_game(stage_number)
 
 
 func _build_shop_screen() -> void:
@@ -1849,7 +1965,7 @@ func _retry_failed_stage() -> void:
 
 func _on_stage_fail_select() -> void:
 	_hide_stage_fail()
-	show_stage_select()
+	show_floor_select()
 
 
 func _show_stage_result(result: Dictionary) -> void:
@@ -1858,7 +1974,7 @@ func _show_stage_result(result: Dictionary) -> void:
 	var stage_number: int = int(result.get("stage_number", selected_stage_number))
 	var stars: int = int(result.get("stars", 3))
 	var reward: int = int(result.get("reward", 0))
-	_stage_result_label.text = _text("1-%d 클리어!\n%s", "1-%d CLEAR!\n%s") % [stage_number, _star_text(stars)]
+	_stage_result_label.text = _text("%d층 클리어!\n%s", "FLOOR %d CLEAR!\n%s") % [stage_number, _star_text(stars)]
 	_stage_result_reward_label.text = _text("별 보상 +%d   (보유 %d)", "Stars +%d   (Total %d)") % [
 		reward,
 		int(result.get("star_currency", settings.star_currency)),
@@ -1937,12 +2053,19 @@ func _show_screen(screen_type: Screen) -> void:
 	match screen_type:
 		Screen.MAIN:
 			_main_buttons[0].grab_focus.call_deferred()
+		Screen.FLOOR_SELECT:
+			if not _floor_group_buttons.is_empty():
+				_floor_group_buttons[0].grab_focus.call_deferred()
 		Screen.STAGE_SELECT:
 			if not _stage_buttons.is_empty():
-				var focus_index: int = clampi(selected_stage_number - 1, 0, _stage_buttons.size() - 1)
-				if _stage_buttons[focus_index].disabled:
-					focus_index = 0
-				_stage_buttons[focus_index].grab_focus.call_deferred()
+				var focus_card: int = clampi(
+					selected_stage_number - 1 - _selected_floor_group * _FLOORS_PER_GROUP,
+					0,
+					_stage_buttons.size() - 1
+				)
+				if _stage_buttons[focus_card].disabled:
+					focus_card = 0
+				_stage_buttons[focus_card].grab_focus.call_deferred()
 		Screen.CHARACTER:
 			for button: Button in _character_buttons:
 				if button.visible:
@@ -1977,8 +2100,8 @@ func _refresh_tutorial() -> void:
 func _refresh_stage_select() -> void:
 	if (
 		settings == null
-		or _stage_panels.size() != StartScreenSettings.STAGE_COUNT
-		or _stage_buttons.size() != StartScreenSettings.STAGE_COUNT
+		or _stage_panels.size() != _FLOORS_PER_GROUP
+		or _stage_buttons.size() != _FLOORS_PER_GROUP
 		or _challenge_button == null
 	):
 		return
@@ -1990,13 +2113,18 @@ func _refresh_stage_select() -> void:
 			_text("최고 기록 %d줄") % settings.challenge_best_lines,
 		]
 		if challenge_unlocked
-		else "🔒 %s\n%s" % [_text("도전 모드"), _text("1-5 클리어 후 해금")]
+		else "🔒 %s\n%s" % [_text("도전 모드"), _text("10층 클리어 후 해금")]
 	)
-	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT + 1):
-		var index: int = stage_number - 1
+	for card_index: int in range(_FLOORS_PER_GROUP):
+		var stage_number: int = _floor_number_for_card(card_index)
 		var unlocked: bool = settings.is_stage_unlocked(stage_number)
-		_stage_panels[index].modulate = Color.WHITE if unlocked else Color(0.62, 0.66, 0.72, 0.72)
-		_stage_labels[index].text = (
+		var is_boss: bool = stage_number % _FLOORS_PER_GROUP == 0
+		_stage_title_labels[card_index].text = "%d층%s" % [
+			stage_number,
+			_text("  보스", "  BOSS") if is_boss else "",
+		]
+		_stage_panels[card_index].modulate = Color.WHITE if unlocked else Color(0.62, 0.66, 0.72, 0.72)
+		_stage_labels[card_index].text = (
 			"%s\n%s" % [
 				_star_text(settings.get_stage_best_stars(stage_number)),
 				_text("입장 가능", "AVAILABLE"),
@@ -2004,7 +2132,9 @@ func _refresh_stage_select() -> void:
 			if unlocked
 			else "🔒\n%s" % _text("잠김", "LOCKED")
 		)
-		_stage_buttons[index].text = _text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")
+		_stage_buttons[card_index].text = (
+			_text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")
+		)
 
 
 func _refresh_shop() -> void:

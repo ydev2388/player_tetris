@@ -15,7 +15,7 @@ const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
-const STAGE_COUNT: int = 5
+const STAGE_COUNT: int = 10
 const MAX_STAGE_STARS: int = 3
 const PASSIVE_IDS: Array[String] = [
 	"attack_speed",
@@ -61,7 +61,7 @@ var settings_path: String = DEFAULT_SETTINGS_PATH
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
 var language: String = ENGLISH
-var stage_best_stars: Array[int] = [0, 0, 0, 0, 0]
+var stage_best_stars: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
 var challenge_best_lines: int = 0
@@ -459,7 +459,7 @@ func _reset_settings_to_defaults() -> void:
 	music_percent = 100.0
 	sfx_percent = 100.0
 	language = ENGLISH
-	stage_best_stars = [0, 0, 0, 0, 0]
+	stage_best_stars = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
 	challenge_best_lines = 0
@@ -614,6 +614,12 @@ func _load_progress_from_config(config: ConfigFile) -> bool:
 			)
 		else:
 			stage_best_stars[stage_number - 1] = 0
+			changed = true
+	# 구버전(5층까지) 세이브에서 5층을 클리어했으면 6층을 해금한다.
+	# stage_6_best_stars 키가 없을 때만 1회 적용되어 이후 저장 시 재적용되지 않는다.
+	if not config.has_section_key("progress", "stage_6_best_stars"):
+		if stage_best_stars[4] > 0 and stage_best_stars[5] == 0:
+			stage_best_stars[5] = 1
 			changed = true
 	var stored_passive_levels: Variant = config.get_value(
 		"progress",

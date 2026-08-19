@@ -338,9 +338,10 @@ func _test_board_coordinate_alignment() -> void:
 
 func _test_stage_rule_contracts() -> void:
 	var controller: MainGameController = GAME_CONTROLLER.new()
-	var expected_probabilities: Array[float] = [0.0, 0.15, 0.25, 0.25, 0.33]
+	# 1~5층은 기존 기믹, 6~10층은 아직 기믹 없음(가시 확률 0).
+	var expected_probabilities: Array[float] = [0.0, 0.15, 0.25, 0.25, 0.33, 0.0, 0.0, 0.0, 0.0, 0.0]
 	var stage_data_is_complete: bool = true
-	for stage_number: int in range(1, 6):
+	for stage_number: int in range(1, 11):
 		controller.stage_number = stage_number
 		var config: Dictionary = controller.get_stage_gimmick_config()
 		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
@@ -349,9 +350,9 @@ func _test_stage_rule_contracts() -> void:
 		)
 		stage_data_is_complete = stage_data_is_complete and is_equal_approx(
 			controller.stage_time_limit(),
-			300.0 if stage_number == 5 else 90.0
+			300.0 if stage_number % MainGameController.FLOORS_PER_THEME == 0 else 90.0
 		)
-	_expect(stage_data_is_complete, "1-1~1-5의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
+	_expect(stage_data_is_complete, "1층~10층의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
 	_expect(
 		MainGameController.stage_stars_for_lines(0) == 1
 			and MainGameController.stage_stars_for_lines(1) == 1
@@ -375,7 +376,9 @@ func _test_stage_rule_contracts() -> void:
 	)
 	controller.stage_cleared.connect(_on_stage_cleared_captured)
 	controller.stage_failed.connect(_on_stage_failed_captured)
-	for stage_number: int in range(1, 5):
+	for stage_number: int in range(1, 11):
+		if stage_number % MainGameController.FLOORS_PER_THEME == 0:
+			continue
 		controller.stage_number = stage_number
 		controller.reset_game(7)
 		_stage_cleared_captured = false
@@ -387,7 +390,7 @@ func _test_stage_rule_contracts() -> void:
 			controller.state == MainGameController.GameState.GAME_OVER
 				and _stage_failed_captured
 				and not _stage_cleared_captured,
-			"1-%d는 0줄로 제한시간이 끝나면 클리어하지 않고 실패한다." % stage_number
+			"%d층은 0줄로 제한시간이 끝나면 클리어하지 않고 실패한다." % stage_number
 		)
 		controller.reset_game(7)
 		_stage_cleared_captured = false
@@ -399,18 +402,20 @@ func _test_stage_rule_contracts() -> void:
 			controller.state == MainGameController.GameState.PAUSED
 				and _stage_cleared_captured
 				and not _stage_failed_captured,
-			"1-%d는 1줄 이상 파괴하면 제한시간 종료 시 클리어한다." % stage_number
+			"%d층은 1줄 이상 파괴하면 제한시간 종료 시 클리어한다." % stage_number
+		)
+	for stage_number: int in [5, 10]:
+		controller.stage_number = stage_number
+		controller.reset_game(7)
+		_stage_failed_captured = false
+		controller.stage_time_remaining = 0.01
+		controller._advance_stage_timer(0.01)
+		_expect(
+			controller.state == MainGameController.GameState.GAME_OVER
+				and _stage_failed_captured,
+			"%d층은 300초 경계에서 보스가 살아 있으면 실패한다." % stage_number
 		)
 	controller.stage_number = 5
-	controller.reset_game(7)
-	_stage_failed_captured = false
-	controller.stage_time_remaining = 0.01
-	controller._advance_stage_timer(0.01)
-	_expect(
-		controller.state == MainGameController.GameState.GAME_OVER
-			and _stage_failed_captured,
-		"1-5는 300초 경계에서 보스가 살아 있으면 실패한다."
-	)
 	controller.reset_game(7)
 	controller.boss_health = 0
 	controller.stage_time_remaining = 0.01

@@ -630,7 +630,6 @@ func _finish_physics_frame(delta: float) -> void:
 	_sync_barrier_cells()
 	_update_visual_state(delta)
 	validate_position()
-	controller.notify_binding_surface_contact(can_receive_binding())
 
 
 ## 상황: 이미 명상 중이거나 이번 frame에 명상 조건을 만족했을 때 호출한다.

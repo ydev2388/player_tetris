@@ -484,17 +484,8 @@ func _attempt_binding_roll() -> void:
 		character.apply_binding(get_binding_duration_seconds())
 
 
-func notify_binding_surface_contact(surface_contact: bool) -> void:
-	# 7차는 공중에서도 즉시 결박하므로 landing-pending 호환 호출은 필요 없다.
-	return
-
-
 func get_binding_duration_seconds() -> float:
 	return float(get_stage_gimmick_config().get("binding_duration", BINDING_DURATION_SECONDS))
-
-
-func _character_has_surface_contact() -> bool:
-	return is_instance_valid(character) and character.can_receive_binding()
 
 
 func _character_is_bound() -> bool:
@@ -1065,7 +1056,7 @@ func _valid_spawn_origins(
 	for origin_x: int in range(first_origin_x, end_origin_x):
 		var origin: Vector2i = Vector2i(origin_x, SPAWN_Y) # 현재 검사 중인 spawn 원점.
 		if (
-			board.can_place(piece_type, 0, origin)
+			board.can_place_cells(cells, origin)
 			and not _spawn_origin_overlaps_character(cells, origin)
 		):
 			candidates.append(origin)
@@ -1227,7 +1218,7 @@ func _piece_overlaps_forbidden_cells(
 
 
 ## 상황: 접지 lock delay가 끝나 활성 피스를 고정 블록으로 전환할 때 호출한다.
-## 순서: PLAYING 검사 → board.lock_piece → clear_full_lines → 줄
+## 순서: PLAYING 검사 → board.lock_cells → clear_full_lines → 줄
 ##       → hidden-row top-out이면 end_game → 아니면 spawn_next_piece.
 ## 결과: 현재 피스 수명이 끝나고 게임오버 또는 다음 피스로 전환된다.
 func lock_active_piece() -> void:
@@ -1279,7 +1270,7 @@ func end_game() -> void:
 
 
 ## 상황: lock delay나 이동/회전 전후의 바닥 접촉을 판정할 때 호출한다.
-## 순서: 현재 원점보다 y+1 위치를 `board.can_place()`로 검사하고 논리 부정한다.
+## 순서: 현재 원점보다 y+1 위치를 `board.can_place_cells()`로 검사하고 논리 부정한다.
 ## 결과: 한 칸 아래로 이동할 수 없으면 true이며 상태는 바꾸지 않는다.
 func is_grounded() -> bool:
 	return not can_place_active(active_origin + Vector2i.DOWN, active_rotation, false)

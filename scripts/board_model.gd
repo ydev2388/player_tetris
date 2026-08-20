@@ -8,8 +8,8 @@ extends RefCounted
 ##
 ## [호출 관계]
 ## 생성자/주 호출자: GameController. 조회 호출자: GameView, BoardPhysics,
-## CharacterController, 테스트. 호출 대상: MainTetrominoData.get_cells().
-## 이 클래스는 signal을 내보내지 않는다. 변경 알림은 상위 GameController가 담당한다.
+## CharacterController, 테스트. 이 클래스는 signal을 내보내지 않는다.
+## 변경 알림은 상위 GameController가 담당한다.
 
 const WIDTH: int = 10 # 보드의 가로 셀 수. 유효 x는 0~9.
 const VISIBLE_HEIGHT: int = 20 # 플레이어에게 그려지는 행 수.
@@ -37,13 +37,6 @@ func reset() -> void:
 		cells.append(_empty_row())
 
 
-## 상황: 낙하·스폰·밀기·회전·접지 또는 고스트 위치의 후보 배치를 검사할 때 호출한다.
-## 순서: 각 로컬 셀마다 origin을 더함 → 경계 검사 → 기존 셀 점유 검사 → 실패 즉시 false.
-## 결과: 네 칸이 모두 보드 안의 EMPTY일 때만 true이며 보드는 변경하지 않는다.
-func can_place(piece_type: int, rotation: int, origin: Vector2i) -> bool:
-	return can_place_cells(MainTetrominoData.get_cells(piece_type, rotation), origin)
-
-
 ## 임의의 활성 셀 배열을 보드 원점에 배치할 수 있는지 검사한다.
 func can_place_cells(local_cells: Array[Vector2i], origin: Vector2i) -> bool:
 	for local_cell: Vector2i in local_cells:
@@ -56,13 +49,8 @@ func can_place_cells(local_cells: Array[Vector2i], origin: Vector2i) -> bool:
 
 
 ## 상황: GameView가 표시할 고스트의 최종 착지 위치가 필요할 때 호출된다.
-## 순서: distance=0 → 한 칸 더 아래 후보를 `can_place()` → 가능할 동안 1씩 증가.
+## 순서: distance=0 → 한 칸 더 아래 후보를 `can_place_cells()` → 가능할 동안 1씩 증가.
 ## 결과: 현재 origin에서 충돌 직전까지 내려갈 수 있는 정수 셀 수를 반환한다.
-func get_drop_distance(piece_type: int, rotation: int, origin: Vector2i) -> int:
-	return get_drop_distance_cells(MainTetrominoData.get_cells(piece_type, rotation), origin)
-
-
-## 임의의 활성 셀 배열이 충돌 전까지 내려갈 수 있는 거리를 반환한다.
 func get_drop_distance_cells(local_cells: Array[Vector2i], origin: Vector2i) -> int:
 	var distance: int = 0 # 현재 위치에서 안전하게 추가 낙하할 수 있다고 확인된 셀 수.
 	while can_place_cells(local_cells, origin + Vector2i(0, distance + 1)):
@@ -71,13 +59,8 @@ func get_drop_distance_cells(local_cells: Array[Vector2i], origin: Vector2i) -> 
 
 
 ## 상황: lock delay가 끝나 활성 피스를 논리 보드에 고정할 때 호출한다.
-## 순서: 로컬 네 칸 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
+## 순서: 로컬 셀 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
 ## 결과: 해당 cells가 EMPTY에서 타입 정수로 바뀐다. 줄 삭제는 이 함수가 하지 않는다.
-func lock_piece(piece_type: int, rotation: int, origin: Vector2i) -> void:
-	lock_cells(piece_type, MainTetrominoData.get_cells(piece_type, rotation), origin)
-
-
-## 팬 토스로 일부 셀이 분리된 활성 도형을 현재 셀 배열 그대로 고정한다.
 func lock_cells(piece_type: int, local_cells: Array[Vector2i], origin: Vector2i) -> void:
 	for local_cell: Vector2i in local_cells:
 		var board_cell: Vector2i = origin + local_cell # 실제 cells[y][x]에 기록할 절대 셀.
@@ -151,14 +134,6 @@ func remove_cell(cell: Vector2i) -> bool:
 	if not is_inside(cell) or cells[cell.y][cell.x] == EMPTY:
 		return false
 	cells[cell.y][cell.x] = EMPTY
-	return true
-
-
-## 비어 있는 보드 셀 하나를 지정한 테트로미노 타입으로 고정한다.
-func place_cell(cell: Vector2i, piece_type: int) -> bool:
-	if not is_inside(cell) or cells[cell.y][cell.x] != EMPTY:
-		return false
-	cells[cell.y][cell.x] = piece_type
 	return true
 
 

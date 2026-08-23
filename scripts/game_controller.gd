@@ -25,9 +25,15 @@ signal boss_attacked # 플레이어의 직접 공격에 보스가 가시로 반�
 enum GameState {
 	PLAYING,
 	BOSS_FALLING,
+	BOSS_DYING,
 	PAUSED,
 	GAME_OVER,
 }
+
+const ICE_BLOCK_STAGE_START: int = 7
+const ICE_BOSS_STAGE: int = 10
+const BOSS_DYING_DURATION_SECONDS: float = 0.72
+const BOSS_CLEAR_DELAY_SECONDS: float = 0.5
 
 const SHURIKEN_CONTACT_NONE: StringName = &"none"
 const SHURIKEN_CONTACT_ACTIVE: StringName = &"active"
@@ -92,12 +98,12 @@ const STAGE_GIMMICKS: Dictionary = {
 		"binding_first_delay": 5.0,
 		"boss_seed_enabled": true,
 	},
-	# 6층~10층은 아직 기믹 없음(1층과 동일). 10층은 보스 층이라 시간 제한만 길다.
+	# 6층은 기믹 없음. 7~10층은 2~5층과 같은 확률로 얼음 블록을 생성한다.
 	6: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
-	7: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
-	8: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
-	9: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
-	10: {"time_limit": 300.0, "thorn_probability": 0.0, "binding_enabled": false},
+	7: {"time_limit": 90.0, "thorn_probability": 0.15, "binding_enabled": false},
+	8: {"time_limit": 90.0, "thorn_probability": 0.25, "binding_enabled": false},
+	9: {"time_limit": 90.0, "thorn_probability": 0.25, "binding_enabled": false},
+	10: {"time_limit": 300.0, "thorn_probability": 0.33, "binding_enabled": false},
 }
 
 # SRS(Super Rotation System) wall-kick 표.
@@ -160,6 +166,7 @@ var boss_fall_position: Vector2 = Vector2(
 )
 var boss_fall_target_y: float = boss_fall_position.y
 var boss_down_timer: float = 0.0
+var boss_dying_timer: float = 0.0
 var boss_fall_hold_timer: float = 0.0
 var boss_down: bool = false
 var boss_falling: bool = false
@@ -203,11 +210,18 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed(&"restart_game"):
 		reset_game()
 		return
-	if Input.is_action_just_pressed(&"pause_game") and state != GameState.BOSS_FALLING:
+	if (
+		Input.is_action_just_pressed(&"pause_game")
+		and state != GameState.BOSS_FALLING
+		and state != GameState.BOSS_DYING
+	):
 		toggle_pause()
 
 	if state == GameState.BOSS_FALLING:
 		_advance_boss_fall(delta)
+		return
+	if state == GameState.BOSS_DYING:
+		_advance_boss_dying(delta)
 		return
 	if state != GameState.PLAYING:
 		return
@@ -290,6 +304,7 @@ func reset_game(seed_value: int = -1) -> void:
 	)
 	boss_fall_target_y = boss_fall_position.y
 	boss_down_timer = 0.0
+	boss_dying_timer = 0.0
 	boss_fall_hold_timer = 0.0
 	boss_down = false
 	boss_falling = false
@@ -340,6 +355,10 @@ func is_boss_falling() -> bool:
 
 func is_boss_fallen() -> bool:
 	return is_boss_stage() and boss_fallen
+
+
+func is_boss_dying() -> bool:
+	return is_boss_stage() and state == GameState.BOSS_DYING
 
 
 func boss_hitbox() -> Rect2:
@@ -467,6 +486,13 @@ func active_piece_has_visible_thorns() -> bool:
 		float(get_stage_gimmick_config().get("thorn_probability", 0.0)) > 0.0
 		and active_piece_has_thorns
 		and thorn_visible
+	)
+
+
+func active_piece_is_ice() -> bool:
+	return (
+		stage_number >= ICE_BLOCK_STAGE_START
+		and active_piece_has_thorns
 	)
 
 
@@ -776,6 +802,14 @@ func active_board_cells(origin: Vector2i = active_origin, rotation: int = -1) ->
 	return result
 
 
+func active_piece_is_ice_at(cell: Vector2i) -> bool:
+	return active_piece_is_ice() and cell in active_board_cells()
+
+
+func is_ice_cell(cell: Vector2i) -> bool:
+	return board.is_ice_cell(cell) or active_piece_is_ice_at(cell)
+
+
 func can_place_active(
 	origin: Vector2i,
 	rotation: int = -1,
@@ -1058,6 +1092,7 @@ func _valid_spawn_origins(
 		if (
 			board.can_place_cells(cells, origin)
 			and not _spawn_origin_overlaps_character(cells, origin)
+			and not _spawn_origin_overlaps_character_descent_path(cells, origin)
 		):
 			candidates.append(origin)
 	return candidates
@@ -1087,6 +1122,40 @@ func _spawn_origin_overlaps_character(
 			and character_rect.end.x > cell_rect.position.x
 			and character_rect.position.y < cell_rect.end.y
 			and character_rect.end.y > cell_rect.position.y
+		):
+			return true
+	return false
+
+
+## 상황: spawn 후보가 스폰 위치에서 캐릭터가 있는 높이까지 내려오는 동안
+##       캐릭터 몸체와 겹치게 되는지 추가 검사한다.
+## 순서: 캐릭터 collider Rect → 스폰 y부터 캐릭터 머리 위 한 칸까지 세로 범위를
+##       각 피스 셀의 세로 위치와 비교해 캐릭터가 점유한 세로 줄에 셀이 있는지 확인.
+## 결과: 피스 셀 중 하나라도 캐릭터의 몸체 세로 범위와 같은 행에 있으면 true다.
+func _spawn_origin_overlaps_character_descent_path(
+	local_cells: Array[Vector2i],
+	origin: Vector2i
+) -> bool:
+	if not is_instance_valid(character):
+		return false
+	var character_rect: Rect2 = character._character_collider_rect()
+	var character_top_row: int = clampi(
+		floori(character_rect.position.y / MainLayout.CELL_SIZE) + MainBoardModel.HIDDEN_ROWS,
+		0,
+		MainBoardModel.HEIGHT - 1
+	)
+	var character_bottom_row: int = clampi(
+		floori(character_rect.end.y / MainLayout.CELL_SIZE) + MainBoardModel.HIDDEN_ROWS,
+		0,
+		MainBoardModel.HEIGHT - 1
+	)
+	for local_cell: Vector2i in local_cells:
+		var board_cell: Vector2i = origin + local_cell
+		if board_cell.x < 0 or board_cell.x >= MainBoardModel.WIDTH:
+			continue
+		if (
+			board_cell.y >= character_top_row
+			and board_cell.y <= character_bottom_row
 		):
 			return true
 	return false
@@ -1226,12 +1295,17 @@ func lock_active_piece() -> void:
 		return
 
 	_remove_boss_seeds_overlapping_cells(active_board_cells())
-	board.lock_cells(active_type, active_local_cells(), active_origin)
+	board.lock_cells(
+		active_type,
+		active_local_cells(),
+		active_origin,
+		active_piece_is_ice()
+	)
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
 		_apply_line_clear_rewards(cleared)
 	if state != GameState.PLAYING:
-		return # 보스 처치로 BOSS_FALLING으로 전환되면 이 lock의 후속 처리를 멈춘다.
+		return # 보스 처치 연출로 전환되면 이 lock의 후속 처리를 멈춘다.
 
 	if board.has_blocks_in_hidden_rows():
 		end_game()
@@ -1253,7 +1327,12 @@ func _apply_line_clear_rewards(cleared: int) -> void:
 ## 순서: GAME_OVER면 무시 → PLAYING/PAUSED 토글 → 비PLAYING이면 명상 해제 → emit.
 ## 결과: 다음 `_process()`의 시간 진행 여부와 화면 overlay가 바뀐다.
 func toggle_pause() -> void:
-	if state == GameState.GAME_OVER or state == GameState.BOSS_FALLING or boss_fallen:
+	if (
+		state == GameState.GAME_OVER
+		or state == GameState.BOSS_FALLING
+		or state == GameState.BOSS_DYING
+		or boss_fallen
+	):
 		return
 	state = GameState.PAUSED if state == GameState.PLAYING else GameState.PLAYING
 	if state != GameState.PLAYING:
@@ -1330,6 +1409,15 @@ func damage_boss(cleared_lines: int) -> void:
 	if boss_health > 0:
 		game_changed.emit()
 		return
+	if stage_number == ICE_BOSS_STAGE:
+		boss_dying_timer = 0.0
+		boss_down = false
+		boss_falling = false
+		boss_fallen = false
+		state = GameState.BOSS_DYING
+		clear_runtime_state()
+		game_changed.emit()
+		return
 	boss_fall_position = Vector2(
 		BOSS_POSITION.x,
 		BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
@@ -1342,6 +1430,16 @@ func damage_boss(cleared_lines: int) -> void:
 	boss_fallen = false
 	state = GameState.BOSS_FALLING
 	clear_runtime_state()
+
+
+func _advance_boss_dying(delta: float) -> void:
+	boss_dying_timer += maxf(delta, 0.0)
+	if boss_dying_timer < BOSS_DYING_DURATION_SECONDS + BOSS_CLEAR_DELAY_SECONDS:
+		game_changed.emit()
+		return
+	state = GameState.PAUSED
+	game_changed.emit()
+	stage_cleared.emit(total_lines)
 
 
 func _advance_boss_fall(delta: float) -> void:

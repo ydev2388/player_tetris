@@ -19,6 +19,14 @@ const EMPTY: int = -1 # 셀이 어떤 테트로미노에도 점유되지 않았�
 
 # 행 우선 2차원 배열: `cells[y][x]`. PackedInt32Array는 연속 int32 저장소다.
 var cells: Array[PackedInt32Array] = [] # 실제 보드 저장소. 바깥 index=y, 안쪽 index=x.
+var ice_cells: Array[PackedByteArray] = []
+
+
+func _empty_ice_row() -> PackedByteArray:
+	var row: PackedByteArray = PackedByteArray()
+	row.resize(WIDTH)
+	row.fill(0)
+	return row
 
 
 ## 상황: `MainBoardModel.new()`로 논리 보드를 만들 때 자동 호출된다.
@@ -33,8 +41,48 @@ func _init() -> void:
 ## 결과: 이전 고정 블록이 모두 사라지고 정확히 22×10 EMPTY 상태가 된다.
 func reset() -> void:
 	cells.clear()
+	ice_cells.clear()
 	for _y: int in range(HEIGHT):
 		cells.append(_empty_row())
+		ice_cells.append(_empty_ice_row())
+
+
+func is_ice_cell(cell: Vector2i) -> bool:
+	return is_inside(cell) and ice_cells[cell.y][cell.x] == 1
+
+
+func _set_ice_cell(cell: Vector2i, active: bool) -> void:
+	if is_inside(cell):
+		ice_cells[cell.y][cell.x] = 1 if active else 0
+
+
+func _clear_ice_cells() -> void:
+	ice_cells.clear()
+	for _y: int in range(HEIGHT):
+		ice_cells.append(_empty_ice_row())
+
+
+func _empty_row() -> PackedInt32Array:
+	var row: PackedInt32Array = PackedInt32Array()
+	row.resize(WIDTH)
+	row.fill(EMPTY)
+	return row
+
+
+func _empty_ice_row() -> PackedByteArray:
+	var row: PackedByteArray = PackedByteArray()
+	row.resize(WIDTH)
+	row.fill(0)
+	return row
+
+
+func _set_ice_cell(cell: Vector2i, active: bool) -> void:
+	if is_inside(cell):
+		ice_cells[cell.y][cell.x] = 1 if active else 0
+
+
+func is_ice_cell(cell: Vector2i) -> bool:
+	return is_inside(cell) and ice_cells[cell.y][cell.x] == 1
 
 
 ## 임의의 활성 셀 배열을 보드 원점에 배치할 수 있는지 검사한다.
@@ -61,11 +109,17 @@ func get_drop_distance_cells(local_cells: Array[Vector2i], origin: Vector2i) -> 
 ## 상황: lock delay가 끝나 활성 피스를 논리 보드에 고정할 때 호출한다.
 ## 순서: 로컬 셀 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
 ## 결과: 해당 cells가 EMPTY에서 타입 정수로 바뀐다. 줄 삭제는 이 함수가 하지 않는다.
-func lock_cells(piece_type: int, local_cells: Array[Vector2i], origin: Vector2i) -> void:
+func lock_cells(
+	piece_type: int,
+	local_cells: Array[Vector2i],
+	origin: Vector2i,
+	ice: bool = false
+) -> void:
 	for local_cell: Vector2i in local_cells:
 		var board_cell: Vector2i = origin + local_cell # 실제 cells[y][x]에 기록할 절대 셀.
 		if is_inside(board_cell):
 			cells[board_cell.y][board_cell.x] = piece_type
+			_set_ice_cell(board_cell, ice)
 
 
 ## 상황: 피스를 고정한 직후 완성된 줄을 정리하고 삭제 개수가 필요할 때 호출한다.
@@ -73,8 +127,9 @@ func lock_cells(piece_type: int, local_cells: Array[Vector2i], origin: Vector2i)
 ##       ④ HEIGHT가 될 때까지 빈 행을 앞에 삽입 ⑤ cells 교체.
 ## 결과: 완성 행이 사라지고 위 행이 아래로 내려오며 제거한 줄 수를 반환한다.
 func clear_full_lines() -> int:
-	var survivors: Array[PackedInt32Array] = [] # 삭제되지 않고 상대 순서를 유지할 행 복사본.
-	var cleared: int = 0 # 이번 호출에서 발견한 완성 행 수.
+	var survivors: Array[PackedInt32Array] = [] # 삭제되지 않고 상대 순서를 유지한 행 복사본.
+	var ice_survivors: Array[PackedByteArray] = []
+	var cleared: int = 0 # 이번 호출에서 동시에 삭제된 행 수.
 
 	# 남은 행의 상대 순서를 보존한 뒤, 삭제된 수만큼 빈 행을 위에 보충한다.
 	for y: int in range(HEIGHT):
@@ -82,12 +137,16 @@ func clear_full_lines() -> int:
 			cleared += 1
 		else:
 			survivors.append(cells[y].duplicate())
+			ice_survivors.append(ice_cells[y].duplicate())
 
 	while survivors.size() < HEIGHT:
 		survivors.push_front(_empty_row())
+		ice_survivors.push_front(_empty_ice_row())
 
 	cells = survivors
+	ice_cells = ice_survivors
 	return cleared
+
 
 
 ## 상황: 줄 정리 후 새 피스를 만들기 전에 top-out 여부를 판단할 때 호출한다.
@@ -124,8 +183,11 @@ func move_cell(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 	if cells[from_cell.y][from_cell.x] == EMPTY or cells[to_cell.y][to_cell.x] != EMPTY:
 		return false
 	var piece_type: int = cells[from_cell.y][from_cell.x]
+	var ice: bool = is_ice_cell(from_cell)
 	cells[from_cell.y][from_cell.x] = EMPTY
 	cells[to_cell.y][to_cell.x] = piece_type
+	_set_ice_cell(from_cell, false)
+	_set_ice_cell(to_cell, ice)
 	return true
 
 
@@ -134,6 +196,7 @@ func remove_cell(cell: Vector2i) -> bool:
 	if not is_inside(cell) or cells[cell.y][cell.x] == EMPTY:
 		return false
 	cells[cell.y][cell.x] = EMPTY
+	_set_ice_cell(cell, false)
 	return true
 
 

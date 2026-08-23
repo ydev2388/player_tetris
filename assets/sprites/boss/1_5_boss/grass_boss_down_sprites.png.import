@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://jcint3pst23a"
-path="res://.godot/imported/boss_down_sprites.png-1886b82652793c2f6233b7acf788c0f5.ctex"
+uid="uid://ciyuvsur6vxgr"
+path="res://.godot/imported/grass_boss_down_sprites.png-c2c685508b76fba88d322c43e6544049.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/boss/1_5_boss/boss_down_sprites.png"
-dest_files=["res://.godot/imported/boss_down_sprites.png-1886b82652793c2f6233b7acf788c0f5.ctex"]
+source_file="res://assets/sprites/boss/1_5_boss/grass_boss_down_sprites.png"
+dest_files=["res://.godot/imported/grass_boss_down_sprites.png-c2c685508b76fba88d322c43e6544049.ctex"]
 
 [params]
 

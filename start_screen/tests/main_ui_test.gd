@@ -827,16 +827,24 @@ func _run() -> void:
 	_expect(
 		boss_controller != null
 			and boss_controller.boss_health == 0
-			and boss_controller.state == MainGameController.GameState.BOSS_FALLING
+			and boss_controller.state == MainGameController.GameState.BOSS_DYING
+			and not boss_controller.is_boss_down()
+			and not boss_controller.is_boss_falling()
+			and not boss_controller.is_boss_fallen()
 			and screen.current_screen == BlockFighterStartScreen.Screen.GAME
 			and screen._game_instance != null,
-		"Floor 10의 Enter는 즉시 결과 처리 대신 보스 체력을 0으로 만든다."
+		"Floor 10의 Enter는 down/fall/fallen 없이 즉시 die 애니메이션을 시작한다."
 	)
 	if boss_controller != null:
-		boss_controller._advance_boss_fall(
-			MainGameController.BOSS_DOWN_DURATION_SECONDS + 2.0
+		boss_controller._advance_boss_dying(
+			MainGameController.BOSS_DYING_DURATION_SECONDS
 		)
-		boss_controller._advance_boss_fall(MainGameController.BOSS_FALLEN_HOLD_SECONDS)
+		_expect(
+			boss_controller.state == MainGameController.GameState.BOSS_DYING
+				and screen._game_instance != null,
+			"Floor 10 die 애니메이션 직후 0.5초 동안 게임 화면을 유지한다."
+		)
+		boss_controller._advance_boss_dying(MainGameController.BOSS_CLEAR_DELAY_SECONDS)
 	await process_frame
 	_expect(
 		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT

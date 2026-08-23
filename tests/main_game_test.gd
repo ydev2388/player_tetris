@@ -14,7 +14,10 @@ const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmak
 const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
 const SHURIKEN_SPIN_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_spin.png")
 const SHURIKEN_IMPACT_VFX: Texture2D = preload("res://assets/sprites/effects/ninja/shuriken_impact.png")
-const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
+const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_seed_sprite.png")
+const ICE_BOSS_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss.png")
+const ICE_BOSS_DIE_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss_die.png")
+const ICE_BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_block.png")
 const HANG_WALL_VISUAL_TOLERANCE: float = 2.0
 
 var _checks: int = 0 # 수행한 assertion 총수.
@@ -297,6 +300,7 @@ func _run() -> void:
 	)
 	_test_board_coordinate_alignment()
 	_test_stage_rule_contracts()
+	await _test_boss_display_assets()
 	_test_spawn_side_margin()
 	await _test_restart_state_invariance()
 	await _test_runtime_cleanup()
@@ -336,11 +340,103 @@ func _test_board_coordinate_alignment() -> void:
 	scene.free()
 
 
+func _test_boss_display_assets() -> void:
+	_expect(
+		ICE_BOSS_TEXTURE.get_width() == 669
+			and ICE_BOSS_TEXTURE.get_height() == 373
+			and ICE_BOSS_DIE_TEXTURE.get_size() == ICE_BOSS_TEXTURE.get_size()
+			and ICE_BLOCK_TEXTURE.get_width() == 612
+			and ICE_BLOCK_TEXTURE.get_height() == 408,
+		"10층 얼음 보스 생존·처치 시트와 얼음 블록 시트가 등록되어 있다."
+	)
+	var stage_five_scene: MainGameView = GAME_SCENE.instantiate()
+	stage_five_scene.set_meta("stage_number", 5)
+	root.add_child(stage_five_scene)
+	await process_frame
+	var stage_five_boss: Sprite2D = stage_five_scene.get_node("BoardPhysics/BossSprite")
+	_expect(
+		stage_five_boss.texture.resource_path.ends_with("grass_boss_normal_sprites.png"),
+		"5층은 기존 잔디 보스 생존 스프라이트를 사용한다."
+	)
+	stage_five_scene.free()
+	await process_frame
+
+	var stage_ten_scene: MainGameView = GAME_SCENE.instantiate()
+	stage_ten_scene.set_meta("stage_number", 10)
+	root.add_child(stage_ten_scene)
+	await process_frame
+	var stage_ten_controller: MainGameController = stage_ten_scene.get_node("GameController")
+	var stage_ten_boss: Sprite2D = stage_ten_scene.get_node("BoardPhysics/BossSprite")
+	_expect(
+		stage_ten_controller.boss_health == MainGameController.BOSS_MAX_HEALTH
+			and stage_ten_boss.texture == ICE_BOSS_TEXTURE
+			and stage_ten_boss.region_rect.size == MainGameView.ICE_BOSS_SOURCE_FRAME_SIZE,
+		"10층은 얼음 보스 생존 스프라이트와 167.25×373 프레임을 사용한다."
+	)
+	_stage_cleared_captured = false
+	stage_ten_controller.stage_cleared.connect(_on_stage_cleared_captured)
+	stage_ten_controller.damage_boss(MainGameController.BOSS_MAX_HEALTH)
+	await process_frame
+	_expect(
+		stage_ten_controller.is_boss_dying()
+			and not stage_ten_controller.is_boss_down()
+			and not stage_ten_controller.is_boss_falling()
+			and not stage_ten_controller.is_boss_fallen()
+			and stage_ten_controller.state == MainGameController.GameState.BOSS_DYING
+			and stage_ten_boss.texture == ICE_BOSS_DIE_TEXTURE
+			and stage_ten_boss.region_rect.position.x == 0.0,
+		"10층 보스 체력이 0이 되면 down/fall/fallen 없이 즉시 얼음 처치 애니메이션을 시작한다."
+	)
+	stage_ten_scene._advance_boss_animation(
+		MainGameController.BOSS_DYING_DURATION_SECONDS * 0.5
+	)
+	_expect(
+		stage_ten_controller.is_boss_dying()
+			and stage_ten_boss.region_rect.position.x > 0.0,
+		"10층 얼음 die 애니메이션은 BOSS_DYING 중 프레임을 재생한다."
+	)
+	stage_ten_scene._advance_boss_animation(
+		MainGameController.BOSS_DYING_DURATION_SECONDS
+	)
+	_expect(
+		stage_ten_boss.region_rect.position.x
+			== float(MainGameView.BOSS_FRAME_COUNT - 1)
+				* MainGameView.ICE_BOSS_SOURCE_FRAME_SIZE.x,
+		"10층 얼음 die 애니메이션은 마지막 프레임까지 재생한다."
+	)
+	stage_ten_controller._advance_boss_dying(
+		MainGameController.BOSS_DYING_DURATION_SECONDS
+	)
+	_expect(
+		stage_ten_controller.is_boss_dying()
+			and not _stage_cleared_captured,
+		"10층 얼음 die 애니메이션 직후 0.5초 동안 클리어 대기 상태를 유지한다."
+	)
+	stage_ten_controller._advance_boss_dying(MainGameController.BOSS_CLEAR_DELAY_SECONDS)
+	await process_frame
+	_expect(
+		stage_ten_controller.state == MainGameController.GameState.PAUSED
+			and _stage_cleared_captured,
+		"10층 얼음 보스 처치 후 0.5초 뒤 스테이지를 클리어한다."
+	)
+	stage_ten_scene.free()
+	await process_frame
+
+
 func _test_stage_rule_contracts() -> void:
 	var controller: MainGameController = GAME_CONTROLLER.new()
-	# 1~5층은 기존 기믹, 6~10층은 아직 기믹 없음(가시 확률 0).
-	var expected_probabilities: Array[float] = [0.0, 0.15, 0.25, 0.25, 0.33, 0.0, 0.0, 0.0, 0.0, 0.0]
+	# 1~5층은 잔디 가시, 6층은 기믹 없음, 7~10층은 얼음 블록 확률을 사용한다.
+	var expected_probabilities: Array[float] = [0.0, 0.15, 0.25, 0.25, 0.33, 0.0, 0.15, 0.25, 0.25, 0.33]
 	var stage_data_is_complete: bool = true
+	var view: MainGameView = MainGameView.new()
+	_expect(
+		view._thorn_texture_for_stage(2) == MainGameView.THORN_TEXTURE
+			and view._thorn_texture_for_stage(7) == MainGameView.ICE_BLOCK_TEXTURE
+			and view._thorn_source_region_for_stage(2) == MainGameView.THORN_SOURCE_REGION
+			and view._thorn_source_region_for_stage(7) == MainGameView.ICE_BLOCK_SOURCE_REGION,
+		"2층은 잔디 가시, 7층은 얼음 블록 외곽 텍스처를 사용한다."
+	)
+	view.free()
 	for stage_number: int in range(1, 11):
 		controller.stage_number = stage_number
 		var config: Dictionary = controller.get_stage_gimmick_config()
@@ -475,6 +571,7 @@ func _test_restart_state_invariance() -> void:
 		MainGameController.GameState.PAUSED,
 		MainGameController.GameState.GAME_OVER,
 		MainGameController.GameState.BOSS_FALLING,
+		MainGameController.GameState.BOSS_DYING,
 	]:
 		restart_controller.reset_game(20260812)
 		restart_controller.score = 500

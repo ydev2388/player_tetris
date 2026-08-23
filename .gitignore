@@ -1,21 +1,18 @@
-# Godot cache and generated output
 .godot/
-/.qa/
-tools/__pycache__/
 /build/
 /dist/
 /exports/
 /android/
-*.log
-*.exe
 *.pck
-/design/
+*.exe
+/.qa/
+*.log
+/build_web.sh
 /Godot_v4.7.1-stable_linux.x86_64
 /docs/research.md
 /docs/research_full.md
 /docs/plan.md
-dssign/
 .commandcode/
 .codex/
-/build_web.sh
 .env
+/tests/

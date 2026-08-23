@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bm0xpo4qkwsb6"
-path="res://.godot/imported/thron_sprite.png-7c68d94f9932f8a2408202b2d487080b.ctex"
+uid="uid://c4gejv30guxgd"
+path="res://.godot/imported/grass_boss_falling_sprites.png-2c3c43c0c0b11dd87f865b09521067e2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/thron_sprite.png"
-dest_files=["res://.godot/imported/thron_sprite.png-7c68d94f9932f8a2408202b2d487080b.ctex"]
+source_file="res://assets/sprites/boss/1_5_boss/grass_boss_falling_sprites.png"
+dest_files=["res://.godot/imported/grass_boss_falling_sprites.png-2c3c43c0c0b11dd87f865b09521067e2.ctex"]
 
 [params]
 

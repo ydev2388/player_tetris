@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cxjeoum8dvkqr"
-path="res://.godot/imported/bind_sprite.png-34f91670fdd10da6dd4cb7c1610f8f45.ctex"
+uid="uid://pm4pkqxo3vss"
+path="res://.godot/imported/ice_boss_die.png-71d1bd69149f8355d54fb659ba772858.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/bind_sprite.png"
-dest_files=["res://.godot/imported/bind_sprite.png-34f91670fdd10da6dd4cb7c1610f8f45.ctex"]
+source_file="res://assets/sprites/boss/6_10_boss/ice_boss_die.png"
+dest_files=["res://.godot/imported/ice_boss_die.png-71d1bd69149f8355d54fb659ba772858.ctex"]
 
 [params]
 

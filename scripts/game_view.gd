@@ -70,28 +70,35 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
-const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/thron_sprite.png")
+const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_thron_sprite.png")
 const THORN_SOURCE_REGION: Rect2 = Rect2(500.0, 64.0, 128.0, 104.0)
+const ICE_BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_block.png")
+const ICE_BLOCK_SOURCE_REGION: Rect2 = Rect2(199.0, 25.0, 52.0, 42.0)
 const THORN_DEPTH: float = 18.0
 const THORN_EDGE_OVERLAP: float = 6.0
-const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/bind_sprite.png")
+const BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_bind_sprite.png")
 const BIND_SOURCE_REGION: Rect2 = Rect2(337.0, 65.0, 277.0, 364.0)
 const BIND_HEIGHT_MARGIN: float = 12.0
 const BIND_DISPLAY_SIZE: Vector2 = Vector2(78.0, 108.0)
-const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_normal_sprites.png")
-const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_bind_sprites.png")
-const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_thron_sprites.png")
-const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_down_sprites.png")
-const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_falling_sprites.png")
-const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/boss_fallen_sprites.png")
-const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/seed_sprite.png")
-const HEART_TEXTURE: Texture2D = preload("res://assets/sprites/heart.svg")
+const BOSS_NORMAL_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_normal_sprites.png")
+const BOSS_BIND_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_bind_sprites.png")
+const BOSS_THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_thron_sprites.png")
+const BOSS_DOWN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_down_sprites.png")
+const BOSS_FALLING_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_falling_sprites.png")
+const BOSS_FALLEN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_boss_fallen_sprites.png")
+const BOSS_SEED_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_seed_sprite.png")
+const HEART_TEXTURE: Texture2D = preload("res://assets/sprites/boss/heart.svg")
 const BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 1024.0)
 const BOSS_DOWN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 983.0)
 const BOSS_FALLEN_SOURCE_FRAME_SIZE: Vector2 = Vector2(384.0, 234.0)
 const BOSS_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DISPLAY_SIZE
 const BOSS_DOWN_DISPLAY_SIZE: Vector2 = MainGameController.BOSS_DOWN_DISPLAY_SIZE
 const BOSS_FALLEN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 43.875)
+const ICE_BOSS_STAGE: int = 10
+const ICE_BOSS_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss.png")
+const ICE_BOSS_DIE_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss_die.png")
+const ICE_BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(167.25, 373.0)
+const ICE_BOSS_DISPLAY_SIZE: Vector2 = Vector2(86.0, 192.0)
 const BOSS_FRAME_COUNT: int = 4
 const BOSS_FRAME_INTERVAL: float = 0.18
 const BOSS_VISUAL_OFFSET: Vector2 = Vector2(0.0, -18.0)
@@ -698,6 +705,7 @@ func _draw_state_overlay() -> void:
 	if (
 		controller.state == MainGameController.GameState.PLAYING
 		or controller.state == MainGameController.GameState.BOSS_FALLING
+		or controller.state == MainGameController.GameState.BOSS_DYING
 	):
 		return
 	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.01, 0.02, 0.04, 0.80))
@@ -793,6 +801,22 @@ func _text(korean: String, english: String) -> String:
 	return korean if _language == "kor" else english
 
 
+func _thorn_texture_for_stage(stage_number: int) -> Texture2D:
+	return (
+		ICE_BLOCK_TEXTURE
+		if stage_number >= MainGameController.ICE_BLOCK_STAGE_START
+		else THORN_TEXTURE
+	)
+
+
+func _thorn_source_region_for_stage(stage_number: int) -> Rect2:
+	return (
+		ICE_BLOCK_SOURCE_REGION
+		if stage_number >= MainGameController.ICE_BLOCK_STAGE_START
+		else THORN_SOURCE_REGION
+	)
+
+
 func _draw_thorns() -> void:
 	if not controller.active_piece_has_visible_thorns():
 		return
@@ -802,6 +826,8 @@ func _draw_thorns() -> void:
 	)
 	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
 	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
+	var thorn_texture: Texture2D = _thorn_texture_for_stage(controller.stage_number)
+	var thorn_source_region: Rect2 = _thorn_source_region_for_stage(controller.stage_number)
 	# overlay는 셀 경계에 6px 겹쳐 틈을 없애고, 블록의 48×48 rect는 건드리지 않는다.
 	for local_cell: Vector2i in cells:
 		var active_cell: Vector2i = controller.active_origin + local_cell
@@ -817,9 +843,9 @@ func _draw_thorns() -> void:
 			)
 			draw_set_transform(face_center, angles[index])
 			draw_texture_rect_region(
-				THORN_TEXTURE,
+				thorn_texture,
 				Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
-				THORN_SOURCE_REGION
+				thorn_source_region
 			)
 	draw_set_transform(Vector2.ZERO, 0.0)
 
@@ -866,9 +892,13 @@ func _create_boss_display() -> void:
 	var board_physics: Node2D = $BoardPhysics
 	_boss_sprite = Sprite2D.new()
 	_boss_sprite.name = "BossSprite"
-	_boss_sprite.texture = BOSS_NORMAL_TEXTURE
+	_boss_sprite.texture = ICE_BOSS_TEXTURE if _is_ice_boss_stage() else BOSS_NORMAL_TEXTURE
 	_boss_sprite.region_enabled = true
-	_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	_boss_sprite.scale = (
+		ICE_BOSS_DISPLAY_SIZE / ICE_BOSS_SOURCE_FRAME_SIZE
+		if _is_ice_boss_stage()
+		else MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
+	)
 	_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
 	_boss_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_boss_sprite.z_index = 2
@@ -913,8 +943,36 @@ func _create_boss_display() -> void:
 	_apply_boss_thorn_frame()
 
 
+func _is_ice_boss_stage() -> bool:
+	return controller.stage_number == ICE_BOSS_STAGE
+
+
+func _advance_ice_boss_animation(delta: float) -> void:
+	_boss_thorn_sprite.visible = false
+	if controller.is_boss_alive():
+		_boss_frame_timer += maxf(delta, 0.0)
+		while _boss_frame_timer >= BOSS_FRAME_INTERVAL:
+			_boss_frame_timer -= BOSS_FRAME_INTERVAL
+			_boss_frame = (_boss_frame + 1) % BOSS_FRAME_COUNT
+			_apply_boss_frame()
+	elif controller.is_boss_dying():
+		_boss_down_frame_timer += maxf(delta, 0.0)
+		while (
+			_boss_down_frame_timer >= BOSS_FRAME_INTERVAL
+			and _boss_down_frame < BOSS_FRAME_COUNT - 1
+		):
+			_boss_down_frame_timer -= BOSS_FRAME_INTERVAL
+			_boss_down_frame += 1
+			_apply_boss_down_frame()
+		if _boss_down_frame >= BOSS_FRAME_COUNT - 1:
+			_boss_down_frame_timer = 0.0
+
+
 func _advance_boss_animation(delta: float) -> void:
 	if _boss_sprite == null:
+		return
+	if _is_ice_boss_stage():
+		_advance_ice_boss_animation(delta)
 		return
 	if controller.is_boss_alive():
 		_boss_frame_timer += maxf(delta, 0.0)
@@ -976,18 +1034,30 @@ func _advance_boss_fallen_animation(delta: float) -> void:
 
 
 func _apply_boss_frame() -> void:
-	_apply_boss_sheet_frame(_boss_frame, BOSS_SOURCE_FRAME_SIZE)
+	_apply_boss_sheet_frame(
+		_boss_frame,
+		ICE_BOSS_SOURCE_FRAME_SIZE if _is_ice_boss_stage() else BOSS_SOURCE_FRAME_SIZE
+	)
 
 
 func _apply_boss_down_frame() -> void:
+	if _is_ice_boss_stage():
+		_apply_boss_sheet_frame(_boss_down_frame, ICE_BOSS_SOURCE_FRAME_SIZE)
+		return
 	_apply_boss_sheet_frame(_boss_down_frame, BOSS_DOWN_SOURCE_FRAME_SIZE)
 
 
 func _apply_boss_falling_frame() -> void:
+	if _is_ice_boss_stage():
+		_apply_boss_sheet_frame(BOSS_FRAME_COUNT - 1, ICE_BOSS_SOURCE_FRAME_SIZE)
+		return
 	_apply_boss_sheet_frame(_boss_falling_frame, BOSS_SOURCE_FRAME_SIZE)
 
 
 func _apply_boss_fallen_frame() -> void:
+	if _is_ice_boss_stage():
+		_apply_boss_sheet_frame(BOSS_FRAME_COUNT - 1, ICE_BOSS_SOURCE_FRAME_SIZE)
+		return
 	_apply_boss_sheet_frame(_boss_fallen_frame, BOSS_FALLEN_SOURCE_FRAME_SIZE)
 
 
@@ -1028,12 +1098,17 @@ func _refresh_boss_display() -> void:
 		or controller.is_boss_down()
 		or controller.is_boss_falling()
 		or controller.is_boss_fallen()
+		or controller.is_boss_dying()
 	)
 	_boss_sprite.visible = boss_visible
 	for index: int in range(_boss_hearts.size()):
 		_boss_hearts[index].visible = boss_alive and index < controller.boss_health
 	if not boss_alive:
 		_boss_thorn_sprite.visible = false
+
+	if _is_ice_boss_stage():
+		_refresh_ice_boss_display(boss_visible)
+		return
 
 	if controller.is_boss_down():
 		if _boss_sprite.texture != BOSS_DOWN_TEXTURE:
@@ -1045,7 +1120,7 @@ func _refresh_boss_display() -> void:
 		_boss_sprite.position = Vector2(
 			controller.boss_fall_position.x,
 			controller.boss_fall_position.y - BOSS_DOWN_DISPLAY_SIZE.y * 0.5 + BOSS_VISUAL_OFFSET.y
-		)
+			)
 		_apply_boss_down_frame()
 		return
 
@@ -1087,6 +1162,29 @@ func _refresh_boss_display() -> void:
 		_boss_sprite.scale = MainGameController.BOSS_DISPLAY_SIZE / BOSS_SOURCE_FRAME_SIZE
 		_boss_frame = 0
 		_boss_frame_timer = 0.0
+	_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
+	_apply_boss_frame()
+
+
+func _refresh_ice_boss_display(boss_visible: bool) -> void:
+	if not boss_visible:
+		return
+	var is_dying: bool = not controller.is_boss_alive()
+	var boss_texture: Texture2D = ICE_BOSS_DIE_TEXTURE if is_dying else ICE_BOSS_TEXTURE
+	if _boss_sprite.texture != boss_texture or not _boss_sprite.region_enabled:
+		_boss_sprite.texture = boss_texture
+		_boss_sprite.region_enabled = true
+		_boss_sprite.scale = ICE_BOSS_DISPLAY_SIZE / ICE_BOSS_SOURCE_FRAME_SIZE
+		if is_dying:
+			_boss_down_frame = 0
+			_boss_down_frame_timer = 0.0
+		else:
+			_boss_frame = 0
+			_boss_frame_timer = 0.0
+	if controller.is_boss_dying():
+		_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
+		_apply_boss_down_frame()
+		return
 	_boss_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
 	_apply_boss_frame()
 

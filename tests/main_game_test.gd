@@ -159,107 +159,207 @@ func _run() -> void:
 			and ANIMATION_DATA.display_name_for("normal") == "일반인",
 		"일반인 animation profile이 기본 캐릭터로 등록된다."
 	)
-	var normal_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "normal")
+	var normal_atlas: Texture2D = ANIMATION_DATA.texture_for_character("normal")
+	var normal_uses_one_texture: bool = true
+	for normal_state: String in [
+		ANIMATION_DATA.IDLE,
+		ANIMATION_DATA.ATTACK,
+		ANIMATION_DATA.HANG,
+		ANIMATION_DATA.CORNER_CLIMB,
+		ANIMATION_DATA.JUMP,
+		ANIMATION_DATA.ROTATION_KICK,
+		ANIMATION_DATA.SPECIAL,
+	]:
+		normal_uses_one_texture = normal_uses_one_texture and (
+			ANIMATION_DATA.texture_for_character("normal") == normal_atlas
+		)
 	_expect(
 		normal_atlas.get_width() == 1024
-			and normal_atlas.get_height() == 768
-			and normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png")
+			and normal_atlas.get_height() == 896
+			and normal_atlas.resource_path.ends_with("normal_reference_atlas_v12.png")
+			and normal_uses_one_texture
 			and ANIMATION_DATA.uses_fixed_geometry("normal")
 		and ANIMATION_DATA.fixed_scale_for("normal").is_equal_approx(Vector2.ONE)
 			and ANIMATION_DATA.fixed_offset_for("normal").is_equal_approx(Vector2(0.0, 3.0)),
-		"일반인 atlas는 1024×768 균일 격자다."
+		"일반인 atlas는 코너 오르기까지 포함한 단일 1024×896 균일 격자다."
 	)
-	var scene_atlas_check: MainGameView = GAME_SCENE.instantiate()
-	var scene_normal_atlas: Texture2D = (
-		scene_atlas_check.get_node("BoardPhysics/Character/Sprite") as Sprite2D
-	).texture
+	var normal_atlas_image: Image = normal_atlas.get_image()
+	var climb_body_x_offsets: Array[int] = [0, -7, -9, -7, 0, -6, -6, -7]
+	var canonical_climb_head: PackedByteArray = normal_atlas_image.get_region(
+		Rect2i(62, 266, 17, 25)
+	).get_data()
+	var canonical_climb_torso: PackedByteArray = normal_atlas_image.get_region(
+		Rect2i(60, 291, 19, 35)
+	).get_data()
+	var climb_head_and_torso_are_pixel_stable: bool = true
+	for climb_frame_index: int in range(8):
+		var body_x_offset: int = climb_body_x_offsets[climb_frame_index]
+		climb_head_and_torso_are_pixel_stable = (
+			climb_head_and_torso_are_pixel_stable
+			and normal_atlas_image.get_region(
+				Rect2i(128 * climb_frame_index + 62 + body_x_offset, 266, 17, 25)
+			).get_data() == canonical_climb_head
+			and normal_atlas_image.get_region(
+				Rect2i(128 * climb_frame_index + 60 + body_x_offset, 291, 19, 35)
+			).get_data() == canonical_climb_torso
+		)
 	_expect(
-		scene_normal_atlas.resource_path.ends_with("normal_reference_atlas_v8.png"),
-		"게임 씬의 초기 일반인 Sprite도 runtime v8 atlas를 사용한다."
+		climb_head_and_torso_are_pixel_stable,
+		"벽타기 8 frame은 정수 좌표 이동 외에 머리·몸통 RGBA 픽셀을 공유한다."
 	)
-	scene_atlas_check.free()
-	var boxer_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "boxer")
+	var normal_corner_atlas: Texture2D = ANIMATION_DATA.texture_for_character("normal")
+	var normal_corner_image: Image = normal_corner_atlas.get_image()
+	var normal_corner_opaque_counts: Array[int] = []
+	for corner_frame_index: int in range(8):
+		var opaque_count: int = 0
+		for pixel_y: int in range(128):
+			for pixel_x: int in range(128):
+				if normal_corner_image.get_pixel(
+					corner_frame_index * 128 + pixel_x,
+					768 + pixel_y
+				).a >= 0.5:
+					opaque_count += 1
+		normal_corner_opaque_counts.append(opaque_count)
+	var minimum_corner_pixels: int = normal_corner_opaque_counts.min()
+	var maximum_corner_pixels: int = normal_corner_opaque_counts.max()
+	var corner_pose_geometry_is_stable: bool = true
+	var corner_visible_heights: Array[int] = []
+	for corner_frame_index: int in range(8):
+		var source_region := Rect2i(corner_frame_index * 128, 768, 128, 128)
+		var visible_region: Rect2 = ANIMATION_DATA.opaque_region_for(
+			normal_corner_atlas,
+			Rect2(source_region)
+		)
+		corner_visible_heights.append(int(visible_region.size.y))
+		corner_pose_geometry_is_stable = (
+			corner_pose_geometry_is_stable
+			and _opaque_component_count(normal_corner_image, source_region) == 1
+			and int(visible_region.end.y - source_region.position.y) == 112
+		)
+	_expect(
+		normal_corner_atlas == normal_atlas
+			and normal_corner_atlas.get_width() == 1024
+			and normal_corner_atlas.get_height() == 896
+			and normal_corner_atlas.resource_path.ends_with("normal_reference_atlas_v12.png")
+			and minimum_corner_pixels >= 1200
+			and maximum_corner_pixels <= 2000
+			and corner_pose_geometry_is_stable
+			and corner_visible_heights[4] >= 48
+			and corner_visible_heights[7] >= 80,
+		"모서리 오르기 8 frame은 같은 발선에서 자연스러운 단일 실루엣을 유지한다."
+	)
+	_expect(
+		_opaque_component_count(
+			normal_corner_image,
+			Rect2i(4 * 128, 768, 128, 128)
+		) == 1
+			and _opaque_component_count(
+				normal_corner_image,
+				Rect2i(7 * 128, 768, 128, 128)
+			) == 1,
+		"모서리 오르기 4·7 frame은 머리·목·몸통이 끊기지 않는다."
+	)
+	_expect(
+		MainCharacterController.HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME.size() == 8
+			and MainCharacterController.HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME[0] == 0.0
+			and MainCharacterController.HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME[3] >= 0.3
+			and MainCharacterController.HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME[4] >= 0.5
+			and MainCharacterController.HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME[7] == 0.0
+			and MainCharacterController.HANG_CORNER_LEDGE_CONTACT_FIRST_FRAME == 2
+			and MainCharacterController.HANG_CORNER_LEDGE_CONTACT_LAST_FRAME == 4,
+		"모서리 오르기 2~4번은 실제 불투명 접촉 픽셀을 목표 블록 윗면에 맞춘다."
+	)
+	var boxer_atlas: Texture2D = ANIMATION_DATA.texture_for_character("boxer")
 	_expect(
 		ANIMATION_DATA.has_character("boxer")
 			and ANIMATION_DATA.display_name_for("boxer") == "복서"
 			and boxer_atlas.get_width() == 1024
-			and boxer_atlas.get_height() == 768
+			and boxer_atlas.get_height() == 896
 			and boxer_atlas != normal_atlas,
-		"복서 profile은 독립된 1024×768 atlas를 사용한다."
+		"복서 profile은 등반 행까지 포함한 독립된 1024×896 atlas를 사용한다."
 	)
-	var shield_guard_atlas: Texture2D = ANIMATION_DATA.texture_for(
-		ANIMATION_DATA.IDLE,
-		"shield_guard"
-	)
+	var shield_guard_atlas: Texture2D = ANIMATION_DATA.texture_for_character("shield_guard")
 	_expect(
 		ANIMATION_DATA.has_character("shield_guard")
 			and ANIMATION_DATA.display_name_for("shield_guard") == "방패병"
 			and shield_guard_atlas.get_width() == 1024
-			and shield_guard_atlas.get_height() == 768
+			and shield_guard_atlas.get_height() == 896
 			and shield_guard_atlas != normal_atlas
 			and shield_guard_atlas != boxer_atlas,
-		"방패병 profile은 독립된 1024×768 atlas를 사용한다."
+		"방패병 profile은 등반 행까지 포함한 독립된 1024×896 atlas를 사용한다."
 	)
-	var firefighter_atlas: Texture2D = ANIMATION_DATA.texture_for(
-		ANIMATION_DATA.IDLE,
-		"firefighter"
-	)
+	var firefighter_atlas: Texture2D = ANIMATION_DATA.texture_for_character("firefighter")
 	_expect(
 		ANIMATION_DATA.has_character("firefighter")
 			and ANIMATION_DATA.display_name_for("firefighter") == "소방관"
 			and firefighter_atlas.get_width() == 1024
-			and firefighter_atlas.get_height() == 768
+			and firefighter_atlas.get_height() == 896
 			and firefighter_atlas != normal_atlas
 			and firefighter_atlas != boxer_atlas
 			and firefighter_atlas != shield_guard_atlas,
-		"소방관 profile은 독립된 1024×768 atlas를 사용한다."
+		"소방관 profile은 등반 행까지 포함한 독립된 1024×896 atlas를 사용한다."
 	)
-	var cleaner_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "cleaner")
+	var cleaner_atlas: Texture2D = ANIMATION_DATA.texture_for_character("cleaner")
 	_expect(
 		ANIMATION_DATA.has_character("cleaner")
 			and ANIMATION_DATA.display_name_for("cleaner") == "청소부"
 			and cleaner_atlas.get_width() == 1024
-			and cleaner_atlas.get_height() == 768
+			and cleaner_atlas.get_height() == 896
 			and cleaner_atlas != normal_atlas
 			and cleaner_atlas != boxer_atlas
 			and cleaner_atlas != shield_guard_atlas
 			and cleaner_atlas != firefighter_atlas,
-		"청소부 profile은 독립된 1024×768 atlas를 사용한다."
+		"청소부 profile은 등반 행까지 포함한 독립된 1024×896 atlas를 사용한다."
 	)
-	var chef_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
+	var chef_atlas: Texture2D = ANIMATION_DATA.texture_for_character("chef")
 	_expect(
 		ANIMATION_DATA.has_character("chef")
 			and ANIMATION_DATA.display_name_for("chef") == "성녀"
 			and chef_atlas.get_width() == 1024
-			and chef_atlas.get_height() == 768
+			and chef_atlas.get_height() == 896
 			and chef_atlas != normal_atlas
 			and chef_atlas != boxer_atlas
 			and chef_atlas != shield_guard_atlas
 			and chef_atlas != firefighter_atlas
 			and chef_atlas != cleaner_atlas,
-		"Saintess profile은 독립된 1024×768 atlas를 사용한다."
+		"Saintess profile은 등반 행까지 포함한 독립된 1024×896 atlas를 사용한다."
 	)
+	var expected_character_atlas_suffixes: Dictionary = {
+		"normal": "normal_reference_atlas_v12.png",
+		"boxer": "boxer_reference_atlas_v7.png",
+		"shield_guard": "shield_guard_reference_atlas_v7.png",
+		"firefighter": "firefighter_reference_atlas_v7.png",
+		"cleaner": "cleaner_reference_atlas_v7.png",
+		"chef": "chef_reference_atlas_v9.png",
+		"clockmaker": "clockmaker_reference_atlas_v7.png",
+		"ninja": "ninja_reference_atlas_v7.png",
+	}
 	for beta_id: String in CHARACTER_DATA.CHARACTER_ORDER:
-		var beta_atlas: Texture2D = ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, beta_id)
-		var expected_atlas_suffix: String = (
-			"normal_reference_atlas_v8.png"
-			if beta_id == "normal"
-			else (
-				"saintess_reference_atlas_v2.png"
-				if beta_id == "chef"
-				else "%s_reference_atlas_v6.png" % beta_id
-			)
+		var beta_atlas: Texture2D = ANIMATION_DATA.texture_for_character(beta_id)
+		var expected_atlas_suffix: String = str(
+			expected_character_atlas_suffixes[beta_id]
 		)
+		var beta_corner_regions: Array = ANIMATION_DATA.regions_for(
+			ANIMATION_DATA.CORNER_CLIMB,
+			beta_id
+		)
+		var beta_corner_row_is_dedicated: bool = beta_corner_regions.size() == 8
+		for beta_corner_region: Rect2 in beta_corner_regions:
+			beta_corner_row_is_dedicated = (
+				beta_corner_row_is_dedicated
+				and int(beta_corner_region.position.y) == 768
+			)
 		_expect(
 			ANIMATION_DATA.has_character(beta_id)
 				and CHARACTER_DATA.has_character(beta_id)
 				and beta_atlas.get_width() == 1024
-				and beta_atlas.get_height() == 768
+				and beta_atlas.get_height() == 896
 				and beta_atlas.resource_path.ends_with(expected_atlas_suffix)
+				and beta_corner_row_is_dedicated
 				and ANIMATION_DATA.uses_fixed_geometry(beta_id)
 				and ANIMATION_DATA.fixed_scale_for(beta_id).is_equal_approx(Vector2.ONE)
 				and ANIMATION_DATA.fixed_offset_for(beta_id).is_equal_approx(Vector2(0.0, 3.0)),
-			"%s 선택 캐릭터는 데이터와 1024×768 atlas를 함께 가진다." % beta_id
+			"%s 선택 캐릭터는 전용 등반 행을 포함한 하나의 atlas 파일을 사용한다." % beta_id
 		)
 	_expect(
 		is_equal_approx(CHARACTER_DATA.jump_cells("normal"), 2.3333333)
@@ -1022,7 +1122,7 @@ func _test_release_punch() -> void:
 		character.set_character_id("chef")
 			and character.character_id == "chef"
 			and character.sprite.texture
-			== ANIMATION_DATA.texture_for(ANIMATION_DATA.IDLE, "chef")
+			== ANIMATION_DATA.texture_for_character("chef")
 			and character.character_profile()["display_name"] == "성녀",
 		"Chef 슬롯은 Saintess atlas와 프로필을 사용한다."
 	)
@@ -2198,6 +2298,7 @@ func _test_character_frame_normalization(
 		ANIMATION_DATA.IDLE,
 		ANIMATION_DATA.ATTACK,
 		ANIMATION_DATA.HANG,
+		ANIMATION_DATA.CORNER_CLIMB,
 		ANIMATION_DATA.JUMP,
 		ANIMATION_DATA.ROTATION_KICK,
 		ANIMATION_DATA.SPECIAL,
@@ -2407,6 +2508,54 @@ func _test_character_frame_normalization(
 	character._animation_state = ANIMATION_DATA.IDLE
 	character._animation_time = 0.0
 	character._apply_animation_frame()
+
+
+func _opaque_component_count(image: Image, region: Rect2i) -> int:
+	var width: int = region.size.x
+	var height: int = region.size.y
+	var visited := PackedByteArray()
+	visited.resize(width * height)
+	var component_count: int = 0
+	var neighbors: Array[Vector2i] = [
+		Vector2i.LEFT,
+		Vector2i.RIGHT,
+		Vector2i.UP,
+		Vector2i.DOWN,
+	]
+	for local_y: int in range(height):
+		for local_x: int in range(width):
+			var start_index: int = local_y * width + local_x
+			if visited[start_index] != 0:
+				continue
+			visited[start_index] = 1
+			if image.get_pixel(
+				region.position.x + local_x,
+				region.position.y + local_y
+			).a < 0.5:
+				continue
+			component_count += 1
+			var pending: Array[Vector2i] = [Vector2i(local_x, local_y)]
+			while not pending.is_empty():
+				var point: Vector2i = pending.pop_back()
+				for direction: Vector2i in neighbors:
+					var neighbor: Vector2i = point + direction
+					if (
+						neighbor.x < 0
+						or neighbor.x >= width
+						or neighbor.y < 0
+						or neighbor.y >= height
+					):
+						continue
+					var neighbor_index: int = neighbor.y * width + neighbor.x
+					if visited[neighbor_index] != 0:
+						continue
+					visited[neighbor_index] = 1
+					if image.get_pixel(
+						region.position.x + neighbor.x,
+						region.position.y + neighbor.y
+					).a >= 0.5:
+						pending.append(neighbor)
+	return component_count
 
 
 func _sprite_visible_rect(character: MainCharacterController) -> Rect2:

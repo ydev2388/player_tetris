@@ -24,6 +24,7 @@ const PROFILES: Dictionary = {
 	"normal": {
 		"display_name": "일반인",
 		"unlock_text": "0별",
+		"unlock_stars": 0,
 		"role": "균형형",
 		"description": "성실하지만 경험이 부족한 기준 캐릭터.",
 		"weapon": "목제 연습봉",
@@ -40,6 +41,7 @@ const PROFILES: Dictionary = {
 	"boxer": {
 		"display_name": "복서",
 		"unlock_text": "3별",
+		"unlock_stars": 3,
 		"role": "정면 돌파형",
 		"description": "짧은 거리에서 블록을 강하게 밀어내는 공격형.",
 		"weapon": "복싱 글러브",
@@ -56,6 +58,7 @@ const PROFILES: Dictionary = {
 	"shield_guard": {
 		"display_name": "방패병",
 		"unlock_text": "6별",
+		"unlock_stars": 6,
 		"role": "정면 생존형",
 		"description": "이동하는 보호벽으로 한쪽 위험을 견디는 수호자.",
 		"weapon": "원형 방패",
@@ -72,6 +75,7 @@ const PROFILES: Dictionary = {
 	"firefighter": {
 		"display_name": "소방관",
 		"unlock_text": "9별",
+		"unlock_stars": 9,
 		"role": "낙하 경로 제어형",
 		"description": "중력에 따라 흐르는 물길로 활성 블록의 착지 위치를 바꾼다.",
 		"weapon": "소방 도끼 옆면",
@@ -88,6 +92,7 @@ const PROFILES: Dictionary = {
 	"cleaner": {
 		"display_name": "청소부",
 		"unlock_text": "12별",
+		"unlock_stars": 12,
 		"role": "근거리 복구형",
 		"description": "발밑의 노출된 고정 블록을 빠르게 정리하는 현장 전문가.",
 		"weapon": "빗자루",
@@ -104,6 +109,7 @@ const PROFILES: Dictionary = {
 	"chef": {
 		"display_name": "성녀",
 		"unlock_text": "15별",
+		"unlock_stars": 15,
 		"role": "성스러운 수호형",
 		"description": "찬란한 가호로 짧은 시간 빠르게 움직이고 다음 기믹이나 보스 공격을 버틴다.",
 		"weapon": "성휘 지팡이",
@@ -120,7 +126,8 @@ const PROFILES: Dictionary = {
 	"clockmaker": {
 		"display_name": "시계공",
 		"unlock_text": "15별",
-		"unlock_hint": "목표: 별 15개 (선택 제한 없음)",
+		"unlock_stars": 15,
+		"unlock_hint": "목표: 별 15개",
 		"role": "시간 정지형",
 		"description": "황동 톱니 가방과 거대한 태엽 열쇠로 낙하 시간을 멈추는 괴짜 장인.",
 		"weapon": "태엽 열쇠 지팡이",
@@ -137,7 +144,8 @@ const PROFILES: Dictionary = {
 	"ninja": {
 		"display_name": "닌자",
 		"unlock_text": "전 스테이지 무피해",
-		"unlock_hint": "목표: 전 스테이지 무피해 (선택 제한 없음)",
+		"unlock_all_no_damage": true,
+		"unlock_hint": "목표: 전 스테이지 무피해",
 		"role": "고속 원거리형",
 		"description": "긴 스카프를 휘날리며 활성 블록을 원거리에서 조작하는 고속 숙련자.",
 		"weapon": "단봉",

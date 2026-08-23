@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://p181nbjgxw76"
-path="res://.godot/imported/clockmaker_reference_atlas_v6.png-0e11d163ee5b43ff33d3c7a21210e223.ctex"
+uid="uid://t1nn183ijpe4"
+path="res://.godot/imported/firefighter_reference_atlas_v7.png-48a304b9e8762e0ad6dcfad57c79cf22.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v6.png"
-dest_files=["res://.godot/imported/clockmaker_reference_atlas_v6.png-0e11d163ee5b43ff33d3c7a21210e223.ctex"]
+source_file="res://assets/sprites/characters/firefighter/firefighter_reference_atlas_v7.png"
+dest_files=["res://.godot/imported/firefighter_reference_atlas_v7.png-48a304b9e8762e0ad6dcfad57c79cf22.ctex"]
 
 [params]
 

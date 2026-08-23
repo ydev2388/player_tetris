@@ -65,6 +65,42 @@ const WALL_JUMP_HORIZONTAL_SPEED: float = 185.0 * GIT_GRID_SCALE # 벽 반대 x�
 const WALL_JUMP_VERTICAL_MULTIPLIER: float = 1.0 # 벽점프의 JUMP_VELOCITY 배율.
 const HANG_CLIMB_SPEED: float = 78.0 * GIT_GRID_SCALE # 매달린 상하 이동속도(px/s).
 const HANG_CORNER_CLIMB_SPEED: float = 115.0 * GIT_GRID_SCALE
+# 매달린 중심에서 발이 블록 윗면에 닿는 높이까지 약 80px, 블록 위 안쪽으로
+# 들어가는 거리는 collider 폭인 42px이다. 따라서 실제 두 구간 길이와 같은 66:34로
+# 나눠야 상단 진입 포즈가 급하게 지나가지 않는다.
+const HANG_CORNER_VERTICAL_PATH_RATIO: float = 0.66
+# 전용 row의 0~3은 수직 당기기, 4~7은 상체·무릎·발을 차례로 올리는 포즈다.
+const HANG_CORNER_VERTICAL_FRAME_COUNT: int = 4
+# 마지막 서기 포즈가 옆으로 미끄러지지 않도록 전체 진행도의 90%에서 이동을 끝내고
+# 나머지는 블록 위에 정착하는 짧은 hold로 사용한다.
+const HANG_CORNER_HORIZONTAL_MOTION_END_RATIO: float = 0.90
+const HANG_CORNER_FRAME_PROGRESS_THRESHOLDS: Array[float] = [
+	0.00, # 양손 고정, 첫 무릎 들기.
+	0.17, # 팔로 당기기 시작.
+	0.34, # 가슴을 모서리에 붙임.
+	0.51, # 가슴이 윗면을 넘어감.
+	0.66, # 수직 상승 완료, 손·무릎을 윗면에 놓음.
+	0.75, # 무릎에 체중을 싣고 골반 진입.
+	0.84, # 블록 위 웅크림.
+	0.92, # 목표 위치 정착 후 일어서기.
+]
+# 2~6번 포즈는 손·가슴·무릎이 이미 윗면으로 넘어가는 그림이다. 물리 중심은
+# 안전하게 기존 L자 경로를 따르게 두고, 그림만 남은 수평 거리의 일부를 목표 블록
+# 쪽으로 먼저 보낸다. 이렇게 하면 콜라이더가 블록을 관통하지 않으면서도 손이
+# 공중을 짚는 것처럼 보이지 않는다. signed 거리라 왼쪽 면에서도 그대로 반전된다.
+const HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME: Array[float] = [
+	0.00,
+	0.05,
+	0.15,
+	0.35,
+	0.50,
+	0.50,
+	0.50,
+	0.00,
+]
+const HANG_CORNER_LEDGE_CONTACT_FIRST_FRAME: int = 2
+const HANG_CORNER_LEDGE_CONTACT_LAST_FRAME: int = 4
+const HANG_CORNER_FORWARD_CONTACT_BAND_WIDTH: int = 5
 const HANG_HAND_OFFSET_Y: float = CHARACTER_HEIGHT / 3.0 # hang 스프라이트 손의 캐릭터 중심 기준 높이.
 const HANG_WALL_GAP: float = 0.0 # 공통 콜라이더 옆면과 실제 벽면 사이의 고정 간격.
 const IDLE_ANIMATION_SPEED_EPSILON: float = 0.5 # 정지로 간주해 대기 첫 프레임을 고정하는 속도.
@@ -229,6 +265,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	if not ANIMATION_DATA.has_character(character_id):
 		character_id = ANIMATION_DATA.DEFAULT_CHARACTER_ID
+	# 모든 동작은 한 atlas의 128×128 region을 공유한다. 확대/반전 중에도 인접
+	# cell의 픽셀이 섞이지 않도록 scene 설정에만 의존하지 않고 런타임에서도 고정한다.
+	sprite.region_filter_clip_enabled = true
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_ignore_initial_jump_until_released = Input.is_action_pressed(&"character_jump")
 	_sfx_player = _create_sfx_player()
 	_sfx_cue_player = _create_sfx_player()
@@ -1088,7 +1128,8 @@ func _try_start_hang_corner_climb() -> bool:
 	)
 	_hang_corner_climb_duration = maxf(
 		path_length / maxf(HANG_CORNER_CLIMB_SPEED, 1.0),
-		0.18
+		float(ANIMATION_DATA.frame_count_for(ANIMATION_DATA.CORNER_CLIMB, character_id))
+			* float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.CORNER_CLIMB])
 	)
 	return true
 
@@ -1106,8 +1147,8 @@ func _advance_hang_corner_climb(delta: float) -> void:
 	)
 	var progress: float = _hang_corner_climb_progress
 	var corner_position: Vector2
-	if progress < 0.72:
-		var vertical_progress: float = progress / 0.72
+	if progress < HANG_CORNER_VERTICAL_PATH_RATIO:
+		var vertical_progress: float = progress / HANG_CORNER_VERTICAL_PATH_RATIO
 		corner_position = Vector2(
 			_hang_corner_climb_start_global.x,
 			lerpf(
@@ -1117,7 +1158,16 @@ func _advance_hang_corner_climb(delta: float) -> void:
 			)
 		)
 	else:
-		var horizontal_progress: float = (progress - 0.72) / 0.28
+		var horizontal_progress: float = (
+			(progress - HANG_CORNER_VERTICAL_PATH_RATIO)
+			/ (
+				HANG_CORNER_HORIZONTAL_MOTION_END_RATIO
+				- HANG_CORNER_VERTICAL_PATH_RATIO
+			)
+		)
+		horizontal_progress = clampf(horizontal_progress, 0.0, 1.0)
+		# 속도가 갑자기 꺾이는 느낌을 줄이고 무릎을 올리는 동안 자연스럽게 감속한다.
+		horizontal_progress = smoothstep(0.0, 1.0, horizontal_progress)
 		corner_position = Vector2(
 			lerpf(
 				_hang_corner_climb_start_global.x,
@@ -1136,6 +1186,13 @@ func _advance_hang_corner_climb(delta: float) -> void:
 		_exit_hang()
 		position = completed_local_position
 		velocity = Vector2.ZERO
+		# The mantle target already places the collider's feet exactly on the
+		# locked block. Refresh CharacterBody2D's floor state in this same frame;
+		# otherwise the visual update sees `not is_on_floor()` and inserts one
+		# apex-jump pose between the final mantle pose and idle. Several skins keep
+		# their torso anchored in that pose while lowering the head, which looks
+		# like the sprite briefly breaks at the neck.
+		apply_floor_snap()
 	stats_changed.emit()
 
 
@@ -2619,6 +2676,24 @@ func _advance_character_animation(delta: float) -> void:
 		# `_finish_hanging_frame()` clears velocity, so neither the
 		# cleared velocity nor a second raw-input read may drive this animation.
 		_advance_hang_animation_time(delta, _hang_animation_direction)
+	elif next_animation_state == ANIMATION_DATA.CORNER_CLIMB:
+		# The mantle is driven by the two actual path segments.  The first four
+		# poses belong to the vertical pull beside the block; the last four only
+		# begin once the collider reaches the top and moves inward.  This avoids a
+		# crouch/stand pose appearing while the body is still below the ledge.
+		var corner_frame_count: int = ANIMATION_DATA.frame_count_for(
+			ANIMATION_DATA.CORNER_CLIMB,
+			character_id
+		)
+		var corner_frame_index: int = _corner_climb_animation_frame_index(
+			_hang_corner_climb_progress,
+			corner_frame_count
+		)
+		_animation_time = (
+			float(corner_frame_index)
+			* float(ANIMATION_DATA.FRAME_DURATIONS[ANIMATION_DATA.CORNER_CLIMB])
+			+ 0.001
+		)
 	elif next_animation_state == ANIMATION_DATA.JUMP:
 		# Airborne art follows actual vertical motion.  A long drop therefore
 		# holds the extended terminal-fall frame instead of advancing into a
@@ -2634,6 +2709,44 @@ func _advance_character_animation(delta: float) -> void:
 	else:
 		_animation_time += delta
 	_apply_animation_frame()
+
+
+func _corner_climb_animation_frame_index(progress: float, frame_count: int) -> int:
+	if frame_count <= 1:
+		return 0
+	var clamped_progress: float = clampf(progress, 0.0, 1.0)
+	if frame_count == HANG_CORNER_FRAME_PROGRESS_THRESHOLDS.size():
+		var milestone_frame: int = 0
+		for frame_index: int in range(1, HANG_CORNER_FRAME_PROGRESS_THRESHOLDS.size()):
+			if clamped_progress < HANG_CORNER_FRAME_PROGRESS_THRESHOLDS[frame_index]:
+				break
+			milestone_frame = frame_index
+		return milestone_frame
+	var vertical_frame_count: int = clampi(
+		HANG_CORNER_VERTICAL_FRAME_COUNT,
+		1,
+		frame_count - 1
+	)
+	var horizontal_frame_count: int = frame_count - vertical_frame_count
+	if clamped_progress < HANG_CORNER_VERTICAL_PATH_RATIO:
+		var vertical_progress: float = (
+			clamped_progress / HANG_CORNER_VERTICAL_PATH_RATIO
+		)
+		return clampi(
+			floori(vertical_progress * float(vertical_frame_count)),
+			0,
+			vertical_frame_count - 1
+		)
+	var horizontal_progress: float = (
+		(clamped_progress - HANG_CORNER_VERTICAL_PATH_RATIO)
+		/ (1.0 - HANG_CORNER_VERTICAL_PATH_RATIO)
+	)
+	return clampi(
+		vertical_frame_count
+		+ floori(horizontal_progress * float(horizontal_frame_count)),
+		vertical_frame_count,
+		frame_count - 1
+	)
 
 
 ## Map actual vertical speed to takeoff, rise, apex and four falling poses.
@@ -2696,6 +2809,8 @@ func _get_animation_state() -> String:
 	if _attack_animation_remaining > 0.0:
 		return ANIMATION_DATA.ATTACK
 	if is_hanging:
+		if _hang_corner_climb_active:
+			return ANIMATION_DATA.CORNER_CLIMB
 		return ANIMATION_DATA.HANG
 	if not is_on_floor():
 		return ANIMATION_DATA.JUMP
@@ -2708,12 +2823,16 @@ func _get_animation_state() -> String:
 func _apply_animation_frame() -> void:
 	if not is_instance_valid(sprite):
 		return
+	if _hang_corner_climb_active:
+		# 오르기 도중 좌우 입력이나 외부 상태 갱신이 들어와도 시작한 블록 면을 향한
+		# 단일 sprite 방향을 유지한다. 위치와 flip이 서로 다른 면을 가리키는 한 frame을 막는다.
+		sprite.flip_h = _hang_jump_facing < 0
 	var region: Rect2 = ANIMATION_DATA.region_for(
 		_animation_state,
 		_animation_time,
 		character_id
 	) # source frame.
-	sprite.texture = ANIMATION_DATA.texture_for(_animation_state, character_id)
+	sprite.texture = ANIMATION_DATA.texture_for_character(character_id)
 	sprite.region_enabled = true
 	sprite.region_rect = region
 	if ANIMATION_DATA.uses_fixed_geometry(character_id):
@@ -2724,6 +2843,11 @@ func _apply_animation_frame() -> void:
 			+ ANIMATION_DATA.fixed_offset_for(character_id)
 		)
 		fixed_position.x += _standing_wall_visual_offset_x(region)
+		fixed_position.x += _corner_climb_visual_ledge_offset_x(region)
+		fixed_position.y += _corner_climb_visual_ledge_offset_y(
+			region,
+			fixed_position
+		)
 		sprite.position = fixed_position
 		return
 	var frame_bounds: Rect2 = _frame_alpha_bounds(region)
@@ -2746,6 +2870,150 @@ func _apply_animation_frame() -> void:
 			-(visible_center_x - source_center.x) * uniform_scale,
 			ground_anchor_y - (visible_bottom - source_center.y) * uniform_scale
 		)
+	)
+
+
+## 상황: 오르기 상체 포즈가 나왔지만 물리 중심은 아직 벽 바깥에 있을 때 호출한다.
+## 순서: 현재 프레임별 선행 비율 × 목표 블록까지 남은 signed 수평 거리를 계산한다.
+## 결과: 충돌체는 기존 경로를 유지하고 그림의 손·상체만 실제 블록 윗면에 걸친다.
+func _corner_climb_visual_ledge_offset_x(region: Rect2) -> float:
+	if (
+		not _hang_corner_climb_active
+		or _animation_state != ANIMATION_DATA.CORNER_CLIMB
+	):
+		return 0.0
+	var frame_index: int = int(region.position.x / ANIMATION_DATA.FRAME_SIZE)
+	if (
+		frame_index < 0
+		or frame_index >= HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME.size()
+	):
+		return 0.0
+	var remaining_to_ledge_x: float = (
+		_hang_corner_climb_target_global.x - global_position.x
+	)
+	return (
+		remaining_to_ledge_x
+		* HANG_CORNER_VISUAL_LEDGE_BLEND_BY_FRAME[frame_index]
+	)
+
+
+## 상황: 2~4번 오르기 그림의 손·무릎 아래에 투명 여백이 있어 윗면에서 뜰 때 호출한다.
+## 순서: 각 그림에서 진행 방향으로 가장 앞선 불투명 픽셀 띠(손끝)를 찾고,
+##       그 띠의 아래쪽과 블록의 보이는 윗면 사이 빈 공간을 계산한다.
+## 결과: 얼굴·무릎이 먼저 블록 폭에 들어와도 손 대신 접촉점으로 오인하지 않는다.
+func _corner_climb_visual_ledge_offset_y(
+	region: Rect2,
+	intended_sprite_position: Vector2
+) -> float:
+	if (
+		not _hang_corner_climb_active
+		or _animation_state != ANIMATION_DATA.CORNER_CLIMB
+	):
+		return 0.0
+	var frame_index: int = int(region.position.x / ANIMATION_DATA.FRAME_SIZE)
+	if (
+		frame_index < HANG_CORNER_LEDGE_CONTACT_FIRST_FRAME
+		or frame_index > HANG_CORNER_LEDGE_CONTACT_LAST_FRAME
+	):
+		return 0.0
+
+	var texture: Texture2D = ANIMATION_DATA.texture_for_character(character_id)
+	var image_key: String = texture.resource_path
+	var image: Image
+	if _animation_image_cache.has(image_key):
+		image = _animation_image_cache[image_key] as Image
+	else:
+		image = texture.get_image()
+		_animation_image_cache[image_key] = image
+
+	var source_center: Vector2 = region.size * 0.5
+	var source_left: int = int(region.position.x)
+	var source_top: int = int(region.position.y)
+	var forward_source_x: int = -1
+	for pixel_y: int in range(int(region.size.y)):
+		for pixel_x: int in range(int(region.size.x)):
+			if image.get_pixel(
+				source_left + pixel_x,
+				source_top + pixel_y
+			).a >= FRAME_ALPHA_THRESHOLD:
+				forward_source_x = maxi(forward_source_x, pixel_x)
+	if forward_source_x < 0:
+		return 0.0
+
+	var forward_groups: Array[Dictionary] = []
+	var active_group: Dictionary = {}
+	for pixel_y: int in range(int(region.size.y)):
+		var row_forward_x: int = -1
+		var row_outer_pixel_count: int = 0
+		for pixel_x: int in range(
+			maxi(0, forward_source_x - HANG_CORNER_FORWARD_CONTACT_BAND_WIDTH + 1),
+			forward_source_x + 1
+		):
+			if image.get_pixel(
+				source_left + pixel_x,
+				source_top + pixel_y
+			).a < FRAME_ALPHA_THRESHOLD:
+				continue
+			row_forward_x = maxi(row_forward_x, pixel_x)
+			if pixel_x == forward_source_x:
+				row_outer_pixel_count += 1
+		if row_forward_x < 0:
+			if not active_group.is_empty():
+				forward_groups.append(active_group)
+				active_group = {}
+			continue
+		if active_group.is_empty():
+			active_group = {
+				"end_y": pixel_y,
+				"max_x": row_forward_x,
+				"outer_count": row_outer_pixel_count,
+			}
+		else:
+			active_group["end_y"] = pixel_y
+			active_group["max_x"] = maxi(
+				int(active_group["max_x"]),
+				row_forward_x
+			)
+			active_group["outer_count"] = (
+				int(active_group["outer_count"]) + row_outer_pixel_count
+			)
+	if not active_group.is_empty():
+		forward_groups.append(active_group)
+
+	var contact_source_y: int = -1
+	var best_group_max_x: int = -1
+	var best_group_outer_count: int = -1
+	for forward_group: Dictionary in forward_groups:
+		var group_max_x: int = int(forward_group["max_x"])
+		var group_outer_count: int = int(forward_group["outer_count"])
+		if (
+			group_max_x > best_group_max_x
+			or (
+				group_max_x == best_group_max_x
+				and group_outer_count > best_group_outer_count
+			)
+		):
+			best_group_max_x = group_max_x
+			best_group_outer_count = group_outer_count
+			contact_source_y = int(forward_group["end_y"])
+	if contact_source_y < 0:
+		return 0.0
+
+	var sprite_origin_global: Vector2 = to_global(intended_sprite_position)
+	var contact_global_y: float = (
+		sprite_origin_global.y
+		+ (float(contact_source_y) - source_center.y) * sprite.scale.y
+	)
+	var visible_surface_global_y: float = (
+		_hang_corner_climb_target_global.y
+		+ CHARACTER_COLLIDER_OFFSET_Y
+		+ CHARACTER_COLLIDER_HEIGHT * 0.5
+		+ BLOCK_VISUAL_INSET
+	)
+	return clampf(
+		visible_surface_global_y - contact_global_y,
+		-CELL_SIZE,
+		CELL_SIZE
 	)
 
 
@@ -2852,7 +3120,7 @@ func _frame_alpha_bounds(region: Rect2) -> Rect2:
 	if _frame_alpha_bounds_cache.has(cache_key):
 		return _frame_alpha_bounds_cache[cache_key] as Rect2
 
-	var texture: Texture2D = ANIMATION_DATA.texture_for(_animation_state, character_id)
+	var texture: Texture2D = ANIMATION_DATA.texture_for_character(character_id)
 	var image_key: String = texture.resource_path
 	var image: Image
 	if _animation_image_cache.has(image_key):

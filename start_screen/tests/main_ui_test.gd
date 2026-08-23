@@ -4,7 +4,7 @@ const START_SCREEN_SCENE: PackedScene = preload(
 	"res://start_screen/scenes/start_screen.tscn"
 )
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
-const TEST_SETTINGS_PATH: String = "user://main_ui_test_settings.cfg"
+const TEST_SETTINGS_PATH: String = "res://build/main_ui_test_settings.cfg"
 
 var _checks: int = 0
 var _failures: int = 0
@@ -78,8 +78,10 @@ func _run() -> void:
 			and not screen.settings.is_stage_unlocked(2)
 			and not screen.settings.is_challenge_unlocked()
 			and screen.settings.challenge_best_lines == 0
+			and screen.settings.is_character_unlocked("normal")
+			and not screen.settings.is_character_unlocked("boxer")
 			and screen.settings.star_currency == 0,
-		"처음에는 1-1만 열리고 도전 모드와 다음 스테이지는 잠겨 있다."
+		"처음에는 1-1과 일반인만 열리고 도전 모드·다음 스테이지·다른 캐릭터는 잠겨 있다."
 	)
 	var zero_clear: Dictionary = screen.settings.complete_stage(1, 0)
 	_expect(
@@ -113,8 +115,9 @@ func _run() -> void:
 	reloaded_settings.load_settings()
 	_expect(
 		reloaded_settings.get_stage_best_stars(1) == 3
-			and reloaded_settings.star_currency == 3,
-		"스테이지 별과 별 화폐가 설정 파일에 저장된다."
+			and reloaded_settings.star_currency == 3
+			and reloaded_settings.is_character_unlocked("boxer"),
+		"스테이지 별·별 화폐와 캐릭터 해금이 설정 파일에서 복원된다."
 	)
 	var migrated_config: ConfigFile = ConfigFile.new()
 	var migration_load_error: Error = migrated_config.load(TEST_SETTINGS_PATH)
@@ -125,7 +128,7 @@ func _run() -> void:
 		"키 migration 결과와 schema version을 설정 파일에 저장한다."
 	)
 	reloaded_settings.free()
-	var corrupt_path: String = "user://main_ui_corrupt_settings.cfg"
+	var corrupt_path: String = "res://build/main_ui_corrupt_settings.cfg"
 	var corrupt_config: ConfigFile = ConfigFile.new()
 	corrupt_config.set_value("input", "character_left", ["bad"])
 	corrupt_config.set_value("audio", "music_percent", "bad")
@@ -259,6 +262,8 @@ func _run() -> void:
 		screen.settings.star_currency == 0
 			and screen.settings.get_stage_best_stars(1) == 0
 			and screen.settings.challenge_best_lines == 0
+			and not screen.settings.is_character_unlocked("boxer")
+			and not screen.settings.is_stage_cleared_without_damage(1)
 			and screen.settings.get_passive_level("move") == 0
 			and screen.settings.get_passive_level("health") == 0
 			and not screen.settings.is_stage_unlocked(2),
@@ -492,6 +497,16 @@ func _run() -> void:
 	await process_frame
 	var boxer_button: Button = screen.find_child("Character_boxer", true, false) as Button
 	_expect(boxer_button != null, "캐릭터 선택 화면에 복서 카드가 있다.")
+	_expect(
+		not screen.settings.is_character_unlocked("boxer"),
+		"진행 초기화 뒤 복서는 실제 선택 잠금 상태다."
+	)
+	var boxer_unlock_result: Dictionary = screen.settings.complete_stage(1, 3, 3, true)
+	_expect(
+		bool(boxer_unlock_result.get("ok", false))
+			and screen.settings.is_character_unlocked("boxer"),
+		"3별 완료가 복서를 해금하고 캐릭터 화면에 즉시 반영된다."
+	)
 	var stat_bars: Array[ProgressBar] = []
 	if boxer_button != null:
 		for child: Node in boxer_button.get_children():
@@ -523,12 +538,12 @@ func _run() -> void:
 		)
 		var white_labels: bool = true
 		for child: Node in screen._character_buttons[1].get_children():
-			if child is Label:
+			if child is Label and not String(child.name).begins_with("CharacterUnlockLabel_"):
 				if (child as Label).get_theme_color("font_color") != Color.WHITE:
 					white_labels = false
 		var dark_labels: bool = true
 		for child: Node in screen._character_buttons[0].get_children():
-			if child is Label:
+			if child is Label and not String(child.name).begins_with("CharacterUnlockLabel_"):
 				if (child as Label).get_theme_color("font_color") != Color("#152033"):
 					dark_labels = false
 		_expect(

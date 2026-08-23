@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hlxxvlbcrjbs"
-path="res://.godot/imported/boxer_reference_atlas_v6.png-67f0fdd60f6f421d0985e93e8c9ae9fe.ctex"
+uid="uid://w4iah5g7kd6k"
+path="res://.godot/imported/ninja_reference_atlas_v7.png-cc5bcebe06c826a170878d8307ba5cee.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/boxer/boxer_reference_atlas_v6.png"
-dest_files=["res://.godot/imported/boxer_reference_atlas_v6.png-67f0fdd60f6f421d0985e93e8c9ae9fe.ctex"]
+source_file="res://assets/sprites/characters/ninja/ninja_reference_atlas_v7.png"
+dest_files=["res://.godot/imported/ninja_reference_atlas_v7.png-cc5bcebe06c826a170878d8307ba5cee.ctex"]
 
 [params]
 

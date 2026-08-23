@@ -69,7 +69,7 @@
 
 | 함수 | 호출과 내부 순서 | 결과 |
 | --- | --- | --- |
-| `texture_for(state)` | hang/attack/jump/flip 상태를 전용 texture에 대응시킨다. | 상태에 사용할 `Texture2D`를 반환한다. |
+| `texture_for_character(character_id)` | 캐릭터 ID를 해당 캐릭터의 단일 통합 atlas에 대응시킨다. | 모든 animation 상태가 함께 들어 있는 `Texture2D` 한 장을 반환한다. |
 | `region_for(state, elapsed)` | 시간/프레임 길이로 index를 만들고 반복 상태는 modulo, 일회성은 clamp한다. | atlas에서 잘라낼 `Rect2`를 반환한다. |
 
 ## 4. 보드 모델과 물리 동기화

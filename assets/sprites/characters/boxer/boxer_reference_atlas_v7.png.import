@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ba7hhscw0er8e"
-path="res://.godot/imported/firefighter_reference_atlas_v6.png-76049f9a746ac8972e4a10c40b54be0c.ctex"
+uid="uid://nrpo23rh0omo"
+path="res://.godot/imported/boxer_reference_atlas_v7.png-75e996c30555649a89894d088ab1742d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/firefighter/firefighter_reference_atlas_v6.png"
-dest_files=["res://.godot/imported/firefighter_reference_atlas_v6.png-76049f9a746ac8972e4a10c40b54be0c.ctex"]
+source_file="res://assets/sprites/characters/boxer/boxer_reference_atlas_v7.png"
+dest_files=["res://.godot/imported/boxer_reference_atlas_v7.png-75e996c30555649a89894d088ab1742d.ctex"]
 
 [params]
 

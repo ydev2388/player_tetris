@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bk8fkqmmcbxw6"
-path="res://.godot/imported/chef_reference_atlas_v7.png-f8bd175bb18b933e04deeb562670c511.ctex"
+uid="uid://mmoc3as5p22j"
+path="res://.godot/imported/clockmaker_reference_atlas_v7.png-97f1afd7309092571fd69c1276c70b0a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/chef/chef_reference_atlas_v7.png"
-dest_files=["res://.godot/imported/chef_reference_atlas_v7.png-f8bd175bb18b933e04deeb562670c511.ctex"]
+source_file="res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v7.png"
+dest_files=["res://.godot/imported/clockmaker_reference_atlas_v7.png-97f1afd7309092571fd69c1276c70b0a.ctex"]
 
 [params]
 

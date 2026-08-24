@@ -70,6 +70,7 @@ const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"J": Rect2(1470, 255, 210, 215),
 	"L": Rect2(1745, 255, 210, 215),
 }
+const ICICLE_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/icecle.png")
 const THORN_TEXTURE: Texture2D = preload("res://assets/sprites/boss/1_5_boss/grass_thron_sprite.png")
 const THORN_SOURCE_REGION: Rect2 = Rect2(500.0, 64.0, 128.0, 104.0)
 const ICE_BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_block.png")
@@ -97,10 +98,13 @@ const BOSS_FALLEN_DISPLAY_SIZE: Vector2 = Vector2(72.0, 43.875)
 const ICE_BOSS_STAGE: int = 10
 const ICE_BOSS_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss.png")
 const ICE_BOSS_DIE_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_boss_die.png")
+const ICE_HIT_TEXTURE: Texture2D = preload("res://assets/sprites/boss/6_10_boss/ice_hit.png")
 const ICE_BOSS_SOURCE_FRAME_SIZE: Vector2 = Vector2(167.25, 373.0)
 const ICE_BOSS_DISPLAY_SIZE: Vector2 = Vector2(86.0, 192.0)
 const BOSS_FRAME_COUNT: int = 4
+const ICE_HIT_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 2, 1, 0] # 얼음 보스 피격 7프레임 왕복(1→4→1).
 const BOSS_FRAME_INTERVAL: float = 0.18
+const ICE_HIT_FRAME_INTERVAL: float = 0.1 # 얼음 보스 피격 오버레이 프레임 간격.
 const BOSS_VISUAL_OFFSET: Vector2 = Vector2(0.0, -18.0)
 const BOSS_THORN_FRAME_INTERVAL: float = 0.1
 const BOSS_THORN_FRAME_SEQUENCE: Array[int] = [0, 1, 2, 3, 3, 2, 1, 0]
@@ -128,12 +132,15 @@ var _self_respawn_fill: ColorRect # 0~1 hold 비율만큼 넓어지는 주황색
 var _binding_sprite: Sprite2D
 var _boss_sprite: Sprite2D
 var _boss_thorn_sprite: Sprite2D
+var _boss_ice_hit_sprite: Sprite2D
 var _boss_seed_sprites: Array[Sprite2D] = []
 var _boss_hearts: Array[Sprite2D] = []
 var _boss_frame: int = 0
 var _boss_frame_timer: float = 0.0
 var _boss_thorn_frame_index: int = 0
 var _boss_thorn_frame_timer: float = 0.0
+var _boss_ice_hit_frame_index: int = 0
+var _boss_ice_hit_frame_timer: float = 0.0
 var _boss_down_frame: int = 0
 var _boss_down_frame_timer: float = 0.0
 var _boss_falling_frame: int = 0
@@ -157,6 +164,7 @@ func _ready() -> void:
 	_create_boss_display()
 	controller.game_changed.connect(_refresh)
 	controller.boss_attacked.connect(_start_boss_thorn_attack)
+	controller.boss_attacked.connect(_start_boss_ice_hit)
 	character.stats_changed.connect(_refresh)
 	character.binding_started.connect(_refresh)
 	character.binding_ended.connect(_refresh)
@@ -176,6 +184,7 @@ func _draw() -> void:
 	_draw_panel(Rect2(BOARD_ORIGIN - Vector2(12.0, 12.0), BOARD_SIZE + Vector2(24.0, 24.0)))
 	_draw_board()
 	_draw_thorns()
+	_draw_icicles()
 	_draw_binding()
 	_draw_character_skill_effects()
 	_draw_meditation_effect()
@@ -323,6 +332,9 @@ func _draw_board() -> void:
 			var piece_type: int = controller.board.cells[y + MainBoardModel.HIDDEN_ROWS][x] # 고정 타입/EMPTY.
 			if piece_type != MainBoardModel.EMPTY:
 				_draw_block(cell_rect, piece_type, 1.0)
+				var board_cell := Vector2i(x, y + MainBoardModel.HIDDEN_ROWS)
+				if controller.board.is_ice_cell(board_cell):
+					_draw_ice_cell_overlay(board_cell, cell_rect)
 
 	if controller.state == MainGameController.GameState.GAME_OVER:
 		return
@@ -820,15 +832,11 @@ func _thorn_source_region_for_stage(stage_number: int) -> Rect2:
 func _draw_thorns() -> void:
 	if not controller.active_piece_has_visible_thorns():
 		return
-	var cells: Array[Vector2i] = MainTetrominoData.get_cells(
-		controller.active_type,
-		controller.active_rotation
-	)
+	var cells: Array[Vector2i] = MainTetrominoData.get_cells(controller.active_type, controller.active_rotation)
 	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
 	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
 	var thorn_texture: Texture2D = _thorn_texture_for_stage(controller.stage_number)
 	var thorn_source_region: Rect2 = _thorn_source_region_for_stage(controller.stage_number)
-	# overlay는 셀 경계에 6px 겹쳐 틈을 없애고, 블록의 48×48 rect는 건드리지 않는다.
 	for local_cell: Vector2i in cells:
 		var active_cell: Vector2i = controller.active_origin + local_cell
 		if active_cell.y < MainBoardModel.HIDDEN_ROWS:
@@ -838,15 +846,65 @@ func _draw_thorns() -> void:
 		for index: int in range(faces.size()):
 			if cells.has(local_cell + faces[index]):
 				continue
-			var face_center: Vector2 = cell_center + Vector2(faces[index]) * (
-				CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP
-			)
+			var face_center: Vector2 = cell_center + Vector2(faces[index]) * (CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP)
 			draw_set_transform(face_center, angles[index])
-			draw_texture_rect_region(
-				thorn_texture,
-				Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
-				thorn_source_region
+			draw_texture_rect_region(thorn_texture, Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH), thorn_source_region)
+	draw_set_transform(Vector2.ZERO, 0.0)
+
+
+func _draw_icicles() -> void:
+	if controller.icicles.is_empty():
+		return
+	for icicle: Dictionary in controller.icicles:
+		var pos: Vector2 = icicle["position"] as Vector2
+		var warning: float = float(icicle.get("warning_remaining", 0.0))
+		var canvas_pos: Vector2 = BOARD_ORIGIN + pos
+		var half_h: float = MainGameController.ICICLE_SIZE.y * 0.5
+		if warning > 0.0:
+			var pulse: float = 0.55 + 0.35 * absf(sin(float(Time.get_ticks_msec()) * 0.008))
+			var beam_color: Color = Color(1.0, 0.18, 0.18, 0.42 * pulse)
+			var beam_rect: Rect2 = Rect2(
+				Vector2(canvas_pos.x - 3.0, BOARD_ORIGIN.y),
+				Vector2(6.0, BOARD_SIZE.y)
 			)
+			draw_rect(beam_rect, beam_color)
+			draw_rect(beam_rect, Color(1.0, 0.22, 0.22, 0.78 * pulse), false, 1.5)
+			var dot_color: Color = Color(1.0, 0.18, 0.18, 0.9 * pulse)
+			var dot_y: float = BOARD_ORIGIN.y + BOARD_SIZE.y - 10.0
+			draw_circle(Vector2(canvas_pos.x, dot_y), 5.0, dot_color)
+		var dst: Rect2 = Rect2(canvas_pos - MainGameController.ICICLE_SIZE * 0.5, MainGameController.ICICLE_SIZE)
+		var is_aiming: bool = warning > 0.0
+		if is_aiming:
+			var bob: float = sin(float(Time.get_ticks_msec()) * 0.01) * 2.5
+			dst.position.y += bob
+		draw_texture_rect(ICICLE_TEXTURE, dst, false)
+		if is_aiming:
+			var shadow_alpha: float = 0.18 + 0.08 * sin(float(Time.get_ticks_msec()) * 0.01)
+			draw_rect(Rect2(Vector2(canvas_pos.x - 10.0, BOARD_ORIGIN.y + BOARD_SIZE.y - 6.0), Vector2(20.0, 6.0)), Color(1.0, 0.1, 0.1, shadow_alpha))
+
+
+## 상황: 고정 얼음 셀 하나의 외곽 4면에 얼음 block overlay를 그릴 때 호출한다.
+## 순서: 인접 셀(고정/활성)이 없는 면을 골라 활성 피스와 동일한 방식으로 그린다.
+## 결과: 고정된 얼음 블록도 피스가 비활성화된 뒤에 얼음 외형을 유지한다.
+func _draw_ice_cell_overlay(board_cell: Vector2i, cell_rect: Rect2) -> void:
+	var faces: Array[Vector2i] = [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+	var angles: Array[float] = [0.0, PI * 0.5, PI, PI * 1.5]
+	var cell_center: Vector2 = cell_rect.get_center()
+	for index: int in range(faces.size()):
+		var neighbor: Vector2i = board_cell + faces[index]
+		if controller.board.get_cell(neighbor) != MainBoardModel.EMPTY:
+			continue
+		if neighbor in controller.active_board_cells():
+			continue
+		var face_center: Vector2 = cell_center + Vector2(faces[index]) * (
+			CELL_SIZE * 0.5 + THORN_DEPTH * 0.5 - THORN_EDGE_OVERLAP
+		)
+		draw_set_transform(face_center, angles[index])
+		draw_texture_rect_region(
+			ICE_BLOCK_TEXTURE,
+			Rect2(-CELL_SIZE * 0.5, -THORN_DEPTH * 0.5, CELL_SIZE, THORN_DEPTH),
+			ICE_BLOCK_SOURCE_REGION
+		)
 	draw_set_transform(Vector2.ZERO, 0.0)
 
 
@@ -915,6 +973,17 @@ func _create_boss_display() -> void:
 	_boss_thorn_sprite.visible = false
 	board_physics.add_child(_boss_thorn_sprite)
 
+	_boss_ice_hit_sprite = Sprite2D.new()
+	_boss_ice_hit_sprite.name = "BossIceHitSprite"
+	_boss_ice_hit_sprite.texture = ICE_HIT_TEXTURE
+	_boss_ice_hit_sprite.region_enabled = true
+	_boss_ice_hit_sprite.scale = ICE_BOSS_DISPLAY_SIZE / ICE_BOSS_SOURCE_FRAME_SIZE
+	_boss_ice_hit_sprite.position = MainGameController.BOSS_POSITION + BOSS_VISUAL_OFFSET
+	_boss_ice_hit_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_boss_ice_hit_sprite.z_index = 3
+	_boss_ice_hit_sprite.visible = false
+	board_physics.add_child(_boss_ice_hit_sprite)
+
 	for index: int in range(MainGameController.BOSS_SEED_COUNT):
 		var seed_sprite: Sprite2D = Sprite2D.new()
 		seed_sprite.name = "BossSeed%d" % (index + 1)
@@ -941,6 +1010,7 @@ func _create_boss_display() -> void:
 
 	_apply_boss_frame()
 	_apply_boss_thorn_frame()
+	_apply_boss_ice_hit_frame()
 
 
 func _is_ice_boss_stage() -> bool:
@@ -973,6 +1043,7 @@ func _advance_boss_animation(delta: float) -> void:
 		return
 	if _is_ice_boss_stage():
 		_advance_ice_boss_animation(delta)
+		_advance_boss_ice_hit_overlay(delta)
 		return
 	if controller.is_boss_alive():
 		_boss_frame_timer += maxf(delta, 0.0)
@@ -989,6 +1060,11 @@ func _advance_boss_animation(delta: float) -> void:
 	else:
 		_boss_thorn_sprite.visible = false
 
+	_advance_boss_thorn_overlay(delta)
+	_advance_boss_ice_hit_overlay(delta)
+
+
+func _advance_boss_thorn_overlay(delta: float) -> void:
 	if not _boss_thorn_sprite.visible:
 		return
 	_boss_thorn_frame_timer += maxf(delta, 0.0)
@@ -1000,6 +1076,23 @@ func _advance_boss_animation(delta: float) -> void:
 			_boss_thorn_frame_timer = 0.0
 			break
 		_apply_boss_thorn_frame()
+
+
+## 상황: 10층 얼음 보스 피격 오버레이(ice_hit)의 프레임을 진행할 때 호출한다.
+## 순서: 타이머 누적 → 0.18초마다 시퀀스 인덱스 증가 → 끝나면 숨김.
+## 결과: 1→2→3→4→3→2→1 왕복을 재생하고 자동으로 사라진다.
+func _advance_boss_ice_hit_overlay(delta: float) -> void:
+	if not _boss_ice_hit_sprite.visible:
+		return
+	_boss_ice_hit_frame_timer += maxf(delta, 0.0)
+	while _boss_ice_hit_frame_timer >= ICE_HIT_FRAME_INTERVAL:
+		_boss_ice_hit_frame_timer -= ICE_HIT_FRAME_INTERVAL
+		_boss_ice_hit_frame_index += 1
+		if _boss_ice_hit_frame_index >= ICE_HIT_FRAME_SEQUENCE.size():
+			_boss_ice_hit_sprite.visible = false
+			_boss_ice_hit_frame_timer = 0.0
+			break
+		_apply_boss_ice_hit_frame()
 
 
 func _advance_boss_down_animation(delta: float) -> void:
@@ -1088,6 +1181,27 @@ func _start_boss_thorn_attack() -> void:
 	_apply_boss_thorn_frame()
 
 
+## 상황: 플레이어가 10층 얼음 보스를 직접 때린 순간(boss_attacked) 호출한다.
+## 순서: 보스 생존 확인 → ice_hit 프레임/타이머 초기화 → 오버레이 표시.
+## 결과: 본체 sprite는 그대로 두고 1→2→3→4→3→2→1 왕복 오버레이가 시작된다.
+func _start_boss_ice_hit() -> void:
+	if not _is_ice_boss_stage() or not controller.is_boss_alive():
+		return
+	_boss_ice_hit_frame_index = 0
+	_boss_ice_hit_frame_timer = 0.0
+	_boss_ice_hit_sprite.visible = true
+	_apply_boss_ice_hit_frame()
+
+
+func _apply_boss_ice_hit_frame() -> void:
+	_boss_ice_hit_sprite.region_rect = Rect2(
+		float(ICE_HIT_FRAME_SEQUENCE[_boss_ice_hit_frame_index]) * ICE_BOSS_SOURCE_FRAME_SIZE.x,
+		0.0,
+		ICE_BOSS_SOURCE_FRAME_SIZE.x,
+		ICE_BOSS_SOURCE_FRAME_SIZE.y
+	)
+
+
 func _refresh_boss_display() -> void:
 	if _boss_sprite == null:
 		return
@@ -1105,6 +1219,7 @@ func _refresh_boss_display() -> void:
 		_boss_hearts[index].visible = boss_alive and index < controller.boss_health
 	if not boss_alive:
 		_boss_thorn_sprite.visible = false
+		_boss_ice_hit_sprite.visible = false
 
 	if _is_ice_boss_stage():
 		_refresh_ice_boss_display(boss_visible)

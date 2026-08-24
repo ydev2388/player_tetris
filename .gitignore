@@ -7,7 +7,6 @@
 *.exe
 /.qa/
 *.log
-/build_web.sh
 /Godot_v4.7.1-stable_linux.x86_64
 /docs/research.md
 /docs/research_full.md
@@ -15,4 +14,4 @@
 .commandcode/
 .codex/
 .env
-/tests/
+/tests/_tmp_*

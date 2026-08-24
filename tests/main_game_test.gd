@@ -307,6 +307,7 @@ func _run() -> void:
 	await _test_boss_seeds()
 	await _test_release_punch()
 	await _test_beta_specials()
+	await _test_ice_gimmick_movement()
 	await _test_hanging_character_is_pushed_below_descending_piece()
 	await _test_fixed_support_grab()
 	await _test_standing_wall_visual_alignment()
@@ -375,7 +376,46 @@ func _test_boss_display_assets() -> void:
 	)
 	_stage_cleared_captured = false
 	stage_ten_controller.stage_cleared.connect(_on_stage_cleared_captured)
-	stage_ten_controller.damage_boss(MainGameController.BOSS_MAX_HEALTH)
+	# 라인 삭제로 체력을 깎으면 체력만 감소하고 본체 sprite는 그대로다.
+	stage_ten_controller.damage_boss(1)
+	await process_frame
+	_expect(
+		stage_ten_controller.boss_health == MainGameController.BOSS_MAX_HEALTH - 1
+			and stage_ten_boss.texture == ICE_BOSS_TEXTURE,
+		"라인 삭제는 얼음 보스 체력을 깎고 본체 sprite를 유지한다."
+	)
+	# 펀치·회전킥으로 보스를 직접 때리면(boss_attacked) ice_hit 오버레이가 뜬다.
+	var ice_hit_sprite: Sprite2D = stage_ten_scene.get_node(
+		"BoardPhysics/BossIceHitSprite"
+	) as Sprite2D
+	_expect(
+		stage_ten_controller.notify_boss_attacked(),
+		"직접 타격 경로가 보스 피격을 알린다."
+	)
+	await process_frame
+	_expect(
+		ice_hit_sprite.visible
+			and stage_ten_boss.texture == ICE_BOSS_TEXTURE
+			and stage_ten_controller.boss_health == MainGameController.BOSS_MAX_HEALTH - 1,
+		"보스를 직접 때리면 본체는 유지하고 ice_hit 오버레이를 표시한다."
+	)
+	# 피격 연출 프레임은 1→2→3→4→3→2→1로 왕복한다 (시트 인덱스 0,1,2,3,2,1,0).
+	var hit_sequence: Array[int] = []
+	for _index: int in range(7):
+		hit_sequence.append(
+			int(ice_hit_sprite.region_rect.position.x / MainGameView.ICE_BOSS_SOURCE_FRAME_SIZE.x)
+		)
+		stage_ten_scene._advance_boss_animation(MainGameView.ICE_HIT_FRAME_INTERVAL)
+	_expect(
+		hit_sequence == [0, 1, 2, 3, 2, 1, 0],
+		"ice_hit 피격 연출은 1→2→3→4→3→2→1 프레임을 왕복한다."
+	)
+	# 시퀀스가 끝나면 오버레이가 자동으로 사라진다.
+	_expect(
+		not ice_hit_sprite.visible,
+		"ice_hit 왕복이 끝나면 오버레이가 자동으로 사라진다."
+	)
+	stage_ten_controller.damage_boss(MainGameController.BOSS_MAX_HEALTH - 1)
 	await process_frame
 	_expect(
 		stage_ten_controller.is_boss_dying()
@@ -449,6 +489,32 @@ func _test_stage_rule_contracts() -> void:
 			300.0 if stage_number % MainGameController.FLOORS_PER_THEME == 0 else 90.0
 		)
 	_expect(stage_data_is_complete, "1층~10층의 제한시간과 가시 확률을 스테이지 데이터로 관리한다.")
+	# 얼음 블록(7층+)은 가시 ON/OFF 토글과 무관하게 영구적으로 얼음 특성을 유지한다.
+	controller.stage_number = MainGameController.ICE_BLOCK_STAGE_START
+	controller.active_piece_has_thorns = true
+	controller.thorn_visible = false
+	_expect(
+		controller.active_piece_is_ice()
+			and controller.active_piece_has_visible_thorns(),
+		"얼음 피스는 가시가 꺼진 phase에서도 얼음 특성·표시를 유지한다."
+	)
+	controller.thorn_visible = true
+	_expect(
+		not controller.active_piece_reflects_damage_on_attack(),
+		"얼음 블록은 ON phase여도 공격 반사 피해를 주지 않는다."
+	)
+	controller.stage_number = MainGameController.ICE_BLOCK_STAGE_START - 2
+	controller.active_piece_has_thorns = true
+	controller.thorn_visible = false
+	_expect(
+		not controller.active_piece_has_visible_thorns(),
+		"잔디 가시(5층 이하)는 꺼진 phase에서 표시되지 않는다."
+	)
+	controller.thorn_visible = true
+	_expect(
+		controller.active_piece_reflects_damage_on_attack(),
+		"잔디 가시는 ON phase에서만 공격 반사 피해를 준다."
+	)
 	_expect(
 		MainGameController.stage_stars_for_lines(0) == 1
 			and MainGameController.stage_stars_for_lines(1) == 1
@@ -1848,6 +1914,190 @@ func _test_hanging_character_is_pushed_below_descending_piece() -> void:
 		"낙하 블록 아래 안전 공간이 부족하면 겹침을 남기지 않고 압착 피해로 전환한다."
 	)
 	game.queue_free()
+	await process_frame
+
+
+func _test_ice_gimmick_movement() -> void:
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	await process_frame
+
+	var controller: MainGameController = scene.get_node("GameController")
+	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
+	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	controller.board.reset()
+	controller.stage_number = MainGameController.ICE_BLOCK_STAGE_START
+	# 발밑(행 18)을 얼음 블록으로, 바로 아래(행 19)는 빈 공간으로 둬서
+	# 캐릭터가 실제로 얼음 위에 서 있도록 만든다. 활성 피스는 얼음이 아니다.
+	for x: int in range(MainBoardModel.WIDTH):
+		controller.board.lock_cells(
+			MainTetrominoData.Type.J,
+			[Vector2i(x, 0)],
+			Vector2i(0, 18),
+			true
+		)
+	board_physics._sync_from_model()
+	await physics_frame
+
+	character.position = Vector2(240.0, 721.0) # 행 18 위, 발밑 셀 (5,18).
+	character.velocity = Vector2.ZERO
+	character._exit_hang()
+	character.facing = 1
+	character.stamina = MainCharacterController.MAX_STAMINA
+	character._hang_regrab_remaining = 0.0
+	Input.action_release(&"character_left")
+	Input.action_release(&"character_right")
+	Input.action_release(&"character_grab")
+	_expect(
+		controller.is_ice_cell(Vector2i(5, 18)),
+		"테스트 픽스처의 발밑 셀이 얼음으로 판정된다."
+	)
+	_expect(
+		character._cell_below_feet_is_ice(),
+		"캐릭터 발밑 판정이 얼음 셀을 감지한다."
+	)
+
+	# 무입력 상태에서 얼음 위 감속은 ICE_DECELERATION을 사용한다.
+	character.velocity.x = 200.0
+	var ice_deceleration_speed: float = absf(
+		character.velocity.x
+		- move_toward(
+			character.velocity.x,
+			0.0,
+			MainCharacterController.ICE_DECELERATION * 0.016
+		)
+	)
+	character._apply_horizontal_movement(0.0, true, 0.016)
+	_expect(
+		is_equal_approx(character.velocity.x, 200.0 - ice_deceleration_speed)
+			and absf(character.velocity.x - 200.0) < absf(character.velocity.x - 0.0),
+		"얼음 위 무입력은 ICE_DECELERATION으로 천천히 멈춘다."
+	)
+
+	# 얼음 위에서 점프(공중)하면 관성이 사라지고 AIR_DECELERATION으로 멈춘다.
+	character.velocity.x = 200.0
+	character._apply_horizontal_movement(0.0, false, 0.016)
+	_expect(
+		is_equal_approx(
+			character.velocity.x,
+			200.0
+			- absf(
+				character.velocity.x
+				- move_toward(
+					character.velocity.x,
+					0.0,
+					MainCharacterController.AIR_DECELERATION * 0.016
+				)
+			)
+		),
+		"얼음 위 점프 직후 공중은 AIR_DECELERATION을 사용해 관성이 없다."
+	)
+
+	# 일반 바닥(얼음 아님)에서는 GROUND_DECELERATION이 적용돼 훨씬 빠르게 멈춘다.
+	controller.board.reset()
+	for x: int in range(MainBoardModel.WIDTH):
+		controller.board.lock_cells(
+			MainTetrominoData.Type.J,
+			[Vector2i(x, 0)],
+			Vector2i(0, 18),
+			false
+		)
+	board_physics._sync_from_model()
+	await physics_frame
+	character.velocity.x = 200.0
+	character._apply_horizontal_movement(0.0, true, 0.016)
+	_expect(
+		absf(character.velocity.x - 200.0)
+			> absf(
+				MainCharacterController.GROUND_DECELERATION * 0.016 * 0.9
+			),
+		"일반 바닥 무입력은 GROUND_DECELERATION으로 얼음보다 빠르게 멈춘다."
+	)
+
+	# 얼음 블록 옆면에는 C-grab으로 매달릴 수 없다.
+	controller.board.reset()
+	controller.board.lock_cells(
+		MainTetrominoData.Type.J,
+		[Vector2i(0, 0)],
+		Vector2i(6, 16),
+		true
+	)
+	board_physics._sync_from_model()
+	await physics_frame
+	character.position = Vector2(264.0, 721.0) # (6,16) 얼음 블록 왼쪽 24px.
+	character.velocity = Vector2.ZERO
+	character.facing = 1
+	character._exit_hang()
+	character._hang_regrab_remaining = 0.0
+	character.right_ray.force_raycast_update()
+	_expect(
+		character.right_ray.is_colliding(),
+		"얼음 블록 옆면이 C-grab 테스트용 ray에 감지된다."
+	)
+	character._try_start_hang()
+	_expect(
+		not character.is_hanging
+			and character._hang_body == null,
+		"얼음 블록에는 C-grab으로 매달릴 수 없다."
+	)
+
+	# 일반 블록 옆면에는 여전히 매달릴 수 있다.
+	controller.board.reset()
+	controller.board.lock_cells(
+		MainTetrominoData.Type.J,
+		[Vector2i(0, 0)],
+		Vector2i(6, 16),
+		false
+	)
+	board_physics._sync_from_model()
+	await physics_frame
+	character.position = Vector2(264.0, 721.0)
+	character.velocity = Vector2.ZERO
+	character.facing = 1
+	character._exit_hang()
+	character._hang_regrab_remaining = 0.0
+	character.right_ray.force_raycast_update()
+	character._try_start_hang()
+	_expect(
+		character.is_hanging
+			and character._hang_body != null,
+		"일반 블록에는 C-grab으로 매달릴 수 있다."
+	)
+	character._exit_hang()
+
+	# 고정 얼음 셀은 피스가 비활성화된 뒤에도 얼음 overlay를 유지한다.
+	controller.board.reset()
+	controller.board.lock_cells(
+		MainTetrominoData.Type.J,
+		[Vector2i(0, 0)],
+		Vector2i(4, 17),
+		true
+	)
+	controller.active_origin = Vector2i(2, 19) # 활성 피스는 인접하지 않은 곳에 둔다.
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_cell_indices = [0, 1, 2, 3]
+	var view: MainGameView = scene as MainGameView
+	view.queue_redraw()
+	await process_frame
+	var ice_cell_rect: Rect2 = view._cell_rect(Vector2i(4, 17))
+	view._draw_ice_cell_overlay(Vector2i(4, 17), ice_cell_rect) # 오류 없이 그려지는지.
+	_expect(
+		controller.board.is_ice_cell(Vector2i(4, 17))
+			and view._thorn_texture_for_stage(7) == MainGameView.ICE_BLOCK_TEXTURE,
+		"고정 얼음 셀은 lock 후에도 얼음 판정과 overlay 텍스처를 유지한다."
+	)
+
+	Input.action_release(&"character_grab")
+	character._sfx_player.stop()
+	character._sfx_cue_player.stop()
+	character._meditation_loop_player.stop()
+	character._sfx_player.stream = null
+	character._sfx_cue_player.stream = null
+	character._meditation_loop_player.stream = null
+	scene.free()
 	await process_frame
 
 

@@ -54,6 +54,8 @@ const GROUND_ACCELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 가속도(px
 const GROUND_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 지상 무입력 감속도(px/s²).
 const AIR_ACCELERATION: float = 1800.0 * GIT_GRID_SCALE # 공중 가속도(px/s²).
 const AIR_DECELERATION: float = 1800.0 * GIT_GRID_SCALE # 공중 무입력 감속도(px/s²).
+const ICE_ACCELERATION: float = GROUND_ACCELERATION * 0.1 # 얼음 위 가속도: 지상의 10%.
+const ICE_DECELERATION: float = GROUND_DECELERATION * 0.03 # 얼음 위 감속도: 마찰 거의 없음.
 const JUMP_VELOCITY: float = -350.0 * GIT_GRID_SCALE # 점프 시작 y속도. 위쪽이 음수다.
 const GRAVITY: float = 1000.0 * GIT_GRID_SCALE # 매초 y속도에 더할 중력(px/s²).
 const FALL_GRAVITY_MULTIPLIER: float = 1.0 # 하강 중 추가 중력 배율.
@@ -462,6 +464,8 @@ func clear_runtime_state() -> void:
 	_self_respawn_hold_time = 0.0
 	_self_respawn_requires_release = false
 	_invulnerability_remaining = 0.0
+	_ice_slide_active = false
+	_ice_slide_direction = 0
 	velocity = Vector2.ZERO
 	if is_instance_valid(sprite):
 		sprite.rotation = 0.0
@@ -714,10 +718,27 @@ func _apply_horizontal_movement(
 ) -> void:
 	var acceleration: float # 아래 조건에서 선택될 이번 frame 가속/감속도.
 	var target_horizontal_speed: float = horizontal_input * current_move_speed() # 캐릭터 이동 능력치 기반 목표 x속도.
+	# 얼음 위에서는 가속도·감속도가 급감해 미끄러지는 관성을 만든다.
+	# 점프하면 얼음 판정이 끝나고 공중에서는 일반 AIR 가속/감속으로 돌아온다.
+	var on_ice: bool = _cell_below_feet_is_ice() and grounded
+	if on_ice:
+		_ice_slide_active = true
+		_ice_slide_direction = signi(int(velocity.x)) if not is_zero_approx(velocity.x) else 0
+	elif grounded:
+		_ice_slide_active = false
+		_ice_slide_direction = 0
 	if is_zero_approx(horizontal_input):
-		acceleration = GROUND_DECELERATION if grounded else AIR_DECELERATION
+		acceleration = (
+			ICE_DECELERATION
+			if on_ice
+			else (GROUND_DECELERATION if grounded else AIR_DECELERATION)
+		)
 	else:
-		acceleration = GROUND_ACCELERATION if grounded else AIR_ACCELERATION
+		acceleration = (
+			ICE_ACCELERATION
+			if on_ice
+			else (GROUND_ACCELERATION if grounded else AIR_ACCELERATION)
+		)
 
 	# 벽 점프 직후 원래 벽 방향을 직접 입력했을 때만 공중 조향력을 높인다.
 	# 방향 입력이 없으면 자동으로 벽에 돌아가지 않으므로 궤적을 직접 제어할 수 있다.
@@ -1284,7 +1305,7 @@ func _resolve_pending_punch(delta: float) -> void:
 			1,
 			_rotation_forbidden_cells()
 		) else 0
-	if hits_active_piece and controller.active_piece_has_visible_thorns():
+	if hits_active_piece and controller.active_piece_reflects_damage_on_attack():
 		take_thorn_damage()
 	if moved > 0:
 		_pending_punch_stage = 0
@@ -1356,7 +1377,7 @@ func _attempt_rotation_kick(rotation_direction: int = 0) -> void:
 		stats_changed.emit()
 		return
 
-	var thorn_contact: bool = controller.active_piece_has_visible_thorns()
+	var thorn_contact: bool = controller.active_piece_reflects_damage_on_attack()
 	if controller.try_rotate(resolved_direction, _rotation_forbidden_cells(), true):
 		_play_sfx(SFX_FLIP)
 		# game_changed로 새 active shape를 만든 같은 physics frame에는 아직 PhysicsServer에
@@ -1540,6 +1561,11 @@ func _set_hang_vertical_bounds(ray: RayCast2D) -> bool:
 	if not found_hit_face:
 		_clear_hang_vertical_bounds()
 		return false
+	# 얼음 블록은 미끄러워서 매달릴 수 없다. 잡은 면이 얼음 셀의 외곽면이면
+	# hang 시작을 거부한다.
+	if _hit_rect_is_ice(hit_rect):
+		_clear_hang_vertical_bounds()
+		return false
 	_hang_face_global_x = (
 		hit_rect.position.x if _hang_jump_facing > 0 else hit_rect.end.x
 	)
@@ -1572,6 +1598,21 @@ func _set_hang_vertical_bounds(ray: RayCast2D) -> bool:
 	_hang_top_global_y = top_y + HANG_HAND_OFFSET_Y
 	_hang_bottom_global_y = bottom_y + HANG_HAND_OFFSET_Y
 	return _limit_hang_bounds_to_visible_board()
+
+
+## 상황: 잡은 충돌 rect가 얼음 셀의 외곽면인지 판정할 때 호출한다.
+## 순서: rect 중심을 보드 로컬 셀로 변환 → 고정/활성 얼음 통합 판정.
+## 결과: 얼음 셀과 겹치면 true, 일반 블록/바닥이면 false다.
+func _hit_rect_is_ice(hit_rect: Rect2) -> bool:
+	var parent: Node2D = get_parent() as Node2D
+	if parent == null:
+		return false
+	var local_center: Vector2 = parent.to_local(hit_rect.get_center())
+	var cell: Vector2i = Vector2i(
+		floori(local_center.x / CELL_SIZE),
+		floori(local_center.y / CELL_SIZE) + MainBoardModel.HIDDEN_ROWS
+	)
+	return controller.is_ice_cell(cell)
 
 
 func _limit_hang_bounds_to_visible_board() -> bool:
@@ -2366,6 +2407,13 @@ func _cell_below_feet() -> Vector2i:
 	)
 
 
+## 상황: 캐릭터가 밟고 있는 발밑 셀이 얼음인지 판정할 때 호출한다.
+## 순서: 발밑 셀을 구해 `controller.is_ice_cell()`로 고정·활성 얼음 통합 판정.
+## 결과: 발밑에 얼음 블록이 있으면 true, 일반 블록/바닥이면 false다.
+func _cell_below_feet_is_ice() -> bool:
+	return controller.is_ice_cell(_cell_below_feet())
+
+
 func _barrier_cells() -> Array[Vector2i]:
 	return _barrier_cells_at(position, _barrier_direction)
 
@@ -2989,6 +3037,8 @@ func _reset_character() -> void:
 	_wall_jump_control_remaining = 0.0
 	_wall_jump_wall_facing = 1
 	_variable_jump_active = false
+	_ice_slide_active = false
+	_ice_slide_direction = 0
 	_attack_cooldown_remaining = 0.0
 	_attack_animation_remaining = 0.0
 	_special_animation_remaining = 0.0

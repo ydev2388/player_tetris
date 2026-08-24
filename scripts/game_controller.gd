@@ -65,6 +65,14 @@ const BOSS_SEED_LIFETIME_SECONDS: float = 5.0
 const BOSS_SEED_FALL_SPEED: float = MainLayout.CELL_SIZE * 6.0
 const BOSS_SEED_SIZE: Vector2 = Vector2(MainLayout.CELL_SIZE, MainLayout.CELL_SIZE)
 const BOSS_SEED_SPAWN_MARGIN: float = 12.0
+const ICICLE_WARNING_SECONDS: float = 2.0
+const ICICLE_COUNT: int = 2
+const ICICLE_FALL_SPEED: float = MainLayout.CELL_SIZE * 54.0
+const ICICLE_SIZE: Vector2 = Vector2(32.0, 48.0)
+const ICICLE_CHECK_INTERVAL_SECONDS: float = 10.0
+const ICICLE_PROBABILITY: float = 0.15
+const ICICLE_PROBABILITY_STEP: float = 0.05
+const ICICLE_PROBABILITY_10: float = 0.20
 const BOSS_MAX_HEALTH: int = 3
 const BOSS_DISPLAY_SIZE: Vector2 = Vector2(72.0, 192.0)
 const BOSS_ATTACK_HITBOX_SIZE: Vector2 = Vector2(54.0, 132.0)
@@ -102,8 +110,20 @@ const STAGE_GIMMICKS: Dictionary = {
 	6: {"time_limit": 90.0, "thorn_probability": 0.0, "binding_enabled": false},
 	7: {"time_limit": 90.0, "thorn_probability": 0.15, "binding_enabled": false},
 	8: {"time_limit": 90.0, "thorn_probability": 0.25, "binding_enabled": false},
-	9: {"time_limit": 90.0, "thorn_probability": 0.25, "binding_enabled": false},
-	10: {"time_limit": 300.0, "thorn_probability": 0.33, "binding_enabled": false},
+	9: {
+		"time_limit": 90.0,
+		"thorn_probability": 0.25,
+		"binding_enabled": false,
+		"icicle_enabled": true,
+		"icicle_first_delay": 10.0,
+	},
+	10: {
+		"time_limit": 300.0,
+		"thorn_probability": 0.33,
+		"binding_enabled": false,
+		"icicle_enabled": true,
+		"icicle_first_delay": 5.0,
+	},
 }
 
 # SRS(Super Rotation System) wall-kick 표.
@@ -174,6 +194,13 @@ var boss_fallen: bool = false
 var boss_seeds: Array[Dictionary] = []
 var boss_seed_timer: float = 0.0
 var boss_seed_first_cast_done: bool = false
+var icicles: Array[Dictionary] = []
+var icicle_check_timer: float = 0.0
+var icicle_probability: float = ICICLE_PROBABILITY
+var icicle_first_check_pending: bool = true
+
+func _reset_icicle_probability() -> void:
+	icicle_probability = _icicle_base_probability()
 
 # 현재 피스 하나에만 적용되는 내부 accumulator/counter.
 var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
@@ -319,6 +346,10 @@ func reset_game(seed_value: int = -1) -> void:
 	boss_seeds.clear()
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
+	icicles.clear()
+	icicle_check_timer = 0.0
+	_reset_icicle_probability()
+	icicle_first_check_pending = true
 	binding_check_timer = 0.0
 	binding_probability = BINDING_PROBABILITY
 	binding_first_check_pending = true
@@ -444,6 +475,7 @@ func _advance_stage_gimmicks(delta: float, future_triggers_frozen: bool = false)
 			check_interval = BINDING_CHECK_INTERVAL_SECONDS
 	if bool(config.get("boss_seed_enabled", false)):
 		_advance_boss_seed_skill(delta, not future_triggers_frozen)
+	_advance_icicles(delta, future_triggers_frozen)
 
 
 func _advance_thorn_timer(delta: float, future_triggers_frozen: bool = false) -> void:
@@ -482,6 +514,22 @@ func _reset_active_piece_gimmick() -> void:
 
 
 func active_piece_has_visible_thorns() -> bool:
+	# 시각용: 얼음 블록(7층+)은 가시 ON/OFF 토글과 무관하게 항상 표시한다.
+	# 잔디 가시(1~6층)만 THORN_ON/OFF phase에 따라 깜빡인다.
+	if stage_number >= ICE_BLOCK_STAGE_START:
+		return active_piece_is_ice()
+	return (
+		float(get_stage_gimmick_config().get("thorn_probability", 0.0)) > 0.0
+		and active_piece_has_thorns
+		and thorn_visible
+	)
+
+
+func active_piece_reflects_damage_on_attack() -> bool:
+	# 공격 반사 피해용: 잔디 가시(1~6층)만 ON phase에서 반사 피해를 준다.
+	# 얼음 블록(7층+)은 공격해도 피해를 주지 않는다.
+	if stage_number >= ICE_BLOCK_STAGE_START:
+		return false
 	return (
 		float(get_stage_gimmick_config().get("thorn_probability", 0.0)) > 0.0
 		and active_piece_has_thorns
@@ -522,6 +570,206 @@ func _next_gimmick_roll() -> bool:
 	if not _gimmick_roll_overrides.is_empty():
 		return _gimmick_roll_overrides.pop_front()
 	return _gimmick_random.randf() < binding_probability
+
+
+func _icicle_base_probability() -> float:
+	return ICICLE_PROBABILITY_10 if stage_number == 10 else ICICLE_PROBABILITY
+
+
+func _attempt_icicle_roll() -> void:
+	if not _next_icicle_roll():
+		icicle_probability = minf(1.0, icicle_probability + ICICLE_PROBABILITY_STEP)
+		return
+	icicle_probability = _icicle_base_probability()
+	_spawn_icicle()
+
+
+func _next_icicle_roll() -> bool:
+	if not _gimmick_roll_overrides.is_empty():
+		return _gimmick_roll_overrides.pop_front()
+	return _gimmick_random.randf() < icicle_probability
+
+
+func _spawn_icicle() -> void:
+	var columns: Array[int] = []
+	while columns.size() < ICICLE_COUNT:
+		var column: int = _gimmick_random.randi_range(0, MainBoardModel.WIDTH - 1)
+		if column not in columns:
+			columns.append(column)
+	for column: int in columns:
+		var spawn_x: float = (float(column) + 0.5) * MainLayout.CELL_SIZE
+		var spawn_y: float = ICICLE_SIZE.y * 0.5
+		icicles.append({
+			"position": Vector2(spawn_x, spawn_y),
+			"warning_remaining": ICICLE_WARNING_SECONDS,
+			"column": column,
+		})
+
+
+func _advance_icicles(delta: float, future_triggers_frozen: bool = false) -> void:
+	var has_existing: bool = not icicles.is_empty()
+	if has_existing:
+		var changed: bool = _advance_icicle_movement(delta, future_triggers_frozen)
+		if changed:
+			game_changed.emit()
+	var config: Dictionary = get_stage_gimmick_config()
+	if not bool(config.get("icicle_enabled", false)):
+		icicle_check_timer = 0.0
+		_reset_icicle_probability()
+		icicle_first_check_pending = true
+		return
+	if future_triggers_frozen or state != GameState.PLAYING or challenge_mode:
+		return
+	icicle_check_timer += delta
+	var check_interval: float = (
+		float(config.get("icicle_first_delay", ICICLE_CHECK_INTERVAL_SECONDS))
+		if icicle_first_check_pending
+		else ICICLE_CHECK_INTERVAL_SECONDS
+	)
+	while icicle_check_timer >= check_interval:
+		icicle_check_timer -= check_interval
+		icicle_first_check_pending = false
+		_attempt_icicle_roll()
+		check_interval = ICICLE_CHECK_INTERVAL_SECONDS
+
+
+func _advance_icicle_movement(delta: float, future_triggers_frozen: bool) -> bool:
+	if icicles.is_empty():
+		return false
+	var changed: bool = false
+	var remaining: Array[Dictionary] = []
+	for icicle: Dictionary in icicles:
+		var pos: Vector2 = icicle["position"] as Vector2
+		var warning: float = float(icicle.get("warning_remaining", 0.0))
+		var x: float = pos.x
+		if warning > 0.0:
+			if future_triggers_frozen:
+				remaining.append(icicle)
+				continue
+			warning -= delta
+			if warning > 0.0:
+				icicle["warning_remaining"] = warning
+				remaining.append(icicle)
+				changed = true
+				continue
+			var leftover: float = -warning
+			icicle["warning_remaining"] = 0.0
+			pos = icicle["position"] as Vector2
+			if leftover <= 0.0:
+				remaining.append(icicle)
+				changed = true
+				continue
+			var next_y: float = pos.y + ICICLE_FALL_SPEED * leftover
+			var sweep: Rect2 = _icicle_sweep_rect(x, pos.y, next_y)
+			if _icicle_overlaps_character(sweep):
+				_apply_icicle_damage()
+				changed = true
+				continue
+			if _icicle_overlaps_active_piece(sweep) or _icicle_overlaps_cells(sweep, transient_blocker_cells):
+				changed = true
+				continue
+			var floor_hit: bool = _icicle_hits_floor(pos.y, next_y)
+			if floor_hit:
+				changed = true
+				continue
+			icicle["position"] = Vector2(x, next_y)
+			remaining.append(icicle)
+			changed = true
+			continue
+		var next_y_fall: float = pos.y + ICICLE_FALL_SPEED * delta
+		var sweep_fall: Rect2 = _icicle_sweep_rect(x, pos.y, next_y_fall)
+		if _icicle_overlaps_character(sweep_fall):
+			_apply_icicle_damage()
+			changed = true
+			continue
+		if _icicle_overlaps_active_piece(sweep_fall) or _icicle_overlaps_cells(sweep_fall, transient_blocker_cells):
+			changed = true
+			continue
+		if _icicle_hits_floor(pos.y, next_y_fall):
+			changed = true
+			continue
+		var hit_block: bool = _icicle_hits_locked_block(x, pos.y, next_y_fall)
+		if hit_block:
+			changed = true
+			continue
+		icicle["position"] = Vector2(x, next_y_fall)
+		remaining.append(icicle)
+		changed = true
+	icicles = remaining
+	return changed
+
+
+func _icicle_hits_floor(current_y: float, next_y: float) -> bool:
+	var half_h: float = ICICLE_SIZE.y * 0.5
+	var floor_y: float = float(MainBoardModel.VISIBLE_HEIGHT) * MainLayout.CELL_SIZE - half_h
+	return current_y <= floor_y and next_y >= floor_y
+
+
+func _icicle_hits_locked_block(x: float, current_y: float, next_y: float) -> bool:
+	var half_w: float = ICICLE_SIZE.x * 0.5
+	var half_h: float = ICICLE_SIZE.y * 0.5
+	for y: int in range(MainBoardModel.HEIGHT):
+		for cell_x: int in range(MainBoardModel.WIDTH):
+			if board.get_cell(Vector2i(cell_x, y)) == MainBoardModel.EMPTY:
+				continue
+			var cell_left: float = float(cell_x) * MainLayout.CELL_SIZE
+			var cell_top: float = float(y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+			if x + half_w <= cell_left or x - half_w >= cell_left + MainLayout.CELL_SIZE:
+				continue
+			var candidate_y: float = cell_top - half_h
+			if current_y <= candidate_y and next_y >= candidate_y:
+				return true
+	return false
+
+
+func _icicle_rect(pos: Vector2) -> Rect2:
+	return Rect2(pos - ICICLE_SIZE * 0.5, ICICLE_SIZE)
+
+
+func _icicle_sweep_rect(x: float, current_y: float, next_y: float) -> Rect2:
+	var top: float = minf(current_y, next_y) - ICICLE_SIZE.y * 0.5
+	return Rect2(Vector2(x - ICICLE_SIZE.x * 0.5, top), Vector2(ICICLE_SIZE.x, absf(next_y - current_y) + ICICLE_SIZE.y))
+
+
+func _icicle_overlaps_character(rect: Rect2) -> bool:
+	if not is_instance_valid(character):
+		return false
+	return rect.intersects(character._character_collider_rect())
+
+
+func _icicle_overlaps_active_piece(rect: Rect2) -> bool:
+	return _icicle_overlaps_cells(rect, active_board_cells())
+
+
+func _icicle_overlaps_cells(rect: Rect2, cells: Array[Vector2i]) -> bool:
+	for cell: Vector2i in cells:
+		var cell_rect := Rect2(
+			Vector2(float(cell.x) * MainLayout.CELL_SIZE, float(cell.y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE),
+			Vector2.ONE * MainLayout.CELL_SIZE
+		)
+		if rect.intersects(cell_rect, true):
+			return true
+	return false
+
+
+func _apply_icicle_damage() -> void:
+	if is_instance_valid(character):
+		character.take_thorn_damage("고드름 피해! 목숨 -1")
+
+
+func _remove_icicles_overlapping_cells(locked_cells: Array[Vector2i]) -> bool:
+	if icicles.is_empty() or locked_cells.is_empty():
+		return false
+	var survivors: Array[Dictionary] = []
+	var changed: bool = false
+	for icicle: Dictionary in icicles:
+		var rect: Rect2 = _icicle_rect(icicle["position"] as Vector2)
+		if _icicle_overlaps_cells(rect, locked_cells):
+			changed = true
+			continue
+		survivors.append(icicle)
+	icicles = survivors
+	return changed
 
 
 func _advance_boss_seed_skill(delta: float, allow_new_casts: bool = true) -> void:
@@ -854,6 +1102,10 @@ func clear_runtime_state() -> void:
 	boss_seeds.clear()
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
+	icicles.clear()
+	icicle_check_timer = 0.0
+	_reset_icicle_probability()
+	icicle_first_check_pending = true
 	binding_check_timer = 0.0
 	binding_probability = BINDING_PROBABILITY
 	binding_first_check_pending = true
@@ -1295,6 +1547,7 @@ func lock_active_piece() -> void:
 		return
 
 	_remove_boss_seeds_overlapping_cells(active_board_cells())
+	_remove_icicles_overlapping_cells(active_board_cells())
 	board.lock_cells(
 		active_type,
 		active_local_cells(),

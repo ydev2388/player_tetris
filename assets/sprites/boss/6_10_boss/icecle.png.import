@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dytxosioow25q"
-path="res://.godot/imported/seed_sprite.png-a244fd4429c70b87be580b08e034b665.ctex"
+uid="uid://bb0lktaecreah"
+path="res://.godot/imported/icecle.png-79bdf5223da6515a181048e828a7e487.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/boss/1_5_boss/seed_sprite.png"
-dest_files=["res://.godot/imported/seed_sprite.png-a244fd4429c70b87be580b08e034b665.ctex"]
+source_file="res://assets/sprites/boss/6_10_boss/icecle.png"
+dest_files=["res://.godot/imported/icecle.png-79bdf5223da6515a181048e828a7e487.ctex"]
 
 [params]
 

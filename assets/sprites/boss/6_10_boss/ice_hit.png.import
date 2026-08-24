@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ci2jbwvjg02yf"
-path="res://.godot/imported/thron_sprite.png-d491ffbddc18154c52eb15bc51fd53b6.ctex"
+uid="uid://bl5bcoj25a3cc"
+path="res://.godot/imported/ice_hit.png-b052814527a8c419832ff1fe8a83c11d.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/boss/1_5_boss/thron_sprite.png"
-dest_files=["res://.godot/imported/thron_sprite.png-d491ffbddc18154c52eb15bc51fd53b6.ctex"]
+source_file="res://assets/sprites/boss/6_10_boss/ice_hit.png"
+dest_files=["res://.godot/imported/ice_hit.png-b052814527a8c419832ff1fe8a83c11d.ctex"]
 
 [params]
 

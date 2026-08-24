@@ -22,13 +22,6 @@ var cells: Array[PackedInt32Array] = [] # 실제 보드 저장소. 바깥 index=
 var ice_cells: Array[PackedByteArray] = []
 
 
-func _empty_ice_row() -> PackedByteArray:
-	var row: PackedByteArray = PackedByteArray()
-	row.resize(WIDTH)
-	row.fill(0)
-	return row
-
-
 ## 상황: `MainBoardModel.new()`로 논리 보드를 만들 때 자동 호출된다.
 ## 순서: `reset()` 한 단계로 22개의 빈 행을 구성한다.
 ## 결과: 즉시 배치 판정을 수행할 수 있는 빈 보드가 된다.
@@ -56,12 +49,6 @@ func _set_ice_cell(cell: Vector2i, active: bool) -> void:
 		ice_cells[cell.y][cell.x] = 1 if active else 0
 
 
-func _clear_ice_cells() -> void:
-	ice_cells.clear()
-	for _y: int in range(HEIGHT):
-		ice_cells.append(_empty_ice_row())
-
-
 func _empty_row() -> PackedInt32Array:
 	var row: PackedInt32Array = PackedInt32Array()
 	row.resize(WIDTH)
@@ -74,15 +61,6 @@ func _empty_ice_row() -> PackedByteArray:
 	row.resize(WIDTH)
 	row.fill(0)
 	return row
-
-
-func _set_ice_cell(cell: Vector2i, active: bool) -> void:
-	if is_inside(cell):
-		ice_cells[cell.y][cell.x] = 1 if active else 0
-
-
-func is_ice_cell(cell: Vector2i) -> bool:
-	return is_inside(cell) and ice_cells[cell.y][cell.x] == 1
 
 
 ## 임의의 활성 셀 배열을 보드 원점에 배치할 수 있는지 검사한다.
@@ -208,13 +186,3 @@ func _is_row_full(y: int) -> bool:
 		if cells[y][x] == EMPTY:
 			return false
 	return true
-
-
-## 상황: reset 또는 줄 삭제 후 보충용 빈 행이 필요할 때 호출한다.
-## 순서: ① PackedInt32Array 생성 ② WIDTH로 resize ③ 모든 원소를 EMPTY로 fill.
-## 결과: 다른 행과 저장소를 공유하지 않는 새 10칸 배열을 반환한다.
-func _empty_row() -> PackedInt32Array:
-	var row: PackedInt32Array = PackedInt32Array() # 호출자에게 넘길 새 연속 int32 행 저장소.
-	row.resize(WIDTH)
-	row.fill(EMPTY)
-	return row

@@ -114,15 +114,6 @@ Web 결과는 `build/web/`에 생성됩니다. 브라우저 보안 정책 때문
 - `start_screen/`: 시작 메뉴, 튜토리얼과 키·볼륨 설정
 - `assets/`: 블록·캐릭터 PNG 스프라이트와 SFX 음원
 - `tests/`: 게임 로직과 물리 통합 테스트
-- `docs/`: 최종 통합 동작과 Main 코드 설명
-
-## C++ 학습자용 코드 보고서
-
-- [`docs/GODOT_FUNCTION_REFERENCE_CPP_KO.md`](docs/GODOT_FUNCTION_REFERENCE_CPP_KO.md):
-  5차 GDScript 함수의 호출 시점, 내부 처리 순서, 반환값과 상태 변경을 파일별로 설명합니다.
-- [`docs/GODOT_VARIABLE_REFERENCE_CPP_KO.md`](docs/GODOT_VARIABLE_REFERENCE_CPP_KO.md):
-  상수·enum·signal·멤버·주요 지역 변수의 소유권, 수명과 C++ 대응 개념을 설명합니다.
-- [`docs/MAIN_BEHAVIOR_KO.md`](docs/MAIN_BEHAVIOR_KO.md):
-  최종 게임 동작과 시작 화면 통합 방향을 요약합니다.
+- `docs/`: 게임 총정리(`GAME_OVERVIEW_KO.md`)와 온보딩·조사 기록
 
 Godot의 `.godot/` 캐시와 빌드 결과물은 저장소에 포함하지 않습니다.

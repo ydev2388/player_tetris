@@ -148,11 +148,7 @@ func _add_box_shape(body: CollisionObject2D, center: Vector2, box_size: Vector2)
 ## 순서: seed 17에서 시작해 행 우선 모든 셀을 `hash*31 + value+2`로 누적.
 ## 결과: 보드를 바꾸지 않고 현재 셀 배열의 정수 signature를 반환한다.
 func _board_signature() -> int:
-	var signature: int = 17 # 31 기반 rolling hash의 초기 seed.
-	for y: int in range(MainBoardModel.HEIGHT):
-		for x: int in range(MainBoardModel.WIDTH):
-			signature = signature * 31 + controller.board.cells[y][x] + 2
-	return signature
+	return hash(controller.board.cells)
 
 
 ## 상황: 새 collision이 물리 공간에 반영된 다음 frame 끝에서 deferred 호출된다.

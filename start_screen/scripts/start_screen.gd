@@ -2470,13 +2470,13 @@ func _chinese_fallback(korean: String) -> String:
 		var floor_part: String = korean.substr(0, korean.find("층"))
 		if floor_part.is_valid_int():
 			var suffix: String = korean.substr(korean.find("층") + 1)
-			var translated_suffix: String = String(CHINESE_TEXT.get(suffix, suffix))
-			var floor_pattern: String = CHINESE_TEXT.get("%d층%s", "%d층%s")
+			var translated_suffix: String = LOCALIZATION.translated(suffix)
+			var floor_pattern: String = LOCALIZATION.translated("%d층%s")
 			return floor_pattern % [floor_part.to_int(), translated_suffix]
 	if korean.begins_with("별 ") and korean.ends_with("개"):
 		var star_part: String = korean.trim_prefix("별 ").trim_suffix("개")
 		if star_part.is_valid_int():
-			var star_pattern: String = CHINESE_TEXT.get("별 %d개", "별 %d개")
+			var star_pattern: String = LOCALIZATION.translated("별 %d개")
 			return star_pattern % star_part.to_int()
 	return LOCALIZATION.translated(korean)
 

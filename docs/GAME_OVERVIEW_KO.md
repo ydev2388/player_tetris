@@ -1,7 +1,7 @@
 # Block Fighter — 게임 총정리
 
 > 현재 구현된 게임의 전체 내용을 한 문서로 정리한 스냅샷이다.
-> 마지막 갱신: 2026-08-24 (`feat/add-stage` 브랜치 기준).
+> 마지막 갱신: 2026-08-25 (`ui/simply-translate` 브랜치 기준).
 > 코드가 바뀌면 이 문서도 함께 갱신한다. 상세 개발 기록은 `docs/research.md`,
 > 과거 설계·조사 기록은 `docs/research_full.md`를 참고.
 > (2026-08-24: `MAIN_BEHAVIOR_KO.md`·GODOT 함수/변수 REFERENCE 문서는
@@ -49,6 +49,9 @@ MAIN(메인 메뉴)
 
 - 키는 `OPTION → KEY CUSTOM`에서 변경 가능. 볼륨 설정도 OPTION에 있음.
 - 언어: 메뉴는 한국어/영어/중국어 3개 국어, 게임 HUD는 한국어/영어만, 튜토리얼은 한국어 고정.
+  `start_screen.gd`의 `_text()`가 ENGLISH_TEXT/CHINESE_TEXT 사전을 먼저 뒤지고, 없으면
+  `scripts/localization.gd`(tr() 기반)로 폴백한다. `localization.gd` CN 사전은 CHINESE_TEXT를
+  모두 커버하도록 동기화됨(2026-08-25).
 - 시작 화면 게임 설명은 12FPS 애니메이션 5페이지이며 키 표시는 설정의 실제 바인딩을 읽는다.
 - 튜토리얼·문서는 이전 `V` 키 플립 또는 당기기 동작을 전제로 하지 않는다.
 
@@ -160,9 +163,12 @@ MAIN(메인 메뉴)
 | `scripts/board_model.gd` · `board_physics.gd` · `main_layout.gd` | 보드 모델/물리/좌표 상수 |
 | `scripts/character_data.gd` | 8캐릭터 능력치 |
 | `scenes/main.tscn` | 게임 씬 (meta로 층 번호 전달) |
-| `tests/main_game_test.gd` · `start_screen/tests/main_ui_test.gd` | 회귀 테스트 (메인 226개 / UI 110개) |
+| `tests/main_game_test.gd` · `start_screen/tests/main_ui_test.gd` | 회귀 테스트 (메인 229개 / UI 108개) |
 | `tests/*_runtime_integration_test.gd` | 독립 런타임 통합 테스트 8종 |
 | `build_web.sh` | 공식 검증 파이프라인 (import→테스트→Web export→ZIP→smoke) |
+
+- `tools/` 디렉터리(자산 생성 파이썬/PS1 스크립트)와 `tests/capture_corner_climb_timing.gd`는
+  2026-08-25 ponytail-audit 적용으로 저장소에서 제거됨(999줄).
 
 ## 10. 실행·검증
 

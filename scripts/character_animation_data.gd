@@ -7,6 +7,7 @@ extends RefCounted
 
 const IDLE: String = "idle"
 const HANG: String = "hang"
+const CORNER_CLIMB: String = "corner_climb"
 const ATTACK: String = "attack"
 const JUMP: String = "jump"
 const ROTATION_KICK: String = "rotation_kick"
@@ -21,33 +22,34 @@ const VISIBLE_HEIGHTS: Dictionary = {
 	IDLE: 96.0,
 	ATTACK: 96.0,
 	HANG: 96.0,
+	CORNER_CLIMB: 96.0,
 	JUMP: 96.0,
 	ROTATION_KICK: 96.0,
 	SPECIAL: 96.0,
 }
 const NORMAL_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/normal/normal_reference_atlas_v8.png"
+	"res://assets/sprites/characters/normal/normal_reference_atlas_v12.png"
 )
 const BOXER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/boxer/boxer_reference_atlas_v6.png"
+	"res://assets/sprites/characters/boxer/boxer_reference_atlas_v7.png"
 )
 const SHIELD_GUARD_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/shield_guard/shield_guard_reference_atlas_v6.png"
+	"res://assets/sprites/characters/shield_guard/shield_guard_reference_atlas_v7.png"
 )
 const FIREFIGHTER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/firefighter/firefighter_reference_atlas_v6.png"
+	"res://assets/sprites/characters/firefighter/firefighter_reference_atlas_v7.png"
 )
 const CLEANER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/cleaner/cleaner_reference_atlas_v6.png"
+	"res://assets/sprites/characters/cleaner/cleaner_reference_atlas_v7.png"
 )
-const SAINTESS_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/saintess/saintess_reference_atlas_v2.png"
+const CHEF_ATLAS: Texture2D = preload(
+	"res://assets/sprites/characters/chef/chef_reference_atlas_v9.png"
 )
 const CLOCKMAKER_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v6.png"
+	"res://assets/sprites/characters/clockmaker/clockmaker_reference_atlas_v7.png"
 )
 const NINJA_ATLAS: Texture2D = preload(
-	"res://assets/sprites/characters/ninja/ninja_reference_atlas_v6.png"
+	"res://assets/sprites/characters/ninja/ninja_reference_atlas_v7.png"
 )
 
 const PROFILES: Dictionary = {
@@ -105,7 +107,7 @@ const PROFILES: Dictionary = {
 	"chef": {
 		"character_id": "chef",
 		"display_name": "성녀",
-		"texture": SAINTESS_ATLAS,
+		"texture": CHEF_ATLAS,
 		"display_offset": Vector2.ZERO,
 		"display_size": FRAME_DISPLAY_SIZE,
 		"geometry_mode": "fixed_reference",
@@ -158,6 +160,16 @@ const REGIONS: Dictionary = {
 		Rect2(768, 256, 128, 128),
 		Rect2(896, 256, 128, 128),
 	],
+	CORNER_CLIMB: [
+		Rect2(0, 768, 128, 128),
+		Rect2(128, 768, 128, 128),
+		Rect2(256, 768, 128, 128),
+		Rect2(384, 768, 128, 128),
+		Rect2(512, 768, 128, 128),
+		Rect2(640, 768, 128, 128),
+		Rect2(768, 768, 128, 128),
+		Rect2(896, 768, 128, 128),
+	],
 	JUMP: [
 		Rect2(0, 384, 128, 128),
 		Rect2(128, 384, 128, 128),
@@ -193,6 +205,7 @@ const REGIONS: Dictionary = {
 const FRAME_DURATIONS: Dictionary = {
 	IDLE: 0.18,
 	HANG: 0.16,
+	CORNER_CLIMB: 0.10,
 	ATTACK: 0.10,
 	JUMP: 0.0875,
 	ROTATION_KICK: 0.0525,
@@ -243,8 +256,7 @@ static func visible_height_for(
 	return float(VISIBLE_HEIGHTS[resolved_state]) * profile_scale
 
 
-static func texture_for(
-	_state: String,
+static func texture_for_character(
 	character_id: String = DEFAULT_CHARACTER_ID
 ) -> Texture2D:
 	return profile_for(character_id)["texture"] as Texture2D
@@ -290,7 +302,7 @@ static func visible_region_for(
 	character_id: String = DEFAULT_CHARACTER_ID
 ) -> Rect2:
 	var frame_region: Rect2 = region_for(state, elapsed, character_id)
-	var texture: Texture2D = texture_for(state, character_id)
+	var texture: Texture2D = texture_for_character(character_id)
 	return opaque_region_for(texture, frame_region)
 
 

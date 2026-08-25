@@ -656,7 +656,7 @@ func _draw_meditation_effect() -> void:
 func _draw_character_card() -> void:
 	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
 	draw_texture_rect_region(
-		MainCharacterAnimationData.texture_for(MainCharacterAnimationData.IDLE, character.character_id),
+		MainCharacterAnimationData.texture_for_character(character.character_id),
 		portrait_rect,
 		CHARACTER_SOURCE_RECT
 	)

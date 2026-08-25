@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://6ech5kjjt1pa"
-path="res://.godot/imported/shield_guard_reference_atlas_v6.png-0e59eaaa5214b1f330be420ddc402f4e.ctex"
+uid="uid://b7xp4rh2pxfx4"
+path="res://.godot/imported/chef_reference_atlas_v9.png-c8ac3aa18a31df7965c40cc4c8f19717.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/shield_guard/shield_guard_reference_atlas_v6.png"
-dest_files=["res://.godot/imported/shield_guard_reference_atlas_v6.png-0e59eaaa5214b1f330be420ddc402f4e.ctex"]
+source_file="res://assets/sprites/characters/chef/chef_reference_atlas_v9.png"
+dest_files=["res://.godot/imported/chef_reference_atlas_v9.png-c8ac3aa18a31df7965c40cc4c8f19717.ctex"]
 
 [params]
 

@@ -1,11 +1,9 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/game_view.gd" id="1_view"]
 [ext_resource type="Script" path="res://scripts/game_controller.gd" id="2_controller"]
 [ext_resource type="Script" path="res://scripts/board_physics.gd" id="3_physics"]
 [ext_resource type="Script" path="res://scripts/character_controller.gd" id="4_character"]
-[ext_resource type="Texture2D" path="res://assets/sprites/characters/normal/normal_reference_atlas_v8.png" id="5_character_texture"]
-
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_character"]
 size = Vector2(42, 90)
 
@@ -65,8 +63,8 @@ collision_mask = 1
 [node name="Sprite" type="Sprite2D" parent="BoardPhysics/Character"]
 position = Vector2(0, 40)
 texture_filter = 1
-texture = ExtResource("5_character_texture")
 region_enabled = true
+region_filter_clip_enabled = true
 region_rect = Rect2(0, 0, 128, 128)
 
 [node name="LeftRay" type="RayCast2D" parent="BoardPhysics/Character"]

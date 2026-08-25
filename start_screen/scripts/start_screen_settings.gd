@@ -12,10 +12,12 @@ const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
 const LOCALIZATION: Script = preload("res://scripts/localization.gd")
+const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
 const STAGE_COUNT: int = 10
+const STAGE_NO_DAMAGE_COUNT: int = 5
 const MAX_STAGE_STARS: int = 3
 const PASSIVE_IDS: Array[String] = [
 	"attack_speed",
@@ -62,6 +64,7 @@ var music_percent: float = 100.0
 var sfx_percent: float = 100.0
 var language: String = ENGLISH
 var stage_best_stars: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+var stage_no_damage_clears: Array[bool] = [false, false, false, false, false]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
 var challenge_best_lines: int = 0
@@ -275,6 +278,37 @@ func is_challenge_unlocked() -> bool:
 	return get_stage_best_stars(STAGE_COUNT) > 0
 
 
+func get_total_best_stars() -> int:
+	var total: int = 0
+	for stars: int in stage_best_stars:
+		total += stars
+	return total
+
+
+func is_stage_cleared_without_damage(stage_number: int) -> bool:
+	if stage_number < 1 or stage_number > STAGE_NO_DAMAGE_COUNT:
+		return false
+	return stage_no_damage_clears[stage_number - 1]
+
+
+func has_all_stage_no_damage_clears() -> bool:
+	for cleared_without_damage: bool in stage_no_damage_clears:
+		if not cleared_without_damage:
+			return false
+	return true
+
+
+## 캐릭터 해금은 현재 별 화폐가 아니라 저장된 스테이지별 최고 별의 합으로 계산한다.
+## 상점에서 별을 사용하거나 게임을 재실행해도 이미 달성한 해금은 유지된다.
+func is_character_unlocked(character_id: String) -> bool:
+	if not CHARACTER_DATA.has_character(character_id):
+		return false
+	var profile: Dictionary = CHARACTER_DATA.profile_for(character_id)
+	if bool(profile.get("unlock_all_no_damage", false)):
+		return has_all_stage_no_damage_clears()
+	return get_total_best_stars() >= int(profile.get("unlock_stars", 0))
+
+
 func get_passive_level(passive_id: String) -> int:
 	var index: int = PASSIVE_IDS.find(passive_id)
 	if index < 0:
@@ -344,7 +378,12 @@ func reset_passive_upgrades() -> Dictionary:
 	}
 
 
-func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) -> Dictionary:
+func complete_stage(
+	stage_number: int,
+	stars: int,
+	remaining_lives: int = -1,
+	cleared_without_damage: bool = false
+) -> Dictionary:
 	if stage_number < 1 or stage_number > STAGE_COUNT:
 		return _failure("알 수 없는 스테이지입니다.")
 	if stars < 1:
@@ -353,14 +392,28 @@ func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) ->
 	var awarded_stars: int = clampi(stars, 1, MAX_STAGE_STARS)
 	var previous_stars: int = get_stage_best_stars(stage_number)
 	var reward: int = maxi(awarded_stars - previous_stars, 0)
-	if awarded_stars > previous_stars:
-		var previous_currency: int = star_currency
-		stage_best_stars[stage_number - 1] = awarded_stars
-		star_currency += reward
+	var previous_currency: int = star_currency
+	var previous_no_damage: bool = is_stage_cleared_without_damage(stage_number)
+	var progress_changed_now: bool = awarded_stars > previous_stars
+	progress_changed_now = progress_changed_now or (
+		stage_number <= STAGE_NO_DAMAGE_COUNT
+		and cleared_without_damage
+		and not previous_no_damage
+	)
+	if progress_changed_now:
+		if awarded_stars > previous_stars:
+			stage_best_stars[stage_number - 1] = awarded_stars
+			star_currency += reward
+		if stage_number <= STAGE_NO_DAMAGE_COUNT:
+			stage_no_damage_clears[stage_number - 1] = (
+				previous_no_damage or cleared_without_damage
+			)
 		var save_error: Error = save_settings()
 		if save_error != OK:
 			stage_best_stars[stage_number - 1] = previous_stars
 			star_currency = previous_currency
+			if stage_number <= STAGE_NO_DAMAGE_COUNT:
+				stage_no_damage_clears[stage_number - 1] = previous_no_damage
 			return _failure(
 				"스테이지 결과를 저장하지 못했습니다: %s" % error_string(save_error)
 			)
@@ -371,6 +424,7 @@ func complete_stage(stage_number: int, stars: int, remaining_lives: int = -1) ->
 		"previous_stars": previous_stars,
 		"stars": get_stage_best_stars(stage_number),
 		"remaining_lives": remaining_lives,
+		"cleared_without_damage": is_stage_cleared_without_damage(stage_number),
 		"reward": reward,
 		"star_currency": star_currency,
 	}
@@ -392,16 +446,19 @@ func record_challenge_lines(lines: int) -> Error:
 
 func reset_stage_progress() -> Error:
 	var previous_stars: Array[int] = stage_best_stars.duplicate()
+	var previous_no_damage: Array[bool] = stage_no_damage_clears.duplicate()
 	var previous_currency: int = star_currency
 	var previous_passive_levels: Array[int] = passive_levels.duplicate()
 	var previous_challenge_best: int = challenge_best_lines
 	stage_best_stars.fill(0)
+	stage_no_damage_clears.fill(false)
 	star_currency = 0
 	passive_levels.fill(0)
 	challenge_best_lines = 0
 	var save_error: Error = save_settings()
 	if save_error != OK:
 		stage_best_stars = previous_stars
+		stage_no_damage_clears = previous_no_damage
 		star_currency = previous_currency
 		passive_levels = previous_passive_levels
 		challenge_best_lines = previous_challenge_best
@@ -460,6 +517,7 @@ func _reset_settings_to_defaults() -> void:
 	sfx_percent = 100.0
 	language = ENGLISH
 	stage_best_stars = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+	stage_no_damage_clears = [false, false, false, false, false]
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
 	challenge_best_lines = 0
@@ -621,6 +679,20 @@ func _load_progress_from_config(config: ConfigFile) -> bool:
 		if stage_best_stars[4] > 0 and stage_best_stars[5] == 0:
 			stage_best_stars[5] = 1
 			changed = true
+	for stage_number: int in range(1, STAGE_NO_DAMAGE_COUNT + 1):
+		var no_damage_key: String = "stage_%d_no_damage" % stage_number
+		var stored_no_damage: Variant = config.get_value(
+			"progress",
+			no_damage_key,
+			false
+		)
+		if not config.has_section_key("progress", no_damage_key):
+			changed = true
+		if stored_no_damage is bool:
+			stage_no_damage_clears[stage_number - 1] = bool(stored_no_damage)
+		else:
+			stage_no_damage_clears[stage_number - 1] = false
+			changed = true
 	var stored_passive_levels: Variant = config.get_value(
 		"progress",
 		"passive_levels",
@@ -684,6 +756,11 @@ func save_settings() -> Error:
 			"stage_%d_best_stars" % stage_number,
 			get_stage_best_stars(stage_number)
 		)
+		config.set_value(
+			"progress",
+			"stage_%d_no_damage" % stage_number,
+			is_stage_cleared_without_damage(stage_number)
+		)
 	var save_error: Error = config.save(settings_path)
 	if save_error != OK:
 		settings_error.emit("설정을 저장하지 못했습니다: %s" % error_string(save_error))
@@ -697,6 +774,7 @@ func _snapshot_state() -> Dictionary:
 		"sfx_percent": sfx_percent,
 		"language": language,
 		"stage_best_stars": stage_best_stars.duplicate(),
+		"stage_no_damage_clears": stage_no_damage_clears.duplicate(),
 		"star_currency": star_currency,
 		"passive_levels": passive_levels.duplicate(),
 		"challenge_best_lines": challenge_best_lines,
@@ -712,6 +790,10 @@ func _restore_state(snapshot: Dictionary) -> void:
 	var saved_stars: Array = snapshot["stage_best_stars"] as Array
 	for value: Variant in saved_stars:
 		stage_best_stars.append(int(value))
+	stage_no_damage_clears.clear()
+	var saved_no_damage: Array = snapshot["stage_no_damage_clears"] as Array
+	for value: Variant in saved_no_damage:
+		stage_no_damage_clears.append(bool(value))
 	star_currency = int(snapshot["star_currency"])
 	challenge_best_lines = int(snapshot["challenge_best_lines"])
 	passive_levels.clear()

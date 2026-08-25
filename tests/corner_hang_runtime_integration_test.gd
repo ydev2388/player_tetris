@@ -26,6 +26,32 @@ func _run() -> void:
 	var character: MainCharacterController = game.character
 	var board_physics: MainBoardPhysics = game.get_node("BoardPhysics")
 	var failures: Array[String] = []
+	var normal_corner_frames: Dictionary = {}
+	var normal_vertical_corner_frames: Dictionary = {}
+	var normal_horizontal_corner_frames: Dictionary = {}
+	var normal_right_visual_offsets: Dictionary = {}
+	var normal_right_surface_offsets: Dictionary = {}
+	var all_corner_frames: Dictionary = {}
+	var all_right_visual_offsets: Dictionary = {}
+	var all_right_surface_offsets: Dictionary = {}
+	var normal_settle_observed: bool = false
+	var vertical_frame_count: int = MainCharacterController.HANG_CORNER_VERTICAL_FRAME_COUNT
+	var horizontal_frame_count: int = 8 - vertical_frame_count
+	var milestone_thresholds: Array[float] = (
+		MainCharacterController.HANG_CORNER_FRAME_PROGRESS_THRESHOLDS
+	)
+	for frame_index: int in range(milestone_thresholds.size()):
+		var interval_end: float = 1.0
+		if frame_index + 1 < milestone_thresholds.size():
+			interval_end = milestone_thresholds[frame_index + 1]
+		var milestone_sample: float = (
+			milestone_thresholds[frame_index] + interval_end
+		) * 0.5
+		if (
+			character._corner_climb_animation_frame_index(milestone_sample, 8)
+			!= frame_index
+		):
+			failures.append("normal: corner milestone mismatch at %d" % frame_index)
 
 	Input.action_press(&"character_grab")
 	for character_id: String in CHARACTER_IDS:
@@ -60,6 +86,9 @@ func _run() -> void:
 			)
 
 	for character_id: String in CHARACTER_IDS:
+		all_corner_frames[character_id] = {}
+		all_right_visual_offsets[character_id] = {}
+		all_right_surface_offsets[character_id] = {}
 		await _prepare_locked_corner_fixture(game, board_physics, character, character_id)
 		_set_up_pressed(false)
 		await process_frame
@@ -74,6 +103,17 @@ func _run() -> void:
 		character.global_position.y = character._hang_top_global_y
 		character._handle_hanging(1.0 / 60.0)
 		if character_id == "normal":
+			var minimum_pose_duration: float = (
+				float(MainCharacterAnimationData.frame_count_for(
+					MainCharacterAnimationData.CORNER_CLIMB,
+					character_id
+				))
+				* float(MainCharacterAnimationData.FRAME_DURATIONS[
+					MainCharacterAnimationData.CORNER_CLIMB
+				])
+			)
+			if character._hang_corner_climb_duration < minimum_pose_duration:
+				failures.append("normal: corner climb rushes its eight poses")
 			var stamina_before_corner_frame: float = character.stamina
 			character._handle_hanging(1.0 / 60.0)
 			var expected_corner_drain: float = (
@@ -96,6 +136,59 @@ func _run() -> void:
 			if not character.is_hanging:
 				break
 			character._handle_hanging(1.0 / 60.0)
+			character._advance_character_animation(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				if character._animation_state != MainCharacterAnimationData.CORNER_CLIMB:
+					failures.append(
+						"%s: corner climb did not select its dedicated animation"
+						% character_id
+					)
+					break
+				var corner_frame: int = int(character.sprite.region_rect.position.x / 128.0)
+				var character_corner_frames: Dictionary = all_corner_frames[character_id]
+				var character_visual_offsets: Dictionary = all_right_visual_offsets[character_id]
+				var character_surface_offsets: Dictionary = all_right_surface_offsets[character_id]
+				character_corner_frames[corner_frame] = true
+				character_visual_offsets[corner_frame] = character.sprite.position.x
+				character_surface_offsets[corner_frame] = (
+					character.sprite.position.y
+					- MainCharacterAnimationData.fixed_offset_for(character_id).y
+				)
+				if int(character.sprite.region_rect.position.y) != 768:
+					failures.append(
+						"%s: corner climb reused a non-climb atlas row" % character_id
+					)
+					break
+				if character_id == "normal":
+					normal_corner_frames[corner_frame] = true
+					normal_right_visual_offsets[corner_frame] = character.sprite.position.x
+					normal_right_surface_offsets[corner_frame] = (
+						character.sprite.position.y
+						- MainCharacterAnimationData.fixed_offset_for("normal").y
+					)
+					if (
+						character._hang_corner_climb_progress
+						< MainCharacterController.HANG_CORNER_VERTICAL_PATH_RATIO
+					):
+						normal_vertical_corner_frames[corner_frame] = true
+						if corner_frame >= vertical_frame_count:
+							failures.append("normal: top-entry pose appeared during vertical pull")
+							break
+					else:
+						normal_horizontal_corner_frames[corner_frame] = true
+						if corner_frame < vertical_frame_count:
+							failures.append("normal: vertical-pull pose remained during top entry")
+							break
+					if (
+						character._hang_corner_climb_progress
+						>= MainCharacterController.HANG_CORNER_HORIZONTAL_MOTION_END_RATIO
+					):
+						normal_settle_observed = true
+						if character.global_position.distance_to(
+							character._hang_corner_climb_target_global
+						) > 0.01:
+							failures.append("normal: final standing pose still slides sideways")
+							break
 		var foot_y: float = (
 			character.position.y
 			+ MainCharacterController.CHARACTER_COLLIDER_OFFSET_Y
@@ -107,6 +200,131 @@ func _run() -> void:
 				"%s: did not finish corner climb foot=%s expected=%s"
 				% [character_id, foot_y, expected_top_y]
 			)
+		if not character.is_on_floor():
+			failures.append(
+				"%s: corner climb finished before refreshing floor contact"
+				% character_id
+			)
+		if character._animation_state != MainCharacterAnimationData.IDLE:
+			failures.append(
+				"%s: corner climb inserted a transient %s pose before idle"
+				% [character_id, character._animation_state]
+			)
+		var completed_character_frames: Dictionary = all_corner_frames[character_id]
+		if completed_character_frames.size() != 8:
+			failures.append(
+				"%s: dedicated corner row did not advance through all 8 frames: %s"
+				% [character_id, completed_character_frames.keys()]
+			)
+		var completed_visual_offsets: Dictionary = all_right_visual_offsets[character_id]
+		for ledge_frame: int in [2, 3, 4]:
+			if (
+				not completed_visual_offsets.has(ledge_frame)
+				or float(completed_visual_offsets[ledge_frame]) <= 0.0
+			):
+				failures.append(
+					"%s: right-facing pose %d did not lead toward the ledge"
+					% [character_id, ledge_frame]
+				)
+	if normal_corner_frames.size() != 8:
+		failures.append(
+			"normal: corner climb did not advance through all position poses: %s"
+			% [normal_corner_frames.keys()]
+		)
+	if normal_vertical_corner_frames.size() != vertical_frame_count:
+		failures.append(
+			"normal: vertical pull did not stay within its poses: %s"
+			% [normal_vertical_corner_frames.keys()]
+		)
+	if normal_horizontal_corner_frames.size() != horizontal_frame_count:
+		failures.append(
+			"normal: top entry did not use its poses: %s"
+			% [normal_horizontal_corner_frames.keys()]
+		)
+	if not normal_settle_observed:
+		failures.append("normal: corner climb never reached its settled top pose")
+	for ledge_frame: int in [2, 3, 4]:
+		if (
+			not normal_right_visual_offsets.has(ledge_frame)
+			or float(normal_right_visual_offsets[ledge_frame]) <= 0.0
+		):
+			failures.append(
+				"normal: right-facing pose %d did not lead toward the ledge" % ledge_frame
+			)
+	for surface_frame: int in [2, 3]:
+		if (
+			not normal_right_surface_offsets.has(surface_frame)
+			or float(normal_right_surface_offsets[surface_frame]) <= 1.0
+		):
+			failures.append(
+				"normal: right-facing pose %d did not close its surface gap" % surface_frame
+			)
+	if not character.sprite.region_filter_clip_enabled:
+		failures.append("character atlas region can sample pixels from an adjacent frame")
+
+	# 반대쪽 면에서도 같은 단일 Sprite2D가 정확히 반전되고 같은 8프레임을 쓰는지
+	# 별도로 검증한다. 방향별로 visual node를 나누면 경계에서 한쪽이 사라지는 회귀가 생긴다.
+	await _prepare_locked_corner_fixture(game, board_physics, character, "normal", -1)
+	_set_up_pressed(false)
+	await process_frame
+	_set_up_pressed(true)
+	await process_frame
+	character._try_start_hang()
+	if not character.is_hanging:
+		failures.append("normal: left-facing locked block grab failed")
+	else:
+		character.global_position.y = character._hang_top_global_y
+		character._handle_hanging(1.0 / 60.0)
+		var left_corner_frames: Dictionary = {}
+		var left_visual_offsets: Dictionary = {}
+		var left_surface_offsets: Dictionary = {}
+		var left_flip_changed: bool = false
+		var flip_disturbance_injected: bool = false
+		for frame_index: int in range(120):
+			if not character.is_hanging:
+				break
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active and not flip_disturbance_injected:
+				# 외부에서 잘못된 flip이 들어와도 이번 animation 적용에서 즉시 복구해야 한다.
+				character.sprite.flip_h = false
+				flip_disturbance_injected = true
+			character._advance_character_animation(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				var left_corner_frame: int = int(
+					character.sprite.region_rect.position.x / 128.0
+				)
+				left_corner_frames[left_corner_frame] = true
+				left_visual_offsets[left_corner_frame] = character.sprite.position.x
+				left_surface_offsets[left_corner_frame] = (
+					character.sprite.position.y
+					- MainCharacterAnimationData.fixed_offset_for("normal").y
+				)
+				left_flip_changed = left_flip_changed or not character.sprite.flip_h
+		if left_corner_frames.size() != 8:
+			failures.append(
+				"normal: left-facing corner climb lost atlas frames: %s"
+				% [left_corner_frames.keys()]
+			)
+		if left_flip_changed:
+			failures.append("normal: left-facing corner climb changed sprite side mid-motion")
+		for ledge_frame: int in [2, 3, 4]:
+			if (
+				not left_visual_offsets.has(ledge_frame)
+				or float(left_visual_offsets[ledge_frame]) >= 0.0
+			):
+				failures.append(
+					"normal: left-facing pose %d did not lead toward the ledge" % ledge_frame
+				)
+		for surface_frame: int in [2, 3]:
+			if (
+				not left_surface_offsets.has(surface_frame)
+				or float(left_surface_offsets[surface_frame]) <= 1.0
+			):
+				failures.append(
+					"normal: left-facing pose %d did not close its surface gap" % surface_frame
+				)
+		if character.sprite != character.get_node_or_null("Sprite"):
+			failures.append("normal: corner climb unexpectedly replaced its single character sprite")
 
 	_set_up_pressed(false)
 	Input.action_release(&"character_grab")
@@ -155,21 +373,24 @@ func _prepare_locked_corner_fixture(
 	game: MainGameView,
 	board_physics: MainBoardPhysics,
 	character: MainCharacterController,
-	character_id: String
+	character_id: String,
+	direction: int = 1
 ) -> void:
 	character._exit_hang()
 	game.controller.board.reset()
-	game.controller.board.cells[10][5] = MainTetrominoData.Type.J
+	var block_x: int = 5 if direction > 0 else 4
+	game.controller.board.cells[10][block_x] = MainTetrominoData.Type.J
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	await physics_frame
 	character.set_character_id(character_id)
-	character.position = Vector2(216.0, 440.0)
+	character.position = Vector2(216.0 if direction > 0 else 264.0, 440.0)
 	character.velocity = Vector2.ZERO
-	character.facing = 1
+	character._update_facing(float(direction))
 	character.stamina = MainCharacterController.MAX_STAMINA
 	character._hang_regrab_remaining = 0.0
-	character.right_ray.force_raycast_update()
+	var hang_ray: RayCast2D = character.right_ray if direction > 0 else character.left_ray
+	hang_ray.force_raycast_update()
 
 
 func _set_up_pressed(pressed: bool) -> void:

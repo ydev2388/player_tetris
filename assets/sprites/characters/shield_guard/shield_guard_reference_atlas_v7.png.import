@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://1ejp0rj1lpop"
-path="res://.godot/imported/saintess_reference_atlas_v1.png-708dccb93711b21c6cc92a055a3a6ec3.ctex"
+uid="uid://dolwp01m16ko1"
+path="res://.godot/imported/shield_guard_reference_atlas_v7.png-6708d64eefabd56cd6853c4351475fd7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/characters/saintess/saintess_reference_atlas_v1.png"
-dest_files=["res://.godot/imported/saintess_reference_atlas_v1.png-708dccb93711b21c6cc92a055a3a6ec3.ctex"]
+source_file="res://assets/sprites/characters/shield_guard/shield_guard_reference_atlas_v7.png"
+dest_files=["res://.godot/imported/shield_guard_reference_atlas_v7.png-6708d64eefabd56cd6853c4351475fd7.ctex"]
 
 [params]
 

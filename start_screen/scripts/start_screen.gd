@@ -164,6 +164,8 @@ var _shop_detail_cost: Label
 var _shop_reset_button: Button
 var _shop_back_button: Button
 var _character_buttons: Array[Button] = []
+var _character_unlock_labels: Array[Label] = []
+var _character_confirm_button: Button
 var _character_back_button: Button
 var _character_position_labels: Array[Label] = []
 var _selected_character_id: String = MainCharacterData.DEFAULT_CHARACTER_ID
@@ -235,6 +237,7 @@ func _ready() -> void:
 	settings.bindings_changed.connect(_refresh_key_buttons)
 	settings.progress_changed.connect(_refresh_stage_select)
 	settings.progress_changed.connect(_refresh_shop)
+	settings.progress_changed.connect(_refresh_character_selection)
 	add_child(settings)
 	_music_manager = MUSIC_MANAGER_SCRIPT.new() as BlockFighterMusicManager
 	_music_manager.name = "MusicManager"
@@ -351,6 +354,14 @@ func previous_tutorial_page() -> void:
 func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 	if _selected_character_id.is_empty() or not MainCharacterData.has_character(_selected_character_id):
 		_show_message(_text("먼저 캐릭터를 선택하세요.", "Select a character first."))
+		return false
+	if not settings.is_character_unlocked(_selected_character_id):
+		_show_message(
+			_text(
+				"아직 해금되지 않은 캐릭터입니다.",
+				"This character is still locked."
+			)
+		)
 		return false
 	if _game_instance != null and is_instance_valid(_game_instance):
 		return true
@@ -548,8 +559,7 @@ func _handle_character_select_input(key_event: InputEventKey) -> bool:
 		_move_character_focus(1)
 		return true
 	if key_code == KEY_Z:
-		if not _selected_character_id.is_empty() and MainCharacterData.has_character(_selected_character_id):
-			show_floor_select()
+		_confirm_character_selection()
 		return true
 	return false
 
@@ -1997,20 +2007,32 @@ func _complete_stage_for_debug() -> void:
 		if game_controller.is_boss_alive():
 			game_controller.damage_boss(game_controller.boss_health)
 		return
-	_complete_stage(3)
+	var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+		"BoardPhysics/Character"
+	) as MainCharacterController
+	var remaining_lives: int = loaded_character.lives if loaded_character != null else -1
+	var cleared_without_damage: bool = (
+		loaded_character != null
+		and loaded_character.lives == loaded_character.get_max_lives()
+	)
+	_complete_stage(3, remaining_lives, cleared_without_damage)
 
 
 func _on_survival_stage_cleared(cleared_lines: int) -> void:
 	var game_controller: MainGameController = _loaded_game_controller()
-	var remaining_lives: int = -1
+	var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+		"BoardPhysics/Character"
+	) as MainCharacterController
+	var remaining_lives: int = loaded_character.lives if loaded_character != null else -1
+	var cleared_without_damage: bool = (
+		loaded_character != null
+		and loaded_character.lives == loaded_character.get_max_lives()
+	)
 	var stars: int = MainGameController.stage_stars_for_lines(cleared_lines)
 	if game_controller != null and game_controller.is_boss_stage():
-		var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
-			"BoardPhysics/Character"
-		) as MainCharacterController
 		remaining_lives = loaded_character.lives if loaded_character != null else 1
 		stars = clampi(remaining_lives, 1, 3)
-	_complete_stage(stars, remaining_lives)
+	_complete_stage(stars, remaining_lives, cleared_without_damage)
 
 
 func _on_challenge_game_changed() -> void:
@@ -2020,11 +2042,16 @@ func _on_challenge_game_changed() -> void:
 	settings.record_challenge_lines(game_controller.total_lines)
 
 
-func _complete_stage(stars: int, remaining_lives: int = -1) -> void:
+func _complete_stage(
+	stars: int,
+	remaining_lives: int = -1,
+	cleared_without_damage: bool = false
+) -> void:
 	var result: Dictionary = settings.complete_stage(
 		selected_stage_number,
 		stars,
-		remaining_lives
+		remaining_lives,
+		cleared_without_damage
 	)
 	if not bool(result.get("ok", false)):
 		_show_message(String(result.get("message", "스테이지를 완료할 수 없습니다.")))
@@ -2586,11 +2613,18 @@ func _build_character_screen() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER
 		)
 		_character_position_labels.append(position_label)
-		var portrait_texture := AtlasTexture.new()
-		portrait_texture.atlas = MainCharacterAnimationData.texture_for(
-			MainCharacterAnimationData.IDLE,
-			character_id
+		var unlock_label: Label = _create_label(
+			card,
+			"",
+			Rect2(64.0, 8.0, 194.0, 22.0),
+			11,
+			DANGER,
+			HORIZONTAL_ALIGNMENT_RIGHT
 		)
+		unlock_label.name = "CharacterUnlockLabel_%s" % character_id
+		_character_unlock_labels.append(unlock_label)
+		var portrait_texture := AtlasTexture.new()
+		portrait_texture.atlas = MainCharacterAnimationData.texture_for_character(character_id)
 		portrait_texture.region = PORTRAIT_SOURCE
 		var portrait := TextureRect.new()
 		portrait.position = Vector2(47.0, 18.0)
@@ -2654,6 +2688,15 @@ func _build_character_screen() -> void:
 	_character_next_button.focus_mode = Control.FOCUS_NONE
 	_character_next_button.pressed.connect(_move_character_focus.bind(1))
 
+	_character_confirm_button = _create_button(
+		screen,
+		"선택 완료",
+		Rect2(472.0, 630.0, 238.0, 46.0),
+		CYAN,
+		16
+	)
+	_character_confirm_button.focus_mode = Control.FOCUS_NONE
+	_character_confirm_button.pressed.connect(_confirm_character_selection)
 	var back_button: Button = _create_button(
 		screen,
 		"뒤로",
@@ -2720,15 +2763,45 @@ func _select_character(character_id: String) -> void:
 	_refresh_character_selection()
 
 
+func _confirm_character_selection() -> void:
+	if (
+		_selected_character_id.is_empty()
+		or not MainCharacterData.has_character(_selected_character_id)
+	):
+		return
+	if not settings.is_character_unlocked(_selected_character_id):
+		_show_message(
+			_text(
+				"아직 해금되지 않은 캐릭터입니다.",
+				"This character is still locked."
+			)
+		)
+		return
+	show_stage_select()
+
+
 func _refresh_character_selection() -> void:
 	if _character_buttons.is_empty():
 		return
-	var has_selection: bool = (
+	var can_browse: bool = (
 		not _selected_character_id.is_empty()
 		and MainCharacterData.has_character(_selected_character_id)
 	)
-	_character_prev_button.disabled = not has_selection
-	_character_next_button.disabled = not has_selection
+	var has_selection: bool = (
+		can_browse
+		and settings != null
+		and settings.is_character_unlocked(_selected_character_id)
+	)
+	if can_browse:
+		var profile: Dictionary = MainCharacterData.profile_for(_selected_character_id)
+		_character_confirm_button.text = (
+			_text("%s 선택") % _text(str(profile["display_name"]))
+			if has_selection
+			else _character_unlock_status_text(profile, false)
+		)
+	_character_confirm_button.disabled = not has_selection
+	_character_prev_button.disabled = not can_browse
+	_character_next_button.disabled = not can_browse
 	var character_count: int = MainCharacterData.CHARACTER_ORDER.size()
 	var selected_index: int = MainCharacterData.CHARACTER_ORDER.find(_selected_character_id)
 	if selected_index < 0:
@@ -2762,12 +2835,36 @@ func _refresh_character_selection() -> void:
 		][visible_slot]
 	for index: int in range(_character_buttons.size()):
 		var button: Button = _character_buttons[index]
+		var character_id: String = MainCharacterData.CHARACTER_ORDER[index]
+		var unlocked: bool = settings != null and settings.is_character_unlocked(character_id)
+		var profile: Dictionary = MainCharacterData.profile_for(character_id)
+		if index < _character_unlock_labels.size():
+			var unlock_label: Label = _character_unlock_labels[index]
+			unlock_label.text = _character_unlock_status_text(profile, unlocked)
+			unlock_label.add_theme_color_override(
+				"font_color",
+				CYAN if unlocked else DANGER
+			)
 		if not button.visible:
 			continue
 		_apply_card_style(
 			button,
-			MainCharacterData.CHARACTER_ORDER[index] == _selected_character_id
+			character_id == _selected_character_id,
+			unlocked
 		)
+
+
+func _character_unlock_status_text(profile: Dictionary, unlocked: bool) -> String:
+	if unlocked:
+		return _text("해금 완료", "UNLOCKED")
+	if bool(profile.get("unlock_all_no_damage", false)):
+		if settings != null and settings.language == StartScreenSettings.CHINESE:
+			return "未解锁 · 全关卡无伤"
+		return _text("잠김 · 전 스테이지 무피해", "LOCKED · NO-DAMAGE ALL STAGES")
+	var required_stars: int = int(profile.get("unlock_stars", 0))
+	if settings != null and settings.language == StartScreenSettings.CHINESE:
+		return "未解锁 · %d 颗星" % required_stars
+	return _text("잠김 · 별 %d개", "LOCKED · %d STARS") % required_stars
 
 
 func _character_card_style(selected: bool) -> StyleBoxFlat:
@@ -2781,14 +2878,22 @@ func _character_card_style(selected: bool) -> StyleBoxFlat:
 	return style
 
 
-func _apply_card_style(button: Button, selected: bool) -> void:
+func _apply_card_style(button: Button, selected: bool, unlocked: bool = true) -> void:
 	button.add_theme_stylebox_override(
 		"normal",
 		_character_card_selected_style if selected else _character_card_normal_style
 	)
-	button.modulate = Color.WHITE if selected else _CHARACTER_INSELECT_MODULATE
+	button.modulate = (
+		Color.WHITE
+		if selected and unlocked
+		else _CHARACTER_INSELECT_MODULATE
+		if unlocked
+		else Color(0.48, 0.50, 0.54, 0.72)
+	)
 	for child: Node in button.get_children():
 		if child is Label:
+			if String(child.name).begins_with("CharacterUnlockLabel_"):
+				continue
 			(child as Label).add_theme_color_override(
 				"font_color",
 				Color.WHITE if selected else TEXT

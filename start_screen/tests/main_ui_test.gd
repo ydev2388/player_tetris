@@ -293,28 +293,8 @@ func _run() -> void:
 	Input.action_press(&"character_jump")
 	_expect(screen._handle_menu_confirm_input(menu_confirm_event), "Z가 초점 메뉴 버튼을 선택한다.")
 	_expect(
-		screen.current_screen == BlockFighterStartScreen.Screen.MAIN
-			and screen._start_story_overlay.visible
-			and screen._start_story_index == 0,
-		"메인 메뉴 GAME START가 첫 story panel을 연다."
-	)
-	var story_next_event: InputEventKey = InputEventKey.new()
-	story_next_event.pressed = true
-	story_next_event.physical_keycode = KEY_A
-	for story_index: int in range(1, 4):
-		screen._input(story_next_event)
-		_expect(
-			screen.current_screen == BlockFighterStartScreen.Screen.MAIN
-				and screen._start_story_overlay.visible
-				and screen._start_story_index == story_index
-				and screen._start_story_frame.modulate.a < 1.0,
-				"아무 키로 story panel %d가 fade-in 전환을 시작한다." % (story_index + 1)
-		)
-	screen._input(story_next_event)
-	_expect(
-		screen.current_screen == BlockFighterStartScreen.Screen.FLOOR_SELECT
-			and not screen._start_story_overlay.visible,
-		"4번 story panel 뒤 아무 키로 story를 닫고 탑 선택 화면으로 이동한다."
+		screen.current_screen == BlockFighterStartScreen.Screen.FLOOR_SELECT,
+		"메인 메뉴 GAME START가 탑 선택 화면으로 바로 이동한다."
 	)
 	await process_frame
 	var floor_group_two: Button = screen.find_child(
@@ -635,9 +615,9 @@ func _run() -> void:
 	z_character_event.physical_keycode = KEY_Z
 	screen._input(z_character_event)
 	_expect(
-		screen.current_screen == BlockFighterStartScreen.Screen.FLOOR_SELECT
+		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._selected_character_id == "boxer",
-		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정하고 탑 선택으로 간다."
+		"캐릭터 카드에서 Z를 누르면 선택완료 버튼 없이 복서를 확정하고 층 선택으로 간다."
 	)
 	if floor_group_one != null:
 		floor_group_one.pressed.emit()
@@ -648,9 +628,8 @@ func _run() -> void:
 		stage_button.pressed.emit()
 	_expect(screen.current_screen == BlockFighterStartScreen.Screen.GAME, "스테이지 선택이 게임 장면을 연다.")
 	_expect(
-		not screen._start_story_overlay.visible
-			and screen._music_manager._active_mode == &"battle",
-		"게임 화면을 열면 story가 닫히고 전투 BGM으로 전환한다."
+		screen._music_manager._active_mode == &"battle",
+		"게임 화면을 열면 전투 BGM으로 전환한다."
 	)
 	await process_frame
 	await physics_frame

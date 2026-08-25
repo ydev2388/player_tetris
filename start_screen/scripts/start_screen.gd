@@ -22,14 +22,6 @@ const MUSIC_MANAGER_SCRIPT: Script = preload(
 	"res://start_screen/scripts/music_manager.gd"
 )
 const SFX_SELECT: AudioStream = preload("res://assets/sfx/08_select.wav")
-const START_STORY_TEXTURE: Texture2D = preload("res://assets/story/start_story.png")
-const START_STORY_REGIONS: Array[Rect2] = [
-	Rect2(8.0, 8.0, 720.0, 527.0),
-	Rect2(733.0, 8.0, 720.0, 527.0),
-	Rect2(8.0, 541.0, 720.0, 527.0),
-	Rect2(733.0, 541.0, 720.0, 527.0),
-]
-
 const BACKGROUND: Color = Color("#f7f8fb")
 const PANEL: Color = Color("#ffffff")
 const PANEL_DARK: Color = Color("#eef2f7")
@@ -193,11 +185,6 @@ var _game_exit_was_playing: bool = false
 var _select_sfx_player: AudioStreamPlayer
 var _select_sfx_timer: Timer
 var _skip_initial_select_sfx: bool = true
-var _start_story_seen: bool = false
-var _start_story_overlay: Control
-var _start_story_frame: TextureRect
-var _start_story_index: int = -1
-var _start_story_fade_tween: Tween
 var _music_manager: BlockFighterMusicManager
 
 var _capture_overlay: Control
@@ -292,11 +279,7 @@ func show_main_menu() -> void:
 
 
 func _on_main_game_start_pressed() -> void:
-	if _start_story_seen:
-		show_floor_select()
-		return
-	_start_story_seen = true
-	_show_start_story()
+	show_floor_select()
 
 
 func show_stage_select() -> void:
@@ -440,9 +423,7 @@ func _input(event: InputEvent) -> void:
 	var key_event: InputEventKey = event as InputEventKey
 	if not key_event.pressed or key_event.echo:
 		return
-	if _handle_start_story_input(key_event):
-		get_viewport().set_input_as_handled()
-	elif _handle_game_exit_prompt_input(key_event):
+	if _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -486,18 +467,6 @@ func _handle_key_capture(key_event: InputEventKey) -> bool:
 	_show_binding_result(result)
 	if bool(result.get("ok", false)):
 		cancel_key_capture()
-	return true
-
-
-func _handle_start_story_input(_key_event: InputEventKey) -> bool:
-	if _start_story_overlay == null or not _start_story_overlay.visible:
-		return false
-	if _start_story_index >= START_STORY_REGIONS.size() - 1:
-		_hide_start_story()
-		show_floor_select()
-	else:
-		_start_story_index += 1
-		_set_start_story_frame(_start_story_index, true)
 	return true
 
 
@@ -757,7 +726,6 @@ func _build_interface() -> void:
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 	_build_stage_fail_overlay()
-	_build_start_story_overlay()
 
 
 func _build_main_screen() -> void:
@@ -1861,89 +1829,6 @@ func _build_stage_fail_overlay() -> void:
 	_stage_fail_select_button.pressed.connect(_on_stage_fail_select)
 
 
-func _build_start_story_overlay() -> void:
-	_start_story_overlay = Control.new()
-	_start_story_overlay.name = "StartStoryOverlay"
-	_start_story_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_start_story_overlay.z_as_relative = false
-	_start_story_overlay.z_index = 300
-	_start_story_overlay.visible = false
-	_start_story_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_start_story_overlay)
-
-	var background: ColorRect = ColorRect.new()
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	background.color = Color("#101318")
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_start_story_overlay.add_child(background)
-
-	_start_story_frame = TextureRect.new()
-	_start_story_frame.name = "StartStoryFrame"
-	_start_story_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_start_story_frame.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_start_story_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_start_story_frame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_start_story_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_start_story_overlay.add_child(_start_story_frame)
-
-
-func _show_start_story() -> void:
-	if _start_story_overlay == null:
-		return
-	_start_story_index = 0
-	_set_start_story_frame(_start_story_index, false)
-	_start_story_overlay.visible = true
-	_start_story_overlay.move_to_front()
-	_set_game_story_paused(true)
-
-
-func _hide_start_story() -> void:
-	if _start_story_overlay == null:
-		return
-	_start_story_overlay.visible = false
-	if _start_story_fade_tween != null:
-		_start_story_fade_tween.kill()
-		_start_story_fade_tween = null
-	_set_game_story_paused(false)
-
-
-func _set_start_story_frame(frame_index: int, fade_in: bool) -> void:
-	var atlas_frame: AtlasTexture = AtlasTexture.new()
-	atlas_frame.atlas = START_STORY_TEXTURE
-	atlas_frame.region = START_STORY_REGIONS[frame_index]
-	_start_story_frame.texture = atlas_frame
-	if not fade_in:
-		_start_story_frame.modulate = Color.WHITE
-		return
-	_start_story_frame.modulate = Color(1.0, 1.0, 1.0, 0.0)
-	if _start_story_fade_tween != null:
-		_start_story_fade_tween.kill()
-		_start_story_fade_tween = null
-	_start_story_fade_tween = create_tween()
-	_start_story_fade_tween.tween_property(
-		_start_story_frame,
-		"modulate:a",
-		1.0,
-		0.35
-	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-
-
-func _set_game_story_paused(paused: bool) -> void:
-	var game_controller: MainGameController = _loaded_game_controller()
-	if game_controller != null:
-		game_controller.set_physics_process(not paused)
-	var game_character: MainCharacterController = null
-	if _game_instance != null and is_instance_valid(_game_instance):
-		game_character = _game_instance.get_node_or_null(
-			"BoardPhysics/Character"
-		) as MainCharacterController
-	if game_character != null:
-		game_character.set_physics_process(not paused)
-	var game_view: MainGameView = _game_instance as MainGameView
-	if game_view != null:
-		game_view.set_process(not paused)
-
-
 func _show_stage_fail() -> void:
 	if _stage_fail_overlay == null:
 		return
@@ -2064,8 +1949,6 @@ func _complete_stage(
 
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
-	if screen_type != Screen.GAME:
-		_hide_start_story()
 	if _music_manager != null:
 		if screen_type == Screen.GAME:
 			_music_manager.play_battle()
@@ -2433,7 +2316,6 @@ func _dispose_game_instance() -> void:
 	if _game_instance == null or not is_instance_valid(_game_instance):
 		_game_instance = null
 		return
-	_hide_start_story()
 	var game_controller: MainGameController = _loaded_game_controller()
 	if game_controller != null:
 		game_controller.clear_runtime_state()
@@ -2688,15 +2570,6 @@ func _build_character_screen() -> void:
 	_character_next_button.focus_mode = Control.FOCUS_NONE
 	_character_next_button.pressed.connect(_move_character_focus.bind(1))
 
-	_character_confirm_button = _create_button(
-		screen,
-		"선택 완료",
-		Rect2(472.0, 630.0, 238.0, 46.0),
-		CYAN,
-		16
-	)
-	_character_confirm_button.focus_mode = Control.FOCUS_NONE
-	_character_confirm_button.pressed.connect(_confirm_character_selection)
 	var back_button: Button = _create_button(
 		screen,
 		"뒤로",
@@ -2787,19 +2660,6 @@ func _refresh_character_selection() -> void:
 		not _selected_character_id.is_empty()
 		and MainCharacterData.has_character(_selected_character_id)
 	)
-	var has_selection: bool = (
-		can_browse
-		and settings != null
-		and settings.is_character_unlocked(_selected_character_id)
-	)
-	if can_browse:
-		var profile: Dictionary = MainCharacterData.profile_for(_selected_character_id)
-		_character_confirm_button.text = (
-			_text("%s 선택") % _text(str(profile["display_name"]))
-			if has_selection
-			else _character_unlock_status_text(profile, false)
-		)
-	_character_confirm_button.disabled = not has_selection
 	_character_prev_button.disabled = not can_browse
 	_character_next_button.disabled = not can_browse
 	var character_count: int = MainCharacterData.CHARACTER_ORDER.size()

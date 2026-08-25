@@ -72,8 +72,9 @@ const ENGLISH_TEXT: Dictionary = {
 	"진행 데이터를 삭제할까요?": "Delete progress data?", "스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.": "Stage unlocks, challenge records, stars, and passives will be reset.",
 	"삭제": "DELETE", "패시브를 초기화할까요?": "Reset passive upgrades?",
 	"투자한 별을 모두 돌려받습니다.": "All invested stars will be refunded.", "초기화": "RESET",
-	"메뉴로 나가겠습니까?": "Return to the main menu?", "뒤로": "BACK",
+	"메뉴로 나가겠습니까?": "Return to the main menu?", "뒤로": "BACK", "뒤로가기": "BACK",
 	"실패": "FAILED", "스테이지 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
+	"구역 선택": "FLOOR SELECT", "DATA 초기화": "RESET DATA",
 }
 const CHINESE_TEXT: Dictionary = {
 	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
@@ -99,7 +100,7 @@ const CHINESE_TEXT: Dictionary = {
 	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
 	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "뒤로": "返回",
 	"실패": "失败", "스테이지 제한시간이 끝났습니다.": "关卡限制时间已结束。", "재시도": "重试",
-	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言",
+	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言", "구역 선택": "选关",
 	"GAME START": "开始游戏", "OPTION": "选项", "EXIT": "退出", "STAGE SELECT": "关卡选择",
 	"KEY": "按键", "VOLUME": "音量", "KEY CUSTOM": "按键设置", "BGM": "背景音乐", "SFX": "音效",
 	"← 이전": "← 上一页", "다음 →": "下一页 →", "  보스": "  首领",
@@ -108,6 +109,49 @@ const CHINESE_TEXT: Dictionary = {
 	"현재 효과: %s%d%% · Lv. %d / %d": "当前效果：%s%d%% · 等级 %d / %d",
 	"최대 레벨": "最高等级", "다음 비용 ★ %d": "下一级费用 ★ %d",
 	"%d층 클리어!\n%s": "%d层通关！\n%s", "별 보상 +%d   (보유 %d)": "星星奖励 +%d   (持有 %d)",
+	# 캐릭터 선택 카드.
+	"일반인": "普通人", "복서": "拳击手", "방패병": "盾卫", "소방관": "消防员",
+	"청소부": "清洁工", "성녀": "圣女", "시계공": "钟表匠", "닌자": "忍者",
+	"공격속도": "攻击速度", "이동속도": "移动速度", "점프력": "跳跃力",
+	"스태미나": "体力", "특수공격": "特殊攻击",
+	"특수 · %s": "特殊 · %s",
+	"특수 · 전력 질주": "特殊 · 全力冲刺",
+	"특수 · 가드 브레이크": "特殊 · 破防",
+	"특수 · 전방 보호벽": "特殊 · 前方护盾",
+	"특수 · 중력 물길": "特殊 · 重力水流",
+	"특수 · 대청소": "特殊 · 大扫除",
+	"특수 · 성역의 가호": "特殊 · 圣域庇护",
+	"특수 · 정지 태엽": "特殊 · 静止发条",
+	"특수 · 표창": "特殊 · 手里剑",
+	"전력 질주": "全力冲刺", "가드 브레이크": "破防", "전방 보호벽": "前方护盾",
+	"중력 물길": "重力水流", "대청소": "大扫除", "성역의 가호": "圣域庇护",
+	"정지 태엽": "静止发条", "표창": "手里剑",
+	"2초 동안 좌우 이동속도가 60% 증가한다.": "2秒内左右移动速度提升60%。",
+	"2초간 좌우 이동속도가\n60% 증가한다.": "2秒内左右移动速度\n提升60%。",
+	"전방 블록을 가능한 거리만큼 최대 3칸 민다.": "将前方方块尽量推开，最多3格。",
+	"전방 블록을 최대 3칸\n밀어낸다.": "将前方方块\n最多推开3格。",
+	"시전 방향 앞에 세로 3칸 보호벽을 2초 동안 유지한다.": "在施放方向前方竖起3格护盾，持续2秒。",
+	"전방에 3칸 보호벽을\n2초간 세운다.": "在前方竖起3格护盾，\n持续2秒。",
+	"전방에 3셀 물길을 4초 만들고 자동 낙하마다 흐르는 방향으로 1칸 이동시킨다.": "在前方制造3格水流，持续4秒；每次自动下落将方块向流向推动1格。",
+	"전방에 흐르는 물길을\n4초간 만든다.": "在前方制造流动水流，\n持续4秒。",
+	"발밑과 좌우 한 칸의 노출된 고정 블록을 최대 3개 제거한다.": "清除脚下及左右1格内暴露的固定方块，最多3个。",
+	"발밑 주변 고정 블록을\n최대 3개 제거한다.": "清除脚下周围的固定方块，\n最多3个。",
+	"3초 동안 이동속도 +20%, 노란 오라가 유지되는 동안 다음 기믹·보스 공격 1회 무효. 압착은 막지 못한다.": "3秒内移动速度+20%，黄色光环持续期间免疫下一次机关或首领攻击1次。无法抵挡挤压。",
+	"3초간 이동속도 +20%,\n공격 1회를 무효화한다.": "3秒内移动速度+20%，\n免疫1次攻击。",
+	"활성 블록과 다음 가시·결박·씨앗 발동을 3초 동안 늦춘다.": "使活动方块以及下一次尖刺、束缚、种子触发延后3秒。",
+	"활성 블록과 다음 기믹을\n3초간 멈춘다.": "使活动方块和下一次机关\n停止3秒。",
+	"전방 6칸으로 표창을 던져 활성 블록 덩어리 전체를 정확히 1칸 민다. 고정 블록에는 막힌다.": "向前方6格投出手里剑，将整个活动方块准确地推动1格。会被固定方块挡住。",
+	"전방 표창으로 활성 블록을\n1칸 밀어낸다.": "用手里剑将活动方块\n推开1格。",
+	"해금 완료": "已解锁", "잠김 · 별 %d개": "未解锁 · %d 颗星",
+	"잠김 · 전 스테이지 무피해": "未解锁 · 全关卡无伤",
+	"목표: 별 15개": "目标：15 颗星",
+	"목표: 전 스테이지 무피해": "目标：全关卡无伤",
+	"아직 해금되지 않은 캐릭터입니다.": "该角色尚未解锁。",
+	"이전": "上一个", "현재": "当前", "다음": "下一个",
+	"탑 선택": "选择塔区",
+	"%d/%d층 해금": "%d/%d 层已解锁",
+	"%d구역\n%d-%d층": "第 %d 区\n%d-%d 层",
+	"%d층%s": "第 %d 层%s",
 }
 
 enum Screen {
@@ -174,6 +218,7 @@ var _tutorial_canvas: StartScreenTutorialCanvas
 var _tutorial_counter: Label
 var _tutorial_prev_button: Button
 var _tutorial_next_button: Button
+var _master_value_label: Label
 var _music_value_label: Label
 var _sfx_value_label: Label
 var _game_host: Control
@@ -939,9 +984,9 @@ func _refresh_floor_select() -> void:
 		_floor_group_buttons[button_index].text = "%s\n%s" % [
 			_floor_group_label(group_index),
 			_text(
-				"%d/%d층 해금" % [unlocked_count, _FLOORS_PER_GROUP],
-				"%d/%d floors open" % [unlocked_count, _FLOORS_PER_GROUP],
-			),
+				"%d/%d층 해금",
+				"%d/%d floors open"
+			) % [unlocked_count, _FLOORS_PER_GROUP],
 		]
 
 
@@ -949,9 +994,9 @@ func _floor_group_label(group_index: int) -> String:
 	var first_floor: int = group_index * _FLOORS_PER_GROUP + 1
 	var last_floor: int = (group_index + 1) * _FLOORS_PER_GROUP
 	return _text(
-		"%d구역\n%d-%d층" % [group_index + 1, first_floor, last_floor],
-		"AREA %d\nFLOORS %d-%d" % [group_index + 1, first_floor, last_floor]
-	)
+		"%d구역\n%d-%d층",
+		"AREA %d\nFLOORS %d-%d"
+	) % [group_index + 1, first_floor, last_floor]
 
 
 func _floor_number_for_card(card_index: int) -> int:
@@ -1164,7 +1209,7 @@ func _build_shop_screen() -> void:
 
 func _build_tutorial_screen() -> void:
 	var screen: Control = _create_screen("TutorialScreen", Screen.TUTORIAL)
-	_add_screen_title(screen, "게임 설명", "그림과 화살표를 따라 기능을 익혀보세요")
+	_add_screen_title(screen, "게임 설명", "")
 
 	_tutorial_canvas = TUTORIAL_CANVAS_SCRIPT.new()
 	_tutorial_canvas.name = "TutorialCanvas"
@@ -1209,7 +1254,7 @@ func _build_tutorial_screen() -> void:
 
 func _build_options_screen() -> void:
 	var screen: Control = _create_screen("OptionsScreen", Screen.OPTIONS)
-	_add_screen_title(screen, "OPTION", "키 설정과 사운드 크기를 조절합니다")
+	_add_screen_title(screen, "OPTION", "")
 	_options_first_button = _create_button(
 		screen, "KEY", Rect2(255.0, 150.0, 450.0, 54.0), CYAN, 18
 	)
@@ -1251,7 +1296,7 @@ func _build_options_screen() -> void:
 
 func _build_key_screen() -> void:
 	var screen: Control = _create_screen("KeyCustomScreen", Screen.KEY_CUSTOM)
-	_add_screen_title(screen, "KEY CUSTOM", "버튼을 누른 뒤 새 키를 입력하세요")
+	_add_screen_title(screen, "KEY CUSTOM", "")
 	_build_key_headers(screen)
 	_build_key_rows(screen)
 	_build_key_footer(screen)
@@ -1398,19 +1443,28 @@ func _build_key_footer(screen: Control) -> void:
 
 func _build_volume_screen() -> void:
 	var screen: Control = _create_screen("VolumeScreen", Screen.VOLUME)
-	_add_screen_title(screen, "VOLUME", "BGM과 효과음의 크기를\n각각 조절합니다.")
+	_add_screen_title(screen, "VOLUME", "")
 	var panel: Panel = _create_panel(
 		screen,
-		Rect2(150.0, 190.0, 660.0, 390.0),
+		Rect2(150.0, 190.0, 660.0, 450.0),
 		PANEL,
 		BORDER,
 		12
 	)
 
+	_master_value_label = _create_volume_row(
+		panel,
+		"SOUND",
+		69.0,
+		settings.master_percent,
+		TEXT,
+		"MasterSlider",
+		_on_master_changed
+	)
 	_music_value_label = _create_volume_row(
 		panel,
 		"BGM",
-		69.0,
+		139.0,
 		settings.music_percent,
 		CYAN,
 		"MusicSlider",
@@ -1419,25 +1473,17 @@ func _build_volume_screen() -> void:
 	_sfx_value_label = _create_volume_row(
 		panel,
 		"SFX",
-		149.0,
+		209.0,
 		settings.sfx_percent,
 		ORANGE,
 		"SfxSlider",
 		_on_sfx_changed
 	)
 
-	_create_label(
-		panel,
-		"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.",
-		Rect2(54.0, 238.0, 552.0, 64.0),
-		14,
-		MUTED,
-		HORIZONTAL_ALIGNMENT_CENTER
-	)
 	var back_button: Button = _create_button(
 		screen,
 		"OPTION으로",
-		Rect2(390.0, 640.0, 180.0, 48.0),
+		Rect2(390.0, 700.0, 180.0, 48.0),
 		PURPLE,
 		14
 	)
@@ -2015,7 +2061,7 @@ func _refresh_stage_select() -> void:
 		or _challenge_button == null
 	):
 		return
-	_stage_currency_label.text = _text("별 %d개" % settings.star_currency, "%d Stars" % settings.star_currency)
+	_stage_currency_label.text = _text("별 %d개", "%d Stars") % settings.star_currency
 	var challenge_unlocked: bool = settings.is_challenge_unlocked()
 	_challenge_button.text = (
 		"%s\n%s" % [
@@ -2029,10 +2075,10 @@ func _refresh_stage_select() -> void:
 		var stage_number: int = _floor_number_for_card(card_index)
 		var unlocked: bool = settings.is_stage_unlocked(stage_number)
 		var is_boss: bool = stage_number % _FLOORS_PER_GROUP == 0
-		_stage_title_labels[card_index].text = "%d층%s" % [
-			stage_number,
-			_text("  보스", "  BOSS") if is_boss else "",
-		]
+		_stage_title_labels[card_index].text = _text(
+			"%d층%s" % [stage_number, "  보스" if is_boss else ""],
+			"%dF%s" % [stage_number, "  BOSS" if is_boss else ""]
+		)
 		_stage_panels[card_index].modulate = Color.WHITE if unlocked else Color(0.62, 0.66, 0.72, 0.72)
 		_stage_labels[card_index].text = (
 			"%s\n%s" % [
@@ -2050,7 +2096,7 @@ func _refresh_stage_select() -> void:
 func _refresh_shop() -> void:
 	if settings == null or _shop_cards.is_empty():
 		return
-	_shop_currency_label.text = _text("별 %d개" % settings.star_currency, "%d Stars" % settings.star_currency)
+	_shop_currency_label.text = _text("별 %d개", "%d Stars") % settings.star_currency
 	for index: int in range(StartScreenSettings.PASSIVE_IDS.size()):
 		var passive_id: String = StartScreenSettings.PASSIVE_IDS[index]
 		var level: int = settings.get_passive_level(passive_id)
@@ -2223,6 +2269,11 @@ func _reset_keys() -> void:
 	settings.reset_bindings_to_defaults()
 	_key_status.text = _text("모든 키를 기본값으로 복원했습니다.", "All keys were restored to defaults.")
 	_key_status.modulate = CYAN
+
+
+func _on_master_changed(value: float) -> void:
+	settings.set_master_percent(value)
+	_master_value_label.text = "%d%%" % roundi(value)
 
 
 func _on_music_changed(value: float) -> void:
@@ -2406,10 +2457,28 @@ func _text(korean: String, english: String = "") -> String:
 	if settings == null or settings.language == StartScreenSettings.KOREAN:
 		return korean
 	if settings.language == StartScreenSettings.CHINESE:
-		return String(CHINESE_TEXT.get(korean, korean))
+		return String(CHINESE_TEXT.get(korean, _chinese_fallback(korean)))
 	if not english.is_empty():
 		return english
 	return String(ENGLISH_TEXT.get(korean, LOCALIZATION.translated(korean)))
+
+
+## CHINESE_TEXT에 정확히 일치하는 키가 없을 때 완성 문자열("1층", "5층   보스", "별 3개")을
+## 패턴 키("%d층%s", "별 %d개")로 역매칭해 중국어 번역을 찾는다. 없으면 tr() 폴백.
+func _chinese_fallback(korean: String) -> String:
+	if korean.contains("층") and not korean.begins_with("층"):
+		var floor_part: String = korean.substr(0, korean.find("층"))
+		if floor_part.is_valid_int():
+			var suffix: String = korean.substr(korean.find("층") + 1)
+			var translated_suffix: String = String(CHINESE_TEXT.get(suffix, suffix))
+			var floor_pattern: String = CHINESE_TEXT.get("%d층%s", "%d층%s")
+			return floor_pattern % [floor_part.to_int(), translated_suffix]
+	if korean.begins_with("별 ") and korean.ends_with("개"):
+		var star_part: String = korean.trim_prefix("별 ").trim_suffix("개")
+		if star_part.is_valid_int():
+			var star_pattern: String = CHINESE_TEXT.get("별 %d개", "별 %d개")
+			return star_pattern % star_part.to_int()
+	return LOCALIZATION.translated(korean)
 
 
 func _set_language(language: String) -> void:
@@ -2718,12 +2787,8 @@ func _character_unlock_status_text(profile: Dictionary, unlocked: bool) -> Strin
 	if unlocked:
 		return _text("해금 완료", "UNLOCKED")
 	if bool(profile.get("unlock_all_no_damage", false)):
-		if settings != null and settings.language == StartScreenSettings.CHINESE:
-			return "未解锁 · 全关卡无伤"
 		return _text("잠김 · 전 스테이지 무피해", "LOCKED · NO-DAMAGE ALL STAGES")
 	var required_stars: int = int(profile.get("unlock_stars", 0))
-	if settings != null and settings.language == StartScreenSettings.CHINESE:
-		return "未解锁 · %d 颗星" % required_stars
 	return _text("잠김 · 별 %d개", "LOCKED · %d STARS") % required_stars
 
 

@@ -60,6 +60,7 @@ const KOREAN: String = "kor"
 const CHINESE: String = "zh_cn"
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
+var master_percent: float = 100.0
 var music_percent: float = 100.0
 var sfx_percent: float = 100.0
 var language: String = ENGLISH
@@ -228,10 +229,20 @@ func apply_bindings() -> void:
 	INPUT_ACTIONS.apply_bindings(_bindings)
 
 
+func set_master_percent(value: float) -> void:
+	var previous_state: Dictionary = _snapshot_state()
+	master_percent = clampf(value, 0.0, 100.0)
+	_apply_all_bus_volumes()
+	if save_settings() != OK:
+		_restore_state(previous_state)
+		return
+	audio_changed.emit()
+
+
 func set_music_percent(value: float) -> void:
 	var previous_state: Dictionary = _snapshot_state()
 	music_percent = clampf(value, 0.0, 100.0)
-	_apply_bus_volume(MUSIC_BUS, music_percent)
+	_apply_all_bus_volumes()
 	if save_settings() != OK:
 		_restore_state(previous_state)
 		return
@@ -241,7 +252,7 @@ func set_music_percent(value: float) -> void:
 func set_sfx_percent(value: float) -> void:
 	var previous_state: Dictionary = _snapshot_state()
 	sfx_percent = clampf(value, 0.0, 100.0)
-	_apply_bus_volume(SFX_BUS, sfx_percent)
+	_apply_all_bus_volumes()
 	if save_settings() != OK:
 		_restore_state(previous_state)
 		return
@@ -474,8 +485,7 @@ func ensure_audio_buses() -> void:
 
 func apply_audio() -> void:
 	ensure_audio_buses()
-	_apply_bus_volume(MUSIC_BUS, music_percent)
-	_apply_bus_volume(SFX_BUS, sfx_percent)
+	_apply_all_bus_volumes()
 
 
 func load_settings() -> void:
@@ -507,12 +517,16 @@ func load_settings() -> void:
 		needs_save = true
 	if config.get_value("meta", "version", 0) != SETTINGS_SCHEMA_VERSION:
 		needs_save = true
+	# 언어를 설정 파일에서 읽은 뒤 TranslationServer locale을 다시 맞춘다.
+	# (_reset_settings_to_defaults() 시점에는 기본값 ENGLISH가 설치되므로)
+	LOCALIZATION.install(language)
 	if needs_save:
 		save_settings()
 
 
 func _reset_settings_to_defaults() -> void:
 	_load_default_bindings()
+	master_percent = 100.0
 	music_percent = 100.0
 	sfx_percent = 100.0
 	language = ENGLISH
@@ -601,6 +615,15 @@ func _migrate_rotation_kick_binding() -> bool:
 
 func _load_audio_from_config(config: ConfigFile) -> bool:
 	var changed: bool = false
+	var master_value: Variant = config.get_value("audio", "master_percent", 100.0)
+	if not config.has_section_key("audio", "master_percent"):
+		changed = true
+	if _is_finite_number(master_value):
+		master_percent = clampf(float(master_value), 0.0, 100.0)
+		changed = changed or not is_equal_approx(float(master_value), master_percent)
+	else:
+		master_percent = 100.0
+		changed = true
 	var music_value: Variant = config.get_value("audio", "music_percent", 100.0)
 	if not config.has_section_key("audio", "music_percent"):
 		changed = true
@@ -744,6 +767,7 @@ func save_settings() -> Error:
 	for definition: Dictionary in ACTION_DEFINITIONS:
 		var action_name: StringName = definition["action"]
 		config.set_value("input", String(action_name), get_action_keys(action_name))
+	config.set_value("audio", "master_percent", master_percent)
 	config.set_value("audio", "music_percent", music_percent)
 	config.set_value("audio", "sfx_percent", sfx_percent)
 	config.set_value("options", "language", language)
@@ -770,6 +794,7 @@ func save_settings() -> Error:
 func _snapshot_state() -> Dictionary:
 	return {
 		"bindings": _bindings.duplicate(true),
+		"master_percent": master_percent,
 		"music_percent": music_percent,
 		"sfx_percent": sfx_percent,
 		"language": language,
@@ -783,6 +808,7 @@ func _snapshot_state() -> Dictionary:
 
 func _restore_state(snapshot: Dictionary) -> void:
 	_bindings = (snapshot["bindings"] as Dictionary).duplicate(true)
+	master_percent = float(snapshot["master_percent"])
 	music_percent = float(snapshot["music_percent"])
 	sfx_percent = float(snapshot["sfx_percent"])
 	language = String(snapshot["language"])
@@ -901,6 +927,12 @@ func _apply_bus_volume(bus_name: StringName, percent: float) -> void:
 		bus_index,
 		-80.0 if muted else linear_to_db(effective_percent / 100.0) - 10.0
 	)
+
+
+func _apply_all_bus_volumes() -> void:
+	# 마스터 볼륨은 BGM/SFX 각각에 곱해 적용한다.
+	_apply_bus_volume(MUSIC_BUS, music_percent * master_percent / 100.0)
+	_apply_bus_volume(SFX_BUS, sfx_percent * master_percent / 100.0)
 
 
 func _failure(message: String) -> Dictionary:

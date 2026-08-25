@@ -327,8 +327,9 @@ func _run() -> void:
 	_expect(
 		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._selected_floor_group == 0
-			and screen._stage_title_labels[0].text == "1층"
-			and screen._stage_title_labels[4].text == "5층" + screen._text("  보스", "  BOSS"),
+			and screen._stage_title_labels[0].text == screen._text("1층", "1F")
+			and screen._stage_title_labels[4].text
+				== screen._text("5층", "5F") + screen._text("  보스", "  BOSS"),
 		"1구역(1-5층) 선택이 해당 층 선택 화면을 연다."
 	)
 	var locked_stage_label: Label = screen._stage_labels[1]
@@ -903,8 +904,9 @@ func _run() -> void:
 	_expect(
 		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._selected_floor_group == 1
-			and screen._stage_title_labels[0].text == "6층"
-			and screen._stage_title_labels[4].text == "10층" + screen._text("  보스", "  BOSS")
+			and screen._stage_title_labels[0].text == screen._text("6층", "6F")
+			and screen._stage_title_labels[4].text
+				== screen._text("10층", "10F") + screen._text("  보스", "  BOSS")
 			and screen.settings.is_stage_unlocked(6),
 		"2구역을 선택하면 6~10층 카드가 표시되고 6층은 해금 상태다."
 	)
@@ -916,8 +918,9 @@ func _run() -> void:
 	_expect(
 		screen.current_screen == BlockFighterStartScreen.Screen.STAGE_SELECT
 			and screen._selected_floor_group == 0
-			and screen._stage_title_labels[0].text == "1층"
-			and screen._stage_title_labels[4].text == "5층" + screen._text("  보스", "  BOSS"),
+			and screen._stage_title_labels[0].text == screen._text("1층", "1F")
+			and screen._stage_title_labels[4].text
+				== screen._text("5층", "5F") + screen._text("  보스", "  BOSS"),
 		"1구역을 다시 선택하면 1~5층 카드로 돌아온다."
 	)
 

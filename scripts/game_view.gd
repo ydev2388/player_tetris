@@ -810,7 +810,11 @@ func _refresh() -> void:
 
 
 func _text(korean: String, english: String) -> String:
-	return korean if _language == "kor" else english
+	if _language == "kor":
+		return korean
+	if _language == "zh_cn":
+		return MainLocalization.translated(korean)
+	return english
 
 
 func _thorn_texture_for_stage(stage_number: int) -> Texture2D:

@@ -7,7 +7,7 @@ signal progress_changed
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
-const SETTINGS_SCHEMA_VERSION: int = 2
+const SETTINGS_SCHEMA_VERSION: int = 3
 const MUSIC_BUS: StringName = &"BGM"
 const SFX_BUS: StringName = &"SFX"
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
@@ -68,6 +68,7 @@ var stage_no_damage_clears: Array[bool] = [false, false, false, false, false]
 var star_currency: int = 0
 var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
 var challenge_best_lines: int = 0
+var debug_all_characters_unlocked: bool = false
 
 var _bindings: Dictionary = {}
 
@@ -303,10 +304,26 @@ func has_all_stage_no_damage_clears() -> bool:
 func is_character_unlocked(character_id: String) -> bool:
 	if not CHARACTER_DATA.has_character(character_id):
 		return false
+	if debug_all_characters_unlocked:
+		return true
 	var profile: Dictionary = CHARACTER_DATA.profile_for(character_id)
 	if bool(profile.get("unlock_all_no_damage", false)):
 		return has_all_stage_no_damage_clears()
 	return get_total_best_stars() >= int(profile.get("unlock_stars", 0))
+
+
+## 숫자 0 버그키에서 호출한다. 스테이지 진행과 재화는 바꾸지 않고 캐릭터 선택 제한만
+## 해제하며, 재실행 뒤에도 유지되도록 즉시 저장한다.
+func unlock_all_characters_for_debug() -> Error:
+	if debug_all_characters_unlocked:
+		return OK
+	debug_all_characters_unlocked = true
+	var save_error: Error = save_settings()
+	if save_error != OK:
+		debug_all_characters_unlocked = false
+		return save_error
+	progress_changed.emit()
+	return OK
 
 
 func get_passive_level(passive_id: String) -> int:
@@ -450,11 +467,13 @@ func reset_stage_progress() -> Error:
 	var previous_currency: int = star_currency
 	var previous_passive_levels: Array[int] = passive_levels.duplicate()
 	var previous_challenge_best: int = challenge_best_lines
+	var previous_debug_unlock: bool = debug_all_characters_unlocked
 	stage_best_stars.fill(0)
 	stage_no_damage_clears.fill(false)
 	star_currency = 0
 	passive_levels.fill(0)
 	challenge_best_lines = 0
+	debug_all_characters_unlocked = false
 	var save_error: Error = save_settings()
 	if save_error != OK:
 		stage_best_stars = previous_stars
@@ -462,6 +481,7 @@ func reset_stage_progress() -> Error:
 		star_currency = previous_currency
 		passive_levels = previous_passive_levels
 		challenge_best_lines = previous_challenge_best
+		debug_all_characters_unlocked = previous_debug_unlock
 		return save_error
 	progress_changed.emit()
 	return OK
@@ -521,6 +541,7 @@ func _reset_settings_to_defaults() -> void:
 	star_currency = 0
 	passive_levels = [0, 0, 0, 0, 0, 0]
 	challenge_best_lines = 0
+	debug_all_characters_unlocked = false
 
 
 func _load_bindings_from_config(config: ConfigFile) -> bool:
@@ -632,6 +653,18 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 
 func _load_progress_from_config(config: ConfigFile) -> bool:
 	var changed: bool = false
+	var stored_debug_unlock: Variant = config.get_value(
+		"progress",
+		"debug_all_characters_unlocked",
+		false
+	)
+	if not config.has_section_key("progress", "debug_all_characters_unlocked"):
+		changed = true
+	if stored_debug_unlock is bool:
+		debug_all_characters_unlocked = bool(stored_debug_unlock)
+	else:
+		debug_all_characters_unlocked = false
+		changed = true
 	var stored_challenge_best: Variant = config.get_value("progress", "challenge_best_lines", 0)
 	if not config.has_section_key("progress", "challenge_best_lines"):
 		changed = true
@@ -750,6 +783,11 @@ func save_settings() -> Error:
 	config.set_value("progress", "star_currency", star_currency)
 	config.set_value("progress", "passive_levels", passive_levels)
 	config.set_value("progress", "challenge_best_lines", challenge_best_lines)
+	config.set_value(
+		"progress",
+		"debug_all_characters_unlocked",
+		debug_all_characters_unlocked
+	)
 	for stage_number: int in range(1, STAGE_COUNT + 1):
 		config.set_value(
 			"progress",
@@ -778,6 +816,7 @@ func _snapshot_state() -> Dictionary:
 		"star_currency": star_currency,
 		"passive_levels": passive_levels.duplicate(),
 		"challenge_best_lines": challenge_best_lines,
+		"debug_all_characters_unlocked": debug_all_characters_unlocked,
 	}
 
 
@@ -796,6 +835,7 @@ func _restore_state(snapshot: Dictionary) -> void:
 		stage_no_damage_clears.append(bool(value))
 	star_currency = int(snapshot["star_currency"])
 	challenge_best_lines = int(snapshot["challenge_best_lines"])
+	debug_all_characters_unlocked = bool(snapshot["debug_all_characters_unlocked"])
 	passive_levels.clear()
 	var saved_passives: Array = snapshot["passive_levels"] as Array
 	for value: Variant in saved_passives:

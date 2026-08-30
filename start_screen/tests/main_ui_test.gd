@@ -648,6 +648,35 @@ func _run() -> void:
 			InputMap.action_get_events(&"character_self_respawn").size() == 1,
 			"자력 재스폰은 기본 Q 하나를 사용한다."
 		)
+		var unlock_event: InputEventKey = InputEventKey.new()
+		unlock_event.pressed = true
+		unlock_event.physical_keycode = KEY_0
+		screen._input(unlock_event)
+		await process_frame
+		_expect(
+			screen._message_overlay.visible
+				and controller.state == MainGameController.GameState.PAUSED
+				and not controller.is_physics_processing(),
+			"게임 중 0 해금 안내는 뒤의 게임 진행과 입력을 함께 멈춘다."
+		)
+		Input.action_press(&"character_jump")
+		screen._hide_message()
+		_expect(
+			controller.state == MainGameController.GameState.PLAYING
+				and controller.is_physics_processing()
+				and character._ignore_initial_jump_until_released,
+			"해금 안내를 닫은 Z 입력은 게임 재개 직후 점프로 전달되지 않는다."
+		)
+		Input.action_release(&"character_jump")
+		var keypad_unlock_event: InputEventKey = InputEventKey.new()
+		keypad_unlock_event.pressed = true
+		keypad_unlock_event.physical_keycode = KEY_KP_0
+		_expect(
+			screen._handle_debug_unlock_all_characters_input(keypad_unlock_event)
+				and screen._message_overlay.visible,
+			"키패드 0도 전체 캐릭터 해금 입력으로 처리한다."
+		)
+		screen._hide_message()
 		var escape_event: InputEventKey = InputEventKey.new()
 		escape_event.pressed = true
 		escape_event.physical_keycode = KEY_ESCAPE

@@ -438,7 +438,9 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		_menu_confirm_z_armed = false
-	if _handle_game_exit_prompt_input(key_event):
+	if _handle_debug_unlock_all_characters_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -537,6 +539,42 @@ func _handle_debug_completion_input(key_event: InputEventKey) -> bool:
 	if not _is_enter_key(key_event):
 		return false
 	_complete_stage_for_debug()
+	return true
+
+
+## 숫자열 0 또는 키패드 0을 누르면 배포 빌드를 포함해 모든 캐릭터 선택 제한을 해제한다.
+## 키 설정을 변경하는 중에는 0을 정상적인 바인딩 입력으로 사용할 수 있도록 가로채지 않는다.
+func _handle_debug_unlock_all_characters_input(key_event: InputEventKey) -> bool:
+	if _capture_overlay != null and _capture_overlay.visible:
+		return false
+	if (
+		(_game_exit_overlay != null and _game_exit_overlay.visible)
+		or (_message_overlay != null and _message_overlay.visible)
+		or (_progress_reset_overlay != null and _progress_reset_overlay.visible)
+		or (_passive_reset_overlay != null and _passive_reset_overlay.visible)
+	):
+		return false
+	var key_code: int = int(key_event.physical_keycode)
+	if key_code == KEY_NONE:
+		key_code = int(key_event.keycode)
+	if key_code != KEY_0 and key_code != KEY_KP_0:
+		return false
+	var unlock_error: Error = settings.unlock_all_characters_for_debug()
+	if unlock_error != OK:
+		_show_message(
+			_text(
+				"캐릭터 해금 상태를 저장하지 못했습니다.",
+				"Could not save the character unlock state."
+			)
+		)
+		return true
+	_refresh_character_selection()
+	_show_message(
+		_text(
+			"버그키: 모든 캐릭터가 해금되었습니다.",
+			"CHEAT: All characters unlocked."
+		)
+	)
 	return true
 
 

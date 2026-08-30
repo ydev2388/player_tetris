@@ -9,6 +9,7 @@ const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
 const TUTORIAL_PAGE_COUNT: int = 5
 const PORTRAIT_SOURCE: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0)
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
+const UI_FONT: FontFile = preload("res://assets/fonts/NotoSansKR-VF.ttf")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
 const ORANGE_BLOCK_SOURCE: Rect2 = Rect2(1745.0, 255.0, 210.0, 215.0)
 const TUTORIAL_CANVAS_SCRIPT: Script = preload(
@@ -132,7 +133,7 @@ var current_screen: Screen = Screen.MAIN
 var tutorial_page: int = 0
 var selected_stage_number: int = 1
 
-var _font: SystemFont
+var _font: Font
 var _ui: RefCounted
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
@@ -218,8 +219,7 @@ var _passive_reset_no_button: Button
 func _ready() -> void:
 	set_process_input(true)
 	set_process_unhandled_key_input(true)
-	_font = SystemFont.new()
-	_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
+	_font = UI_FONT
 	_ui = UI_SCRIPT.new(_font, PANEL_DARK, BORDER, TEXT)
 
 	settings = StartScreenSettings.new(settings_file_path)
@@ -2104,7 +2104,7 @@ func _refresh_stage_select() -> void:
 			_text("최고 기록 %d줄") % settings.challenge_best_lines,
 		]
 		if challenge_unlocked
-		else "🔒 %s\n%s" % [_text("도전 모드"), _text("10층 클리어 후 해금")]
+		else "■ %s\n%s" % [_text("도전 모드"), _text("10층 클리어 후 해금")]
 	)
 	for card_index: int in range(_FLOORS_PER_GROUP):
 		var stage_number: int = _floor_number_for_card(card_index)
@@ -2121,7 +2121,7 @@ func _refresh_stage_select() -> void:
 				_text("입장 가능", "AVAILABLE"),
 			]
 			if unlocked
-			else "🔒\n%s" % _text("잠김", "LOCKED")
+			else "■\n%s" % _text("잠김", "LOCKED")
 		)
 		_stage_buttons[card_index].text = (
 			_text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")

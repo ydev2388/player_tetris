@@ -27,6 +27,16 @@ func _run() -> void:
 	root.add_child(screen)
 	await process_frame
 	await process_frame
+	var required_web_glyphs: String = "한中★←→×！■"
+	var missing_web_glyphs: Array[String] = []
+	for glyph: String in required_web_glyphs:
+		if not screen._font.has_char(glyph.unicode_at(0)):
+			missing_web_glyphs.append(glyph)
+	_expect(
+		missing_web_glyphs.is_empty(),
+		"내장 Web 폰트가 한글·중국어·메뉴 기호를 모두 포함한다. 누락: %s"
+		% ", ".join(missing_web_glyphs)
+	)
 	var web_game_layout: Dictionary = BlockFighterStartScreen.calculate_web_game_layout(
 		Vector2(960.0, 800.0),
 		Vector2(560.0, 1140.0)
@@ -371,7 +381,7 @@ func _run() -> void:
 			and challenge_button != null
 			and not challenge_button.disabled
 			and challenge_button.position.y < 140.0
-			and locked_stage_label.text.contains("🔒")
+			and locked_stage_label.text.contains("■")
 			and screen._stage_panels[1].modulate.a < 1.0
 			and not screen._stage_buttons[1].disabled
 			and screen._stage_buttons[1].get_theme_color("font_color").a == 1.0

@@ -15,6 +15,7 @@ extends Control
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
 const DISPLAY_SCALE: float = MainLayout.DISPLAY_SCALE
+const UI_FONT: FontFile = preload("res://assets/fonts/NotoSansKR-VF.ttf")
 const CELL_SIZE: float = MainLayout.CELL_SIZE
 const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
 const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
@@ -147,18 +148,17 @@ var _boss_falling_frame: int = 0
 var _boss_falling_frame_timer: float = 0.0
 var _boss_fallen_frame: int = 0
 var _boss_fallen_frame_timer: float = 0.0
-var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
+var _system_font: Font # 위 Label과 draw_string이 공유할 Web 내장 다국어 폰트.
 var _language: String = "english"
 
 
 ## 상황: main.tscn의 루트 View가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
-## 순서: SystemFont 생성/후보 지정 → `_build_interface()` → 세 signal 연결 → `_refresh()`.
+## 순서: 프로젝트 내장 폰트 지정 → `_build_interface()` → 세 signal 연결 → `_refresh()`.
 ## 결과: retained Label UI가 만들어지고 이후 상태 변경을 자동 반영한다.
 func _ready() -> void:
 	_apply_game_viewport_size()
 	_language = String(get_meta("language", "english"))
-	_system_font = SystemFont.new()
-	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
+	_system_font = UI_FONT
 	_build_interface()
 	_create_binding_overlay()
 	_create_boss_display()

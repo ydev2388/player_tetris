@@ -198,6 +198,7 @@
 - `develop`의 `build_web.sh`를 유지한다.
 - Web 실행 시에만 `9-1차`의 SubViewport 배치를 사용하고 데스크톱 물리 좌표계는 바꾸지 않는다.
 - 배포 제외 목록에 `start_screen/tests/**`를 포함한다.
+- 시스템 글꼴 대신 OFL 라이선스의 Noto Sans KR을 프로젝트에 포함해 Web에서도 한글·중국어·기호를 동일하게 표시한다.
 
 ### 선택
 
@@ -214,9 +215,9 @@
 | 검증 | 결과 | 로그 또는 비고 |
 |---|---|---|
 | Godot import 및 스크립트 파싱 | 통과 | `build/choice9_parse.log` |
-| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/choice9_main_game_test.log` |
-| 시작 화면 통합 테스트 | 통과 | 115개 통과, `build/choice9_main_ui_test.log` |
+| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/font_fix_main_game_test.log` |
+| 시작 화면 통합 테스트 | 통과 | 116개 통과, 다국어 Web 글리프 검사 포함, `build/font_fix_final_main_ui_test.log` |
 | 캐릭터별 런타임 테스트 | 통과 | 복서·요리사·청소부·소방관·닌자 및 공통 매달림·코너 오르기·낙하 테스트 통과, `build/choice9_*_runtime_integration_test.log` |
 | 선택 기능별 회귀 테스트 | 통과 | 이동 블록 추적·고정 블록 인계·줄 삭제 보정·외벽 이탈 및 착지 취소, 0 키 해금·저장·초기화, 중국어 6~10층·도전 모드·HUD와 영어 fallback, Web 고정 뷰·중앙 배치·게임 뷰 소유권 검증 통과 |
-| Web release export | 통과 | 단일 스레드 release export 성공, `build/choice9_web_export.log`; ZIP 루트 `index.html`, 9개 파일, 압축 36,136,661바이트, 테스트·문서·도구 경로 0개 |
+| Web release export | 통과 | 단일 스레드 release export와 내장 Noto 폰트 포함 확인, `build/font_fix_final_web_export.log`; ZIP 루트 `index.html`, 9개 파일, 압축 42,867,596바이트, 테스트·문서·도구 경로 0개 |
 | 최종 Git 상태 | 통과 | `feature/ver1.0.2`에서 9번 기능을 독립 커밋하고 작업 트리 청결 상태를 확인한다. |

@@ -30,7 +30,7 @@
 | 6 | 벽·코너 오르기와 입력 안정화 | 수동 통합 | 수동 통합 |
 | 7 | 캐릭터 디버그 해금 | 9-1차 채택 | 릴리스 제외 |
 | 8 | 중국어 지원 | 수동 통합 | 9-1차 기반 수동 통합 |
-| 9 | Web 화면 및 내보내기 | 미결정 | 수동 통합 |
+| 9 | Web 화면 및 내보내기 | 수동 통합 | 수동 통합 |
 
 ## 1. 6~10층 및 구역 선택
 
@@ -201,11 +201,11 @@
 
 ### 선택
 
-- [ ] 수동 통합: develop 빌드와 9-1차 Web 배치를 함께 사용한다. **권장**
+- [x] 수동 통합: develop 빌드와 9-1차 Web 배치를 함께 사용한다. **선택됨**
 - [ ] `develop`: 현재 Web 호스트와 제외 규칙을 유지한다.
 - [ ] `9-1차`: Web 배치만 유지하고 develop 빌드 흐름은 사용하지 않는다.
 
-선택 이유: 미입력
+선택 이유: 사용자가 itch.io에서 오류 가능성이 낮은 통합안을 선택했다. `develop`의 Web 빌드 흐름을 유지하면서 Web에서만 560×1140 고정 게임 뷰를 960×800 캔버스 중앙에 비율 보존 배치한다. 단일 스레드 Web 내보내기와 PWA 비활성화를 유지하고, 테스트·문서·도구는 배포 파일에서 제외한다.
 
 ## 검증 기록
 
@@ -213,10 +213,10 @@
 
 | 검증 | 결과 | 로그 또는 비고 |
 |---|---|---|
-| Godot import 및 스크립트 파싱 | 통과 | `build/choice8_parse.log` |
-| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/choice8_main_game_test.log` |
-| 시작 화면 통합 테스트 | 통과 | 112개 통과, `build/choice8_main_ui_test.log` |
-| 캐릭터별 런타임 테스트 | 통과 | 복서·요리사·청소부·소방관·닌자 및 공통 매달림·낙하 테스트 통과, `build/choice6_*_runtime_integration_test.log` |
-| 선택 기능별 회귀 테스트 | 부분 통과 | 이동 블록 추적·고정 블록 인계·줄 삭제 보정·외벽 이탈 및 착지 취소 통과, `build/choice6_corner_test.log`; 0 키 해금·저장·초기화 통과, `build/choice7_unlock_persistence.log`; 중국어 6~10층·도전 모드·HUD 및 영어 fallback 통과, `build/choice8_main_ui_test.log`; 9번 선택 뒤 전체 재검증 예정 |
-| Web release export | 대기 | |
-| 최종 Git 상태 | 대기 | |
+| Godot import 및 스크립트 파싱 | 통과 | `build/choice9_parse.log` |
+| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/choice9_main_game_test.log` |
+| 시작 화면 통합 테스트 | 통과 | 115개 통과, `build/choice9_main_ui_test.log` |
+| 캐릭터별 런타임 테스트 | 통과 | 복서·요리사·청소부·소방관·닌자 및 공통 매달림·코너 오르기·낙하 테스트 통과, `build/choice9_*_runtime_integration_test.log` |
+| 선택 기능별 회귀 테스트 | 통과 | 이동 블록 추적·고정 블록 인계·줄 삭제 보정·외벽 이탈 및 착지 취소, 0 키 해금·저장·초기화, 중국어 6~10층·도전 모드·HUD와 영어 fallback, Web 고정 뷰·중앙 배치·게임 뷰 소유권 검증 통과 |
+| Web release export | 통과 | 단일 스레드 release export 성공, `build/choice9_web_export.log`; ZIP 루트 `index.html`, 9개 파일, 압축 36,136,661바이트, 테스트·문서·도구 경로 0개 |
+| 최종 Git 상태 | 통과 | `feature/ver1.0.2`에서 9번 기능을 독립 커밋하고 작업 트리 청결 상태를 확인한다. |

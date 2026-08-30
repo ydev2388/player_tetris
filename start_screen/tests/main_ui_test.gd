@@ -27,6 +27,26 @@ func _run() -> void:
 	root.add_child(screen)
 	await process_frame
 	await process_frame
+	var web_game_layout: Dictionary = BlockFighterStartScreen.calculate_web_game_layout(
+		Vector2(960.0, 800.0),
+		Vector2(560.0, 1140.0)
+	)
+	var expected_web_scale: float = 800.0 / 1140.0
+	var expected_web_x: float = (960.0 - 560.0 * expected_web_scale) * 0.5
+	_expect(
+		is_equal_approx(float(web_game_layout["scale"]), expected_web_scale)
+			and is_equal_approx((web_game_layout["position"] as Vector2).x, expected_web_x)
+			and is_equal_approx((web_game_layout["position"] as Vector2).y, 0.0),
+		"웹 게임 화면은 560×1140 전체를 960×800 안에 비율 유지로 중앙 정렬한다."
+	)
+	_expect(
+		screen._game_viewport != null
+			and screen._game_viewport.size == Vector2i(560, 1140)
+			and screen._game_viewport_container != null
+			and screen._game_viewport_container.stretch
+			and screen._game_host.size.is_equal_approx(Vector2(560.0, 1140.0)),
+		"게임 물리는 고정 560×1140 SubViewport에서 실행되고 표시 surface만 맞춤 확대한다."
+	)
 	var reserved_escape_result: Dictionary = screen.settings.set_binding(
 		&"pause_game",
 		0,
@@ -648,6 +668,10 @@ func _run() -> void:
 	await physics_frame
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
 	_expect(character.character_id == "boxer", "스테이지 게임이 선택한 복서로 시작한다.")
+	_expect(
+		screen._game_instance.get_parent() == screen._game_viewport,
+		"로드된 게임의 물리 노드는 배율이 적용되지 않는 고정 SubViewport의 직접 자식이다."
+	)
 	_expect(
 		character.lives == MainCharacterController.MAX_LIVES + 1,
 		"구매한 체력 패시브가 게임 시작 목숨에 적용된다."

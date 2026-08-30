@@ -14,7 +14,6 @@ extends Control
 ## `@onready var x = $Path`는 노드가 씬 트리에 준비된 뒤 child pointer를 캐시한다.
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
-const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const DISPLAY_SCALE: float = MainLayout.DISPLAY_SCALE
 const CELL_SIZE: float = MainLayout.CELL_SIZE
 const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
@@ -233,8 +232,11 @@ func _build_interface() -> void:
 
 
 ## 상황: 시작 화면 안에서 게임 장면이 열린 순간 게임 전용 논리·창 크기를 적용한다.
-## 결과: 메뉴의 960×800 배치는 유지되고 게임 화면만 1000×1080으로 확장된다.
+## 결과: 데스크톱은 세로 게임 창으로 전환하고, Web은 고정 HTML canvas 안의 GameHost가
+##       세로 게임 화면을 축소·중앙 정렬하므로 root viewport 크기를 바꾸지 않는다.
 func _apply_game_viewport_size() -> void:
+	if OS.get_name() == "Web" or OS.has_feature("web"):
+		return
 	var window: Window = get_window()
 	window.content_scale_size = GAME_VIEWPORT_SIZE
 	if not DisplayServer.get_name().contains("headless"):
@@ -811,7 +813,7 @@ func _refresh() -> void:
 
 
 func _text(korean: String, english: String) -> String:
-	return LOCALIZATION.translated_for_language(korean, english, _language)
+	return MainLocalization.translated_for_language(korean, english, _language)
 
 
 func _thorn_texture_for_stage(stage_number: int) -> Texture2D:

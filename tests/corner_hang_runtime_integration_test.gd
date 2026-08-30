@@ -462,8 +462,11 @@ func _run() -> void:
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
 	game.free()
-	await process_frame
-	await physics_frame
+	# 빠른 캐릭터 교체로 예약된 wall-climb playback이 Dummy audio driver에서
+	# 해제될 시간을 주어 테스트 종료 시 오디오 리소스가 남지 않게 한다.
+	for cleanup_frame: int in range(6):
+		await process_frame
+		await physics_frame
 	if not failures.is_empty():
 		for failure: String in failures:
 			push_error(failure)

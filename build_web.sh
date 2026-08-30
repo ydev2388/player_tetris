@@ -3,9 +3,9 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 GODOT_BIN=${GODOT_BIN:-"$ROOT_DIR/Godot_v4.7.1-stable_linux.x86_64"}
-QA_DIR="$ROOT_DIR/.qa"
+QA_DIR="$ROOT_DIR/build/qa"
 WEB_DIR="$ROOT_DIR/build/web"
-ZIP_PATH="$ROOT_DIR/build/block-fighter-web.zip"
+ZIP_PATH="$ROOT_DIR/build/block-fighter-web-1.0.2.zip"
 QA_TIMEOUT_SECONDS=${QA_TIMEOUT_SECONDS:-180}
 
 mkdir -p "$QA_DIR" "$ROOT_DIR/build"
@@ -46,12 +46,12 @@ check_test_log() {
 	fi
 }
 
-run_step import "$GODOT_BIN" --headless --editor --path "$ROOT_DIR" --quit
+run_step import "$GODOT_BIN" --headless --editor --path "$ROOT_DIR" --log-file "$QA_DIR/import-godot.log" --quit
 
-run_step main_game_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --script res://tests/main_game_test.gd
+run_step main_game_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/main-game-godot.log" --script res://tests/main_game_test.gd
 check_test_log "$QA_DIR/main_game_test.log"
 
-run_step main_ui_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --script res://start_screen/tests/main_ui_test.gd
+run_step main_ui_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/main-ui-godot.log" --script res://start_screen/tests/main_ui_test.gd
 check_test_log "$QA_DIR/main_ui_test.log"
 
 for test_path in \
@@ -65,7 +65,7 @@ for test_path in \
 	tests/ninja_special_runtime_integration_test.gd
 do
 	step_name=$(basename "$test_path" .gd)
-	run_step "$step_name" "$GODOT_BIN" --headless --path "$ROOT_DIR" --script "res://$test_path"
+	run_step "$step_name" "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/$step_name-godot.log" --script "res://$test_path"
 	check_test_log "$QA_DIR/$step_name.log"
 done
 
@@ -73,12 +73,12 @@ rm -rf "$WEB_DIR"
 rm -f "$ZIP_PATH"
 mkdir -p "$WEB_DIR"
 
-run_step web_export "$GODOT_BIN" --headless --path "$ROOT_DIR" --export-release Web "$WEB_DIR/index.html"
+run_step web_export "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/web-export-godot.log" --export-release Web "$WEB_DIR/index.html"
 if grep -nE 'SCRIPT ERROR|Parse Error|ERROR:|ObjectDB instances were leaked|Resource still in use|resources still in use' "$QA_DIR/web_export.log"; then
 	printf '%s\n' "Disallowed export error in $QA_DIR/web_export.log" >&2
 	exit 1
 fi
-if grep -nE 'Storing File: res://(tests|docs|tools|design|build|\.qa)/' "$QA_DIR/web_export.log"; then
+if grep -nE 'Storing File: res://(tests|start_screen/tests|docs|tools|design|build|\.qa)/' "$QA_DIR/web_export.log"; then
 	printf '%s\n' "Non-runtime source entered the Web export." >&2
 	exit 1
 fi

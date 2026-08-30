@@ -177,6 +177,8 @@ var _tutorial_next_button: Button
 var _music_value_label: Label
 var _sfx_value_label: Label
 var _game_host: Control
+var _game_viewport_container: SubViewportContainer
+var _game_viewport: SubViewport
 var _game_instance: Node
 var _game_exit_overlay: Control
 var _game_exit_yes_button: Button
@@ -255,6 +257,9 @@ func _exit_tree() -> void:
 
 
 func _draw() -> void:
+	if current_screen == Screen.GAME:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#0b0f17"))
+		return
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND)
 	for x_value: int in range(0, int(size.x) + 1, 48):
 		draw_line(
@@ -373,7 +378,7 @@ func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 	_game_instance.set_meta("challenge_mode", challenge_mode)
 	_game_instance.set_meta("language", settings.language)
 	selected_stage_number = stage_number
-	_game_host.add_child(_game_instance)
+	_game_viewport.add_child(_game_instance)
 	var selected_character: MainCharacterController = _game_instance.get_node_or_null(
 		"BoardPhysics/Character"
 	) as MainCharacterController
@@ -770,9 +775,21 @@ func _handle_back_navigation(key_event: InputEventKey) -> bool:
 func _build_interface() -> void:
 	_game_host = Control.new()
 	_game_host.name = "GameHost"
-	_game_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_configure_game_host_layout()
 	_game_host.visible = false
 	add_child(_game_host)
+	_game_viewport_container = SubViewportContainer.new()
+	_game_viewport_container.name = "GameViewportContainer"
+	_game_viewport_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_viewport_container.stretch = true
+	_game_viewport_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	_game_host.add_child(_game_viewport_container)
+	_game_viewport = SubViewport.new()
+	_game_viewport.name = "GameViewport"
+	_game_viewport.size = MainLayout.GAME_VIEWPORT_SIZE
+	_game_viewport.disable_3d = true
+	_game_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_game_viewport_container.add_child(_game_viewport)
 
 	_build_main_screen()
 	_build_floor_select_screen()
@@ -1747,7 +1764,7 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_overlay.z_as_relative = false
 	_game_exit_overlay.z_index = 100
 	_game_exit_overlay.visible = false
-	add_child(_game_exit_overlay)
+	_game_viewport.add_child(_game_exit_overlay)
 
 	var shade: ColorRect = ColorRect.new()
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2012,6 +2029,7 @@ func _complete_stage(
 
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
+	queue_redraw()
 	if _music_manager != null:
 		if screen_type == Screen.GAME:
 			_music_manager.play_battle()
@@ -2418,12 +2436,54 @@ func _loaded_game_controller() -> MainGameController:
 
 
 ## 상황: 게임 전용 560×1140 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
-## 결과: content scale과 실제 창 크기를 메뉴 설계 크기 960×800으로 복원한다.
+## 결과: 데스크톱은 content scale과 실제 창 크기를 메뉴 설계 크기로 복원한다.
+##       Web은 처음부터 메뉴 viewport를 유지하므로 불필요한 HTML canvas resize를 막는다.
 func _apply_menu_viewport_size() -> void:
 	var window: Window = get_window()
 	window.content_scale_size = MENU_VIEWPORT_SIZE
-	if not DisplayServer.get_name().contains("headless"):
+	if (
+		OS.get_name() != "Web"
+		and not OS.has_feature("web")
+		and not DisplayServer.get_name().contains("headless")
+	):
 		window.size = MENU_VIEWPORT_SIZE
+
+
+## 상황: 메뉴 root 안에 고정 해상도의 세로 게임 viewport를 배치할 때 호출한다.
+## 결과: Web은 560×1140 SubViewport 결과만 960×800 canvas에 맞춰 중앙 합성한다.
+##       물리 노드 자체에는 scale을 적용하지 않아 local/global 좌표 단위가 항상 일치한다.
+func _configure_game_host_layout() -> void:
+	if OS.get_name() != "Web" and not OS.has_feature("web"):
+		_game_host.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		_game_host.position = Vector2.ZERO
+		_game_host.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+		_game_host.scale = Vector2.ONE
+		return
+	var layout: Dictionary = calculate_web_game_layout(
+		Vector2(MENU_VIEWPORT_SIZE),
+		Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+	)
+	_game_host.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_game_host.position = layout["position"] as Vector2
+	_game_host.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+	_game_host.scale = Vector2.ONE * float(layout["scale"])
+
+
+## 결과: content_size의 비율을 유지하면서 viewport_size 안에 모두 들어오는 scale/position을 반환한다.
+static func calculate_web_game_layout(viewport_size: Vector2, content_size: Vector2) -> Dictionary:
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return {"scale": 1.0, "position": Vector2.ZERO}
+	if content_size.x <= 0.0 or content_size.y <= 0.0:
+		return {"scale": 1.0, "position": Vector2.ZERO}
+	var fit_scale: float = minf(
+		viewport_size.x / content_size.x,
+		viewport_size.y / content_size.y
+	)
+	var fitted_size: Vector2 = content_size * fit_scale
+	return {
+		"scale": fit_scale,
+		"position": (viewport_size - fitted_size) * 0.5,
+	}
 
 
 func _play_select_sfx() -> void:

@@ -558,8 +558,17 @@ func _attempt_binding_roll() -> void:
 		character.apply_binding(get_binding_duration_seconds())
 
 
+func notify_binding_surface_contact(_surface_contact: bool) -> void:
+	# 공중에서도 즉시 결박하므로 landing-pending 호환 호출은 필요 없다.
+	return
+
+
 func get_binding_duration_seconds() -> float:
 	return float(get_stage_gimmick_config().get("binding_duration", BINDING_DURATION_SECONDS))
+
+
+func _character_has_surface_contact() -> bool:
+	return is_instance_valid(character) and character.can_receive_binding()
 
 
 func _character_is_bound() -> bool:

@@ -31,6 +31,14 @@ const DEFINITIONS: Array[Dictionary] = [
 		"slots": 2,
 	},
 	{
+		"action": &"character_climb_up",
+		"label": "오르기",
+		"label_english": "Climb Up",
+		"label_chinese": "向上攀爬",
+		"defaults": [KEY_UP],
+		"slots": 1,
+	},
+	{
 		"action": &"character_meditate",
 		"label": "명상",
 		"label_english": "Meditate",

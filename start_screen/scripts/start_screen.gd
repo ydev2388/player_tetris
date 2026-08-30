@@ -182,9 +182,11 @@ var _game_exit_overlay: Control
 var _game_exit_yes_button: Button
 var _game_exit_no_button: Button
 var _game_exit_was_playing: bool = false
+var _message_game_was_playing: bool = false
 var _select_sfx_player: AudioStreamPlayer
 var _select_sfx_timer: Timer
 var _skip_initial_select_sfx: bool = true
+var _menu_confirm_z_armed: bool = true
 var _music_manager: BlockFighterMusicManager
 
 var _capture_overlay: Control
@@ -421,8 +423,21 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventKey:
 		return
 	var key_event: InputEventKey = event as InputEventKey
-	if not key_event.pressed or key_event.echo:
+	var is_z_key: bool = (
+		key_event.physical_keycode == KEY_Z
+		or key_event.keycode == KEY_Z
+	)
+	if not key_event.pressed:
+		if is_z_key:
+			_menu_confirm_z_armed = true
 		return
+	if key_event.echo:
+		return
+	if is_z_key and _screen_uses_z_confirmation():
+		if not _menu_confirm_z_armed:
+			get_viewport().set_input_as_handled()
+			return
+		_menu_confirm_z_armed = false
 	if _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
@@ -437,6 +452,17 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
+
+
+func _screen_uses_z_confirmation() -> bool:
+	if current_screen != Screen.GAME:
+		return true
+	return (
+		(_game_exit_overlay != null and _game_exit_overlay.visible)
+		or (_message_overlay != null and _message_overlay.visible)
+		or (_stage_result_overlay != null and _stage_result_overlay.visible)
+		or (_stage_fail_overlay != null and _stage_fail_overlay.visible)
+	)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -2249,6 +2275,16 @@ func _show_message(message: String) -> void:
 		return
 	if not _message_overlay.visible:
 		_message_previous_focus = get_viewport().gui_get_focus_owner()
+		_message_game_was_playing = false
+		if current_screen == Screen.GAME:
+			var game_controller: MainGameController = _loaded_game_controller()
+			if game_controller != null:
+				_message_game_was_playing = (
+					game_controller.state == MainGameController.GameState.PLAYING
+				)
+				if _message_game_was_playing:
+					game_controller.toggle_pause()
+				game_controller.set_physics_process(false)
 	_message_label.text = message
 	_message_overlay.visible = true
 	_message_overlay.move_to_front()
@@ -2258,6 +2294,20 @@ func _show_message(message: String) -> void:
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.set_physics_process(true)
+		if (
+			_message_game_was_playing
+			and game_controller.state == MainGameController.GameState.PAUSED
+		):
+			game_controller.toggle_pause()
+		var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+		if loaded_character != null and Input.is_action_pressed(&"character_jump"):
+			loaded_character.suppress_jump_until_released()
+	_message_game_was_playing = false
 	var previous_focus: Control = _message_previous_focus
 	_message_previous_focus = null
 	if (

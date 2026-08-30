@@ -14,6 +14,7 @@ extends Control
 ## `@onready var x = $Path`는 노드가 씬 트리에 준비된 뒤 child pointer를 캐시한다.
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
+const LOCALIZATION: Script = preload("res://scripts/localization.gd")
 const DISPLAY_SCALE: float = MainLayout.DISPLAY_SCALE
 const CELL_SIZE: float = MainLayout.CELL_SIZE
 const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
@@ -810,7 +811,7 @@ func _refresh() -> void:
 
 
 func _text(korean: String, english: String) -> String:
-	return korean if _language == "kor" else english
+	return LOCALIZATION.translated_for_language(korean, english, _language)
 
 
 func _thorn_texture_for_stage(stage_number: int) -> Texture2D:

@@ -64,9 +64,22 @@ func _run() -> void:
 		screen.settings.language == StartScreenSettings.CHINESE
 			and screen.settings.get_action_label(&"character_jump") == "跳跃"
 			and screen.settings.get_passive_name(0) == "攻击速度"
-			and screen._text("OPTION") == "选项",
+			and screen._text("OPTION") == "选项"
+			and screen._text("도전 모드") == "挑战模式"
+			and screen._text("%d구역\n%d-%d층", "AREA %d\nFLOORS %d-%d")
+				== "区域 %d\n第 %d-%d 层"
+			and screen._text("새 develop 문구", "NEW DEVELOP TEXT") == "NEW DEVELOP TEXT"
+			and TranslationServer.translate("삭제한 줄 %d") == "消除行数 %d",
 		"중국어 설정과 핵심 메뉴 번역이 적용된다."
 	)
+	var localized_game_view := MainGameView.new()
+	localized_game_view._language = StartScreenSettings.CHINESE
+	_expect(
+		localized_game_view._text("목숨: %d", "LIVES: %d") == "生命：%d"
+			and localized_game_view._text("새 게임 문구", "NEW GAME TEXT") == "NEW GAME TEXT",
+		"게임 HUD 중국어와 미번역 문구의 영어 fallback이 적용된다."
+	)
+	localized_game_view.free()
 	screen.settings.set_language(StartScreenSettings.ENGLISH)
 	_expect(
 		screen.settings.get_passive_name(2) == "Jump"

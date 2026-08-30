@@ -6,7 +6,8 @@ extends RefCounted
 
 const ENGLISH: String = "en"
 const KOREAN: String = "ko"
-const SUPPORTED_LANGUAGES: Array[String] = [ENGLISH, KOREAN]
+const CHINESE: String = "zh_CN"
+const SUPPORTED_LANGUAGES: Array[String] = [ENGLISH, KOREAN, CHINESE]
 
 const ENGLISH_MESSAGES: Dictionary = {
 	# Main menu and navigation.
@@ -304,8 +305,145 @@ const ENGLISH_MESSAGES: Dictionary = {
 	"표창이 막혔거나 활성 블록 공간 없음": "Shuriken blocked or no room to move the active piece.",
 }
 
+# 중국어는 먼저 영문 catalog를 fallback으로 채운 뒤 아래 항목을 덮어쓴다.
+# 따라서 번역이 아직 없는 문구도 한국어로 섞이지 않고 읽을 수 있는 영문으로 표시된다.
+const CHINESE_MESSAGES: Dictionary = {
+	"격투 액션 × 낙하 블록": "格斗动作和下落方块",
+	"블록파이터": "方块\n斗士",
+	"낙하 블록 위에서 펼쳐지는 격투 액션": "在不断下落的方块战场上战斗",
+	"게임 설명": "游戏说明",
+	"↑ ↓ 선택    Z 확인": "上下选择    Z 确认",
+	"캐릭터 선택": "选择角色",
+	"블록 깨러 가기": "开始关卡",
+	"상점": "商店",
+	"메인으로": "主菜单",
+	"스테이지 선택으로": "关卡选择",
+	"입장 가능": "可进入",
+	"잠김": "未解锁",
+	"전역 패시브 강화": "全局被动强化",
+	"아이콘을 선택하면 아래에서 세부 정보를 확인할 수 있습니다.": "选择图标可在下方查看详细信息。",
+	"선택 후 Z로 강화": "选择后按 Z 强化",
+	"패시브 초기화": "重置被动",
+	"그림과 화살표를 따라 기능을 익혀보세요": "跟随图示和箭头学习操作。",
+	"← 이전": "上一页",
+	"다음 →": "下一页",
+	"키 설정과 사운드 크기를 조절합니다": "调整按键、语言和音量。",
+	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "修改移动、动作和\n系统按键。",
+	"키 설정 열기": "打开按键设置",
+	"볼륨 설정 열기": "打开音量设置",
+	"진행 데이터 초기화": "重置进度数据",
+	"스테이지 해금과 별 재화를 지웁니다.": "删除关卡解锁和星星。",
+	"진행 상황 삭제": "删除进度",
+	"버튼을 누른 뒤 새 키를 입력하세요": "选择按钮后输入新按键。",
+	"동작": "动作",
+	"주 키": "主键",
+	"보조 키": "副键",
+	"지우기": "清除",
+	"기본값 복원": "恢复默认",
+	"OPTION으로": "返回选项",
+	"새 키 입력": "输入新按键",
+	"취소": "取消",
+	"안내": "提示",
+	"확인": "确定",
+	"OPTION": "选项",
+	"GAME START": "开始游戏",
+	"EXIT": "退出",
+	"STAGE SELECT": "关卡选择",
+	"KEY CUSTOM": "按键设置",
+	"VOLUME": "音量",
+	"메뉴로 나가겠습니까?": "要返回主菜单吗？",
+	"선택 완료": "确认",
+	"뒤로": "返回",
+	"실패": "失败",
+	"재시도": "重试",
+	"이미지와 다섯 능력치, 특수 스킬을 비교하세요": "比较角色的五项能力与特殊技能。",
+	"일반인": "普通人",
+	"복서": "拳击手",
+	"방패병": "盾卫",
+	"소방관": "消防员",
+	"청소부": "清洁工",
+	"성녀": "圣女",
+	"시계공": "钟表匠",
+	"닌자": "忍者",
+	"왼쪽 이동": "向左移动",
+	"오른쪽 이동": "向右移动",
+	"오르기": "向上攀爬",
+	"명상": "冥想",
+	"점프": "跳跃",
+	"기본 밀치기": "普通推击",
+	"특수 스킬": "特殊技能",
+	"매달리기": "攀附",
+	"블록 플립": "方块翻转",
+	"자력 재스폰": "自救重生",
+	"일시정지": "暂停",
+	"다시 시작": "重新开始",
+	"1. 이동과 점프": "1. 移动与跳跃",
+	"기본 이동부터 높이 조절 점프까지": "学习移动和可控高度跳跃。",
+	"좌우 이동": "左右移动",
+	"[%s] 키로 블록 사이를 이동합니다.": "使用 [%s] 在方块之间移动。",
+	"[%s]를 짧게/길게 눌러 높이를 조절합니다.": "短按或长按 [%s] 调整跳跃高度。",
+	"빠르게 놓기: 낮게": "短按：低跳",
+	"유지: 높게": "长按：高跳",
+	"2. 블록 조작": "2. 方块操作",
+	"밀치기와 플립으로 길을 만드세요": "通过推击与翻转开辟道路。",
+	"1칸": "1 格",
+	"준비": "就绪",
+	"X를 누르면 전방 블록을 정확히 1칸 밀기": "按 X 将前方方块准确推开 1 格。",
+	"캐릭터별 무기 모션만 다르고 결과는 동일": "各角色武器动作不同，效果相同。",
+	"90° 플립": "翻转 90 度",
+	"지상·공중 모두 사용": "地面和空中均可使用。",
+	"성공 뒤 2초, 실패 뒤 1초 대기": "成功冷却 2 秒，失败冷却 1 秒。",
+	"3. 매달리기와 벽 점프": "3. 攀附与蹬墙跳",
+	"화살표 순서대로 입력하면 더 높은 위치에 재매달립니다": "按箭头顺序输入可在更高处再次攀附。",
+	"C 유지 중 ↑/↓로 벽 이동": "按住 C 并用上下键沿墙移动",
+	"벽 반대 방향으로 점프": "向远离墙壁的方向跳跃",
+	"원래 벽 방향으로 직접 조향": "转向原来的墙壁",
+	"%s를 유지하면 높은 위치에 다시 매달립니다.": "持续按住 %s 可在更高处再次攀附。",
+	"%s를 놓은 뒤 0.15초 안에\n%s를 눌러도 벽 점프가 이어집니다.": "松开 %s 后 0.15 秒内按下\n%s 仍可继续蹬墙跳。",
+	"※ 오른쪽 벽에서는 좌우 방향이 반대입니다.": "右侧墙壁的左右方向相反。",
+	"4. 명상과 시스템 키": "4. 冥想与系统按键",
+	"낙하 블록의 흐름을 조절하고 언제든 다시 시작할 수 있습니다": "控制方块下落节奏，并可随时重新开始。",
+	"바닥에서 키 유지": "站在地面时按住按键",
+	"캐릭터 행동 정지": "角色停止行动",
+	"블록 낙하·잠금 시간 ×2": "方块下落与锁定时间加倍",
+	"스태미나 회복 없음": "不恢复耐力",
+	"키를 놓거나 발판을 잃으면 즉시 종료": "松开按键或失去落脚点时立即结束",
+	"마지막 목숨이거나 안전한 칸이 없으면\n게임 오버입니다.": "只剩最后一条命或没有安全位置时\n游戏结束。",
+	"착지 시 100 · 공중/벽 충전 없음": "落地恢复至 100，空中或墙上不恢复",
+	"5. 특수 키 모션": "5. 系统操作",
+	"게임 흐름을 멈추거나 다시 시작하고 안전하게 메뉴로 돌아가요": "暂停、重开，或安全返回菜单。",
+	"다시 누르면 게임이 이어집니다.": "再次按下即可继续游戏。",
+	"즉시 재시작": "立即重新开始",
+	"보드·목숨을 처음부터 시작합니다.": "方块盘面与生命从头开始。",
+	"1초 유지": "按住 1 秒",
+	"게임 중 → 메뉴": "游戏中返回菜单",
+	"Esc를 눌러 메뉴 선택": "按 Esc 打开菜单选项",
+	"↑/↓ 선택 · Z 확인 · X 취소": "上下选择 / Z 确认 / X 取消",
+	"삭제한 줄 %d": "消除行数 %d",
+	"목숨: %d": "生命：%d",
+	"일시정지\n\nP로 계속 · Esc로 메뉴": "已暂停\n\nP 继续 / Esc 菜单",
+	"게임 오버\n\nR 키로 다시 시작\nEsc 키로 메뉴": "游戏结束\n\nR 重新开始\nEsc 菜单",
+
+	# 6~10층, 얼음 구역 및 도전 모드.
+	"탑 선택": "选择塔层",
+	"구역 선택": "选择区域",
+	"%d/%d층 해금": "已解锁 %d/%d 层",
+	"%d구역\n%d-%d층": "区域 %d\n第 %d-%d 层",
+	"%d층%s": "第 %d 层%s",
+	"  보스": "  首领",
+	"도전 모드": "挑战模式",
+	"최고 기록 %d줄": "最高纪录 %d 行",
+	"10층 클리어 후 해금": "通关第 10 层后解锁",
+	"%d층 클리어!\n%s": "第 %d 层通关！\n%s",
+	"별 보상 +%d   (보유 %d)": "星星奖励 +%d   （持有 %d）",
+	"스테이지 제한시간이 끝났습니다.": "关卡时间已结束。",
+	"스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.": "关卡解锁、挑战纪录、星星和被动强化将被重置。",
+	"고드름 피해! 목숨 -1": "冰锥命中！生命 -1",
+}
+
 static var _english_translation: Translation
 static var _korean_translation: Translation
+static var _chinese_translation: Translation
 
 
 static func install(language_code: String) -> void:
@@ -320,15 +458,41 @@ static func install(language_code: String) -> void:
 		for source: String in ENGLISH_MESSAGES:
 			_korean_translation.add_message(source, source)
 		TranslationServer.add_translation(_korean_translation)
+		_chinese_translation = Translation.new()
+		_chinese_translation.locale = CHINESE
+		for source: String in ENGLISH_MESSAGES:
+			_chinese_translation.add_message(
+				source,
+				str(CHINESE_MESSAGES.get(source, ENGLISH_MESSAGES[source]))
+			)
+		TranslationServer.add_translation(_chinese_translation)
 	TranslationServer.set_locale(normalize_language(language_code))
 
 
 static func normalize_language(language_code: String) -> String:
 	var normalized: String = language_code.to_lower()
-	if normalized.begins_with(KOREAN) or normalized.begins_with("zh"):
+	if normalized.begins_with("zh"):
+		return CHINESE
+	if normalized.begins_with(KOREAN):
 		return KOREAN
 	return ENGLISH
 
 
 static func translated(source: String) -> String:
 	return TranslationServer.translate(source)
+
+
+static func translated_for_language(
+	source: String,
+	english_fallback: String,
+	language_code: String
+) -> String:
+	var normalized: String = normalize_language(language_code)
+	if normalized == KOREAN:
+		return source
+	var english: String = english_fallback
+	if english.is_empty():
+		english = str(ENGLISH_MESSAGES.get(source, source))
+	if normalized == CHINESE:
+		return str(CHINESE_MESSAGES.get(source, english))
+	return english

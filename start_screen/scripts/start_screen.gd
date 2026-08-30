@@ -1002,20 +1002,19 @@ func _refresh_floor_select() -> void:
 				unlocked_count += 1
 		_floor_group_buttons[button_index].text = "%s\n%s" % [
 			_floor_group_label(group_index),
-			_text(
-				"%d/%d층 해금" % [unlocked_count, _FLOORS_PER_GROUP],
-				"%d/%d floors open" % [unlocked_count, _FLOORS_PER_GROUP],
-			),
+			_text("%d/%d층 해금", "%d/%d floors open")
+				% [unlocked_count, _FLOORS_PER_GROUP],
 		]
 
 
 func _floor_group_label(group_index: int) -> String:
 	var first_floor: int = group_index * _FLOORS_PER_GROUP + 1
 	var last_floor: int = (group_index + 1) * _FLOORS_PER_GROUP
-	return _text(
-		"%d구역\n%d-%d층" % [group_index + 1, first_floor, last_floor],
-		"AREA %d\nFLOORS %d-%d" % [group_index + 1, first_floor, last_floor]
-	)
+	return _text("%d구역\n%d-%d층", "AREA %d\nFLOORS %d-%d") % [
+		group_index + 1,
+		first_floor,
+		last_floor,
+	]
 
 
 func _floor_number_for_card(card_index: int) -> int:
@@ -2093,7 +2092,7 @@ func _refresh_stage_select() -> void:
 		var stage_number: int = _floor_number_for_card(card_index)
 		var unlocked: bool = settings.is_stage_unlocked(stage_number)
 		var is_boss: bool = stage_number % _FLOORS_PER_GROUP == 0
-		_stage_title_labels[card_index].text = "%d층%s" % [
+		_stage_title_labels[card_index].text = _text("%d층%s", "%d층%s") % [
 			stage_number,
 			_text("  보스", "  BOSS") if is_boss else "",
 		]
@@ -2494,7 +2493,9 @@ func _text(korean: String, english: String = "") -> String:
 	if settings == null or settings.language == StartScreenSettings.KOREAN:
 		return korean
 	if settings.language == StartScreenSettings.CHINESE:
-		return String(CHINESE_TEXT.get(korean, korean))
+		if CHINESE_TEXT.has(korean):
+			return String(CHINESE_TEXT[korean])
+		return LOCALIZATION.translated_for_language(korean, english, settings.language)
 	if not english.is_empty():
 		return english
 	return String(ENGLISH_TEXT.get(korean, LOCALIZATION.translated(korean)))

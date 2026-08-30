@@ -29,7 +29,7 @@
 | 5 | 도전 모드 | develop 채택 | develop 채택 |
 | 6 | 벽·코너 오르기와 입력 안정화 | 수동 통합 | 수동 통합 |
 | 7 | 캐릭터 디버그 해금 | 9-1차 채택 | 릴리스 제외 |
-| 8 | 중국어 지원 | 미결정 | 9-1차 기반 수동 통합 |
+| 8 | 중국어 지원 | 수동 통합 | 9-1차 기반 수동 통합 |
 | 9 | Web 화면 및 내보내기 | 미결정 | 수동 통합 |
 
 ## 1. 6~10층 및 구역 선택
@@ -181,10 +181,10 @@
 
 ### 선택
 
-- [ ] 수동 통합: 3개 언어와 develop 신규 문구를 함께 지원한다. **권장**
+- [x] 수동 통합: 3개 언어와 develop 신규 문구를 함께 지원한다. **선택됨**
 - [ ] `develop`: 한국어·영어만 유지한다.
 
-선택 이유: 미입력
+선택 이유: 사용자가 양쪽 언어 기능의 통합을 요청했다. `9-1차`의 한국어·영어·중국어 번역 catalog와 영어 fallback을 적용하고, `develop`의 6~10층 구역, 보스 표기, 도전 모드, 결과·실패 화면과 고드름 피해 문구를 중국어로 보완한다. 메뉴뿐 아니라 튜토리얼과 게임 HUD에도 같은 언어 규칙을 사용한다.
 
 ## 9. Web 화면 및 내보내기
 
@@ -213,10 +213,10 @@
 
 | 검증 | 결과 | 로그 또는 비고 |
 |---|---|---|
-| Godot import 및 스크립트 파싱 | 통과 | `build/choice7_parse.log` |
-| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/choice6_main_game_test_rerun.log` |
-| 시작 화면 통합 테스트 | 통과 | 111개 통과, `build/choice7_main_ui_test.log` |
+| Godot import 및 스크립트 파싱 | 통과 | `build/choice8_parse.log` |
+| 메인 게임 통합 테스트 | 통과 | 230개 통과, `build/choice8_main_game_test.log` |
+| 시작 화면 통합 테스트 | 통과 | 112개 통과, `build/choice8_main_ui_test.log` |
 | 캐릭터별 런타임 테스트 | 통과 | 복서·요리사·청소부·소방관·닌자 및 공통 매달림·낙하 테스트 통과, `build/choice6_*_runtime_integration_test.log` |
-| 선택 기능별 회귀 테스트 | 부분 통과 | 이동 블록 추적·고정 블록 인계·줄 삭제 보정·외벽 이탈 및 착지 취소 통과, `build/choice6_corner_test.log`; 0 키 해금·저장·초기화 통과, `build/choice7_unlock_persistence.log`; 8~9번 선택 뒤 전체 재검증 예정 |
+| 선택 기능별 회귀 테스트 | 부분 통과 | 이동 블록 추적·고정 블록 인계·줄 삭제 보정·외벽 이탈 및 착지 취소 통과, `build/choice6_corner_test.log`; 0 키 해금·저장·초기화 통과, `build/choice7_unlock_persistence.log`; 중국어 6~10층·도전 모드·HUD 및 영어 fallback 통과, `build/choice8_main_ui_test.log`; 9번 선택 뒤 전체 재검증 예정 |
 | Web release export | 대기 | |
 | 최종 Git 상태 | 대기 | |

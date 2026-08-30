@@ -15,6 +15,21 @@ func _run() -> void:
 	settings.load_settings()
 	_expect(settings.is_character_unlocked("normal"), "normal starts unlocked")
 	_expect(not settings.is_character_unlocked("boxer"), "boxer starts locked")
+	_expect(settings.unlock_all_characters_for_debug() == OK, "zero-key unlock state saves")
+	for character_id: String in MainCharacterData.CHARACTER_ORDER:
+		_expect(settings.is_character_unlocked(character_id), "%s zero-key unlocks" % character_id)
+	var debug_reload := StartScreenSettings.new(TEST_SETTINGS_PATH)
+	debug_reload.load_settings()
+	for character_id: String in MainCharacterData.CHARACTER_ORDER:
+		_expect(
+			debug_reload.is_character_unlocked(character_id),
+			"%s zero-key unlock survives restart" % character_id
+		)
+	_expect(debug_reload.get_total_best_stars() == 0, "zero-key unlock does not change stars")
+	_expect(debug_reload.star_currency == 0, "zero-key unlock does not change currency")
+	_expect(debug_reload.reset_stage_progress() == OK, "progress reset clears zero-key unlock")
+	_expect(not debug_reload.is_character_unlocked("boxer"), "boxer locks again after reset")
+	settings.load_settings()
 
 	var first_result: Dictionary = settings.complete_stage(1, 3, 3, true)
 	_expect(bool(first_result.get("ok", false)), "three-star debug clear saves")
@@ -43,6 +58,7 @@ func _run() -> void:
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_SETTINGS_PATH))
 	settings.free()
+	debug_reload.free()
 	reloaded.free()
 	final_reload.free()
 	print("CHARACTER_UNLOCK_PERSISTENCE_RESULT failures=", _failures)

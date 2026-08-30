@@ -170,8 +170,6 @@ var thorn_phase_timer: float = 0.0 # 가시 ON/OFF phase accumulator.
 var transient_blocker_cells: Array[Vector2i] = [] # 방패병 보호벽처럼 고정시키지 않는 임시 충돌 셀.
 var water_path_cells: Array[Vector2i] = [] # 소방관 물길이 차지하는 빈 표면 셀.
 var water_path_direction: int = 0
-var water_path_serial: int = 0
-var _water_triggered_serial: int = -1
 
 var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
 var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
@@ -198,9 +196,6 @@ var icicles: Array[Dictionary] = []
 var icicle_check_timer: float = 0.0
 var icicle_probability: float = ICICLE_PROBABILITY
 var icicle_first_check_pending: bool = true
-
-func _reset_icicle_probability() -> void:
-	icicle_probability = _icicle_base_probability()
 
 # 현재 피스 하나에만 적용되는 내부 accumulator/counter.
 var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
@@ -348,7 +343,7 @@ func reset_game(seed_value: int = -1) -> void:
 	boss_seed_first_cast_done = false
 	icicles.clear()
 	icicle_check_timer = 0.0
-	_reset_icicle_probability()
+	icicle_probability = _icicle_base_probability()
 	icicle_first_check_pending = true
 	binding_check_timer = 0.0
 	binding_probability = BINDING_PROBABILITY
@@ -615,7 +610,7 @@ func _advance_icicles(delta: float, future_triggers_frozen: bool = false) -> voi
 	var config: Dictionary = get_stage_gimmick_config()
 	if not bool(config.get("icicle_enabled", false)):
 		icicle_check_timer = 0.0
-		_reset_icicle_probability()
+		icicle_probability = _icicle_base_probability()
 		icicle_first_check_pending = true
 		return
 	if future_triggers_frozen or state != GameState.PLAYING or challenge_mode:
@@ -993,7 +988,6 @@ func spawn_next_piece() -> bool:
 	next_type = bag.next_piece()
 	active_rotation = 0
 	active_cell_indices = [0, 1, 2, 3]
-	_water_triggered_serial = -1
 	_reset_piece_timers()
 
 	var spawn_origin: Variant = _choose_random_spawn_origin(active_type) # Vector2i 또는 불가를 뜻하는 null.
@@ -1091,8 +1085,6 @@ func clear_skill_effects() -> void:
 	transient_blocker_cells.clear()
 	water_path_cells.clear()
 	water_path_direction = 0
-	water_path_serial += 1
-	_water_triggered_serial = -1
 
 
 func clear_runtime_state() -> void:
@@ -1104,7 +1096,7 @@ func clear_runtime_state() -> void:
 	boss_seed_first_cast_done = false
 	icicles.clear()
 	icicle_check_timer = 0.0
-	_reset_icicle_probability()
+	icicle_probability = _icicle_base_probability()
 	icicle_first_check_pending = true
 	binding_check_timer = 0.0
 	binding_probability = BINDING_PROBABILITY
@@ -1118,8 +1110,6 @@ func clear_runtime_state() -> void:
 func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 3) -> bool:
 	water_path_cells.clear()
 	water_path_direction = signi(direction)
-	water_path_serial += 1
-	_water_triggered_serial = -1
 	if state != GameState.PLAYING or water_path_direction == 0 or maximum_steps < 1:
 		game_changed.emit()
 		return false
@@ -1153,8 +1143,6 @@ func clear_water_path() -> void:
 		return
 	water_path_cells.clear()
 	water_path_direction = 0
-	water_path_serial += 1
-	_water_triggered_serial = -1
 	game_changed.emit()
 
 

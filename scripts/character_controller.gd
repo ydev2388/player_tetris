@@ -67,6 +67,7 @@ const WALL_JUMP_HORIZONTAL_SPEED: float = 185.0 * GIT_GRID_SCALE # 벽 반대 x�
 const WALL_JUMP_VERTICAL_MULTIPLIER: float = 1.0 # 벽점프의 JUMP_VELOCITY 배율.
 const HANG_CLIMB_SPEED: float = 78.0 * GIT_GRID_SCALE # 매달린 상하 이동속도(px/s).
 const HANG_CORNER_CLIMB_SPEED: float = 115.0 * GIT_GRID_SCALE
+const HANG_BOUNDARY_TOP_RELEASE_SPEED: float = MOVE_SPEED * 0.35
 # 매달린 중심에서 발이 블록 윗면에 닿는 높이까지 약 80px, 블록 위 안쪽으로
 # 들어가는 거리는 collider 폭인 42px이다. 따라서 실제 두 구간 길이와 같은 66:34로
 # 나눠야 상단 진입 포즈가 급하게 지나가지 않는다.
@@ -209,6 +210,7 @@ var _pending_rotation_launch_velocity: float = 0.0 # 새 active collider 동기�
 var _post_spin_animation_seeded: bool = false # 종료 frame seed를 한 번 보존할 flag.
 var _hang_body: Node2D # 매달린 실제 collider. 활성 피스면 움직임을 따라간다.
 var _hang_last_global_position: Vector2 # 붙은 body의 이전 frame 위치; 이동 delta 계산용.
+var _hang_active_origin: Vector2i = Vector2i.ZERO # 활성 피스 모서리 오르기의 논리 위치 추적값.
 var _hang_top_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 상단.
 var _hang_bottom_global_y: float = 0.0 # 현재 매달린 외부 옆면 구간의 하단.
 var _hang_face_global_x: float = 0.0 # 공통 콜라이더가 붙는 실제 벽면 X.
@@ -323,6 +325,13 @@ func set_passive_levels(values: Array) -> void:
 		passive_levels.append(clampi(value, 0, MainCharacterData.PASSIVE_LEVEL_MAX))
 	lives = get_max_lives()
 	stats_changed.emit()
+
+
+## 메뉴 modal을 Z로 닫은 입력이 같은 physics frame의 점프로 이어지지 않게 한다.
+## 실제 jump action이 해제된 뒤에만 다시 점프 입력을 받는다.
+func suppress_jump_until_released() -> void:
+	_ignore_initial_jump_until_released = true
+	_cancel_jump_intent()
 
 
 func get_max_lives() -> int:
@@ -854,8 +863,8 @@ func _cancel_jump_intent() -> void:
 ## 결과: 화살표가 없거나 둘 다 눌리면 기존 facing 기반 동작을 유지한다.
 func _rotation_direction_for_input() -> int:
 	return _rotation_direction_for_arrows(
-		Input.is_key_pressed(KEY_UP),
-		Input.is_key_pressed(KEY_DOWN)
+		Input.is_action_pressed(&"character_climb_up"),
+		Input.is_action_pressed(&"character_meditate")
 	)
 
 
@@ -1105,6 +1114,13 @@ func _move_while_hanging(delta: float = -1.0) -> bool:
 	if (
 		climb_direction < 0.0
 		and global_position.y <= _hang_top_global_y + 0.75
+		and _hang_body == boundaries
+	):
+		_release_from_boundary_top()
+		return false
+	if (
+		climb_direction < 0.0
+		and global_position.y <= _hang_top_global_y + 0.75
 		and _try_start_hang_corner_climb()
 	):
 		return true
@@ -1114,13 +1130,25 @@ func _move_while_hanging(delta: float = -1.0) -> bool:
 	return false
 
 
+## 게임판 좌우 외벽의 보이는 상단에는 실제로 올라설 발판이 없다. 끝에 도달하면
+## 같은 위치에서 계속 C를 잡아 재매달리는 대신 안쪽으로 살짝 떨어뜨려 이동을 마친다.
+func _release_from_boundary_top() -> void:
+	var wall_facing: int = _hang_jump_facing
+	_exit_hang()
+	_hang_regrab_remaining = HANG_REGRAB_COOLDOWN
+	velocity = Vector2(
+		-float(wall_facing) * HANG_BOUNDARY_TOP_RELEASE_SPEED,
+		0.0
+	)
+
+
 ## 상황: 매달린 상태에서 수직 입력을 속도 부호로 바꿀 때 호출한다.
 ## 순서: 0에서 시작 → 물리 위키면 -1 → meditate(아래) action이면 +1을 더함.
 ## 결과: 위/아래 동시 입력은 0, 위=-1, 아래=+1을 반환한다.
 func _try_start_hang_corner_climb() -> bool:
 	if _hang_body == boundaries or not is_instance_valid(_hang_body):
 		return false
-	if _hang_body.name != &"LockedBlocks":
+	if _hang_body.name != &"LockedBlocks" and _hang_body.name != &"ActivePiece":
 		return false
 	var surface_top_global_y: float = _hang_top_global_y - HANG_HAND_OFFSET_Y
 	var target_global_position := Vector2(
@@ -1144,6 +1172,8 @@ func _try_start_hang_corner_climb() -> bool:
 	_hang_corner_climb_start_global = global_position
 	_hang_corner_climb_target_global = target_global_position
 	_hang_corner_climb_progress = 0.0
+	if _hang_body.name == &"ActivePiece":
+		_hang_active_origin = controller.active_origin
 	var path_length: float = (
 		absf(target_global_position.y - global_position.y)
 		+ absf(target_global_position.x - global_position.x)
@@ -1157,8 +1187,12 @@ func _try_start_hang_corner_climb() -> bool:
 
 
 func _advance_hang_corner_climb(delta: float) -> void:
-	_hang_animation_direction = -1.0 if Input.is_key_pressed(KEY_UP) else 0.0
-	if not Input.is_key_pressed(KEY_UP):
+	if not _follow_hang_corner_climb_body():
+		return
+	_hang_animation_direction = (
+		-1.0 if Input.is_action_pressed(&"character_climb_up") else 0.0
+	)
+	if not Input.is_action_pressed(&"character_climb_up"):
 		velocity = Vector2.ZERO
 		_finish_hanging_frame(delta)
 		return
@@ -1218,6 +1252,184 @@ func _advance_hang_corner_climb(delta: float) -> void:
 	stats_changed.emit()
 
 
+## 움직이는 활성 피스의 모서리를 오르는 동안에는 시작점과 착지점도 피스와 함께 이동한다.
+## 피스가 고정되고 새 피스가 스폰되어 ActivePiece body가 위로 순간이동한 경우에는, 기존
+## 착지점 아래에 새로 생긴 LockedBlocks를 찾아 소유권만 넘겨 모서리 오르기를 끝까지 유지한다.
+func _follow_hang_corner_climb_body() -> bool:
+	if not is_instance_valid(_hang_body):
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+	if _hang_body.name == &"LockedBlocks":
+		if not _keep_corner_climb_on_locked_support():
+			_exit_hang()
+			velocity = Vector2.ZERO
+			return false
+		return true
+	if _hang_body.name != &"ActivePiece":
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+
+	# ActivePiece의 sync_to_physics transform은 논리 origin보다 한 physics tick 늦게
+	# 보일 수 있으므로 authoritative board 좌표의 차이로 이동량을 계산한다.
+	var origin_delta: Vector2i = controller.active_origin - _hang_active_origin
+	var body_delta: Vector2 = Vector2(origin_delta) * CELL_SIZE
+	# 활성 피스는 게임 중 아래/옆으로만 이동한다. origin이 위로 바뀌면 기존 피스가
+	# 고정되고 새 피스가 스폰된 것이므로, 이동량을 적용하기 전에 고정 지지면으로 넘긴다.
+	if origin_delta.y < 0:
+		if _corner_climb_target_has_locked_support():
+			var locked_body: Node2D = get_parent().get_node_or_null("LockedBlocks") as Node2D
+			if is_instance_valid(locked_body):
+				_hang_body = locked_body
+				_hang_active_origin = Vector2i.ZERO
+				_hang_last_global_position = locked_body.global_position
+				return true
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+	if not body_delta.is_zero_approx():
+		if _hang_follow_hits_fixed_geometry(body_delta):
+			_exit_hang()
+			velocity = Vector2.ZERO
+			return false
+		global_position += body_delta
+		_hang_corner_climb_start_global += body_delta
+		_hang_corner_climb_target_global += body_delta
+		_hang_face_global_x += body_delta.x
+		_hang_top_global_y += body_delta.y
+		_hang_bottom_global_y += body_delta.y
+		_hang_active_origin = controller.active_origin
+		_hang_last_global_position = _hang_body.global_position
+	if not _corner_climb_target_has_active_support():
+		if _corner_climb_target_has_locked_support():
+			var locked_body: Node2D = get_parent().get_node_or_null("LockedBlocks") as Node2D
+			if is_instance_valid(locked_body):
+				_hang_body = locked_body
+				_hang_active_origin = Vector2i.ZERO
+				_hang_last_global_position = locked_body.global_position
+				return true
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+	var target_local_position: Vector2 = get_parent().to_local(
+		_hang_corner_climb_target_global
+	)
+	if (
+		target_local_position.x < BOARD_MIN_X
+		or target_local_position.x > BOARD_MAX_X
+		or target_local_position.y < BOARD_MIN_Y
+		or target_local_position.y > BOARD_MAX_Y
+	):
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+	if _character_position_overlaps_solid(target_local_position):
+		_exit_hang()
+		velocity = Vector2.ZERO
+		return false
+	return true
+
+
+func _keep_corner_climb_on_locked_support() -> bool:
+	if not _corner_climb_target_has_locked_support():
+		var support_shift: Variant = _corner_climb_locked_support_down_shift()
+		if support_shift == null:
+			return false
+		var shift_global := Vector2(0.0, float(support_shift))
+		global_position += shift_global
+		_hang_corner_climb_start_global += shift_global
+		_hang_corner_climb_target_global += shift_global
+		_hang_top_global_y += shift_global.y
+		_hang_bottom_global_y += shift_global.y
+	var target_local_position: Vector2 = get_parent().to_local(
+		_hang_corner_climb_target_global
+	)
+	if (
+		target_local_position.x < BOARD_MIN_X
+		or target_local_position.x > BOARD_MAX_X
+		or target_local_position.y < BOARD_MIN_Y
+		or target_local_position.y > BOARD_MAX_Y
+	):
+		return false
+	return not _character_position_overlaps_solid(target_local_position)
+
+
+## 줄 삭제로 오르던 고정 블록이 아래로 내려간 경우 같은 발 위치와 겹치는 가장 가까운
+## 윗면을 찾는다. 위로 순간이동하거나 4줄보다 멀리 떨어진 다른 발판에는 붙지 않는다.
+func _corner_climb_locked_support_down_shift() -> Variant:
+	var target_local_position: Vector2 = get_parent().to_local(
+		_hang_corner_climb_target_global
+	)
+	var foot_y: float = (
+		target_local_position.y
+		+ CHARACTER_COLLIDER_OFFSET_Y
+		+ CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
+	var foot_left: float = target_local_position.x - CHARACTER_COLLIDER_WIDTH * 0.5
+	var foot_right: float = target_local_position.x + CHARACTER_COLLIDER_WIDTH * 0.5
+	var nearest_shift: float = INF
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			var solid_rect: Rect2 = _board_cell_rect(Vector2i(x, y))
+			if foot_right <= solid_rect.position.x or foot_left >= solid_rect.end.x:
+				continue
+			var down_shift: float = solid_rect.position.y - foot_y
+			if (
+				down_shift > FIXED_SUPPORT_TOLERANCE
+				and down_shift <= CELL_SIZE * 4.0 + FIXED_SUPPORT_TOLERANCE
+			):
+				nearest_shift = minf(nearest_shift, down_shift)
+	return null if is_inf(nearest_shift) else nearest_shift
+
+
+func _corner_climb_target_has_locked_support() -> bool:
+	var target_local_position: Vector2 = get_parent().to_local(
+		_hang_corner_climb_target_global
+	)
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			if _corner_climb_target_stands_on_rect(
+				target_local_position,
+				_board_cell_rect(Vector2i(x, y))
+			):
+				return true
+	return false
+
+
+func _corner_climb_target_has_active_support() -> bool:
+	var target_local_position: Vector2 = get_parent().to_local(
+		_hang_corner_climb_target_global
+	)
+	for local_cell: Vector2i in controller.active_local_cells():
+		if _corner_climb_target_stands_on_rect(
+			target_local_position,
+			_board_cell_rect(controller.active_origin + local_cell)
+		):
+			return true
+	return false
+
+
+func _corner_climb_target_stands_on_rect(
+	target_local_position: Vector2,
+	solid_rect: Rect2
+) -> bool:
+	var foot_y: float = (
+		target_local_position.y
+		+ CHARACTER_COLLIDER_OFFSET_Y
+		+ CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
+	if absf(foot_y - solid_rect.position.y) > FIXED_SUPPORT_TOLERANCE:
+		return false
+	var foot_left: float = target_local_position.x - CHARACTER_COLLIDER_WIDTH * 0.5
+	var foot_right: float = target_local_position.x + CHARACTER_COLLIDER_WIDTH * 0.5
+	return foot_right > solid_rect.position.x and foot_left < solid_rect.end.x
+
+
 func _character_position_overlaps_solid(candidate_position: Vector2) -> bool:
 	var collider_size := Vector2(
 		CHARACTER_COLLIDER_WIDTH,
@@ -1245,7 +1457,7 @@ func _character_position_overlaps_solid(candidate_position: Vector2) -> bool:
 
 func _hang_climb_direction() -> float:
 	var climb_direction: float = 0.0 # 상하 입력을 합산할 방향값.
-	if Input.is_key_pressed(KEY_UP):
+	if Input.is_action_pressed(&"character_climb_up"):
 		climb_direction -= 1.0
 	# 아래 키는 지상에서는 명상, 매달린 동안에는 하강 입력으로 문맥이 바뀐다.
 	if Input.is_action_pressed(&"character_meditate"):
@@ -1545,8 +1757,14 @@ func _try_start_hang() -> void:
 		var returned_from_wall_jump: bool = _wall_jump_control_remaining > 0.0 # 직전 벽으로 복귀했는지.
 		_hang_body = collider as Node2D
 		_hang_jump_facing = facing
+		_hang_active_origin = (
+			controller.active_origin
+			if _hang_body.name == &"ActivePiece"
+			else Vector2i.ZERO
+		)
 		if not _set_hang_vertical_bounds(ray):
 			_hang_body = null
+			_hang_active_origin = Vector2i.ZERO
 			return
 		var visible_center_range: Vector2 = _visible_board_character_center_range()
 		if (
@@ -1579,6 +1797,7 @@ func _exit_hang() -> void:
 	_hang_corner_climb_progress = 0.0
 	_hang_corner_climb_duration = 0.0
 	_hang_body = null
+	_hang_active_origin = Vector2i.ZERO
 	_clear_hang_vertical_bounds()
 	if is_instance_valid(sprite):
 		_update_sprite_modulation()
@@ -2891,6 +3110,7 @@ func _apply_animation_frame() -> void:
 			+ MainLayout.BOARD_VISUAL_OFFSET
 			+ ANIMATION_DATA.fixed_offset_for(character_id)
 		)
+		fixed_position.y += _grounded_frame_visual_offset_y(region)
 		fixed_position.x += _standing_wall_visual_offset_x(region)
 		fixed_position.x += _corner_climb_visual_ledge_offset_x(region)
 		fixed_position.y += _corner_climb_visual_ledge_offset_y(
@@ -2919,6 +3139,74 @@ func _apply_animation_frame() -> void:
 			-(visible_center_x - source_center.x) * uniform_scale,
 			ground_anchor_y - (visible_bottom - source_center.y) * uniform_scale
 		)
+	)
+
+
+## 걷기용 IDLE 프레임마다 발끝 alpha가 1px씩 달라도 실제 발선은 흔들리지 않게 한다.
+## 블록 위에서는 collision 윗면이 아니라 2px 안쪽의 첫 표시 픽셀까지 내려 빈 줄을 없앤다.
+func _grounded_frame_visual_offset_y(region: Rect2) -> float:
+	if _animation_state != ANIMATION_DATA.IDLE or is_hanging or not is_on_floor():
+		return 0.0
+	var reference_region: Rect2 = ANIMATION_DATA.REGIONS[ANIMATION_DATA.IDLE][0]
+	var reference_bottom: float = _frame_alpha_bounds(reference_region).end.y
+	var current_bottom: float = _frame_alpha_bounds(region).end.y
+	var base_position_y: float = (
+		ANIMATION_DATA.display_offset_for(character_id).y
+		+ MainLayout.BOARD_VISUAL_OFFSET.y
+		+ ANIMATION_DATA.fixed_offset_for(character_id).y
+	)
+	var reference_visible_bottom: float = (
+		base_position_y
+		+ (reference_bottom - ANIMATION_DATA.FRAME_SIZE * 0.5) * sprite.scale.y
+	)
+	var collider_foot_y: float = (
+		CHARACTER_COLLIDER_OFFSET_Y + CHARACTER_COLLIDER_HEIGHT * 0.5
+	)
+	var profile_alignment: float = collider_foot_y - reference_visible_bottom
+	var frame_alignment: float = clampf(
+		(reference_bottom - current_bottom) * sprite.scale.y,
+		-2.0,
+		2.0
+	)
+	return profile_alignment + frame_alignment + _standing_support_visual_inset()
+
+
+## 물리 바닥은 셀 경계에 있지만 블록 그림은 경계에서 2px 줄어들어 그려진다.
+## 보드 최하단 경계는 inset 없이 유지하고, 고정/활성 블록 위에서만 표시 inset을 반환한다.
+func _standing_support_visual_inset() -> float:
+	var collider_rect: Rect2 = _character_collider_rect()
+	var board_floor_y: float = float(MainBoardModel.VISIBLE_HEIGHT) * CELL_SIZE
+	if absf(collider_rect.end.y - board_floor_y) <= STANDING_WALL_CONTACT_TOLERANCE:
+		return 0.0
+
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+				continue
+			if _standing_rect_is_supported_by_block(
+				collider_rect,
+				_board_cell_rect(Vector2i(x, y))
+			):
+				return BLOCK_VISUAL_INSET
+	for local_cell: Vector2i in controller.active_local_cells():
+		var active_cell: Vector2i = controller.active_origin + local_cell
+		if _standing_rect_is_supported_by_block(
+			collider_rect,
+			_board_cell_rect(active_cell)
+		):
+			return BLOCK_VISUAL_INSET
+	return 0.0
+
+
+func _standing_rect_is_supported_by_block(body_rect: Rect2, block_rect: Rect2) -> bool:
+	var horizontal_overlap: float = (
+		minf(body_rect.end.x, block_rect.end.x)
+		- maxf(body_rect.position.x, block_rect.position.x)
+	)
+	return (
+		horizontal_overlap > STANDING_WALL_CONTACT_TOLERANCE
+		and absf(body_rect.end.y - block_rect.position.y)
+		<= STANDING_WALL_CONTACT_TOLERANCE
 	)
 
 
@@ -3072,7 +3360,12 @@ func _corner_climb_visual_ledge_offset_y(
 ## Align only standing art with a wall already touching the fixed collider.
 ## The CharacterBody2D and its 42x90 collider never move for this correction.
 func _standing_wall_visual_offset_x(region: Rect2) -> float:
-	if _animation_state != ANIMATION_DATA.IDLE or is_hanging or not is_on_floor():
+	if (
+		_animation_state != ANIMATION_DATA.IDLE
+		or is_hanging
+		or not is_on_floor()
+		or absf(velocity.x) > IDLE_ANIMATION_SPEED_EPSILON
+	):
 		return 0.0
 	var wall_direction: int = _standing_wall_contact_direction()
 	if wall_direction == 0:
@@ -3278,6 +3571,7 @@ func _reset_character() -> void:
 	facing = 1
 	is_hanging = false
 	_hang_body = null
+	_hang_active_origin = Vector2i.ZERO
 	_clear_hang_vertical_bounds()
 	is_meditating = false
 	is_bound = false

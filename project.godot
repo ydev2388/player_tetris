@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Block Fighter"
+config/version="1.0.2"
 run/main_scene="res://start_screen/scenes/start_screen.tscn"
 config/features=PackedStringArray("4.7")
 

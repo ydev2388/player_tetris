@@ -67,6 +67,10 @@ func _run() -> void:
 		"일시정지는 P 하나만 사용한다."
 	)
 	_expect(
+		INPUT_ACTIONS.get_default_keys(&"character_climb_up") == [KEY_UP],
+		"벽 오르기는 키 설정 가능한 위쪽 이동 action을 사용한다."
+	)
+	_expect(
 		INPUT_ACTIONS.get_definition(&"character_pull").is_empty(),
 		"최종 입력 목록에 당기기 동작은 없다."
 	)
@@ -2706,6 +2710,11 @@ func _test_character_frame_normalization(
 		var reference_position: Vector2 = character.sprite.position
 		var reference_region: Rect2 = character.sprite.region_rect
 		var reference_bounds: Rect2 = character._frame_alpha_bounds(reference_region)
+		var expected_fixed_base_position: Vector2 = (
+			ANIMATION_DATA.display_offset_for(profile_id)
+			+ MainLayout.BOARD_VISUAL_OFFSET
+			+ ANIMATION_DATA.fixed_offset_for(profile_id)
+		)
 		transparent_padding_is_excluded = (
 			transparent_padding_is_excluded
 			and reference_bounds.size.x < reference_region.size.x
@@ -2742,9 +2751,20 @@ func _test_character_frame_normalization(
 					all_required_frames_are_opaque and frame_bounds.has_area()
 				)
 				if ANIMATION_DATA.uses_fixed_geometry(profile_id):
+					var fixed_position_is_valid: bool = (
+						is_equal_approx(character.sprite.position.x, reference_position.x)
+						and (
+							character.sprite.position.is_equal_approx(expected_fixed_base_position)
+							if state != ANIMATION_DATA.IDLE
+							else (
+								absf(character.sprite.position.y - reference_position.y) <= 2.0
+								and is_equal_approx(visible_rect.end.y, expected_visible_rect.end.y)
+							)
+						)
+					)
 					if (
 						not character.sprite.scale.is_equal_approx(reference_scale)
-						or not character.sprite.position.is_equal_approx(reference_position)
+						or not fixed_position_is_valid
 						or not character.sprite.scale.is_equal_approx(Vector2.ONE)
 					):
 						fixed_geometry_is_stable = false
@@ -2820,7 +2840,7 @@ func _test_character_frame_normalization(
 	)
 	_expect(
 		fixed_geometry_is_stable and all_required_frames_are_opaque,
-		"All eight skins use one fixed scale/offset and every required atlas frame is opaque."
+		"All eight skins keep fixed scale/body anchors, ground idle feet, and use opaque required frames."
 	)
 	_expect(
 		hang_animation_cycles

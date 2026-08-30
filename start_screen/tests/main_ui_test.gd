@@ -27,6 +27,36 @@ func _run() -> void:
 	root.add_child(screen)
 	await process_frame
 	await process_frame
+	var required_web_glyphs: String = "한中★←→×！■"
+	var missing_web_glyphs: Array[String] = []
+	for glyph: String in required_web_glyphs:
+		if not screen._font.has_char(glyph.unicode_at(0)):
+			missing_web_glyphs.append(glyph)
+	_expect(
+		missing_web_glyphs.is_empty(),
+		"내장 Web 폰트가 한글·중국어·메뉴 기호를 모두 포함한다. 누락: %s"
+		% ", ".join(missing_web_glyphs)
+	)
+	var web_game_layout: Dictionary = BlockFighterStartScreen.calculate_web_game_layout(
+		Vector2(960.0, 800.0),
+		Vector2(560.0, 1140.0)
+	)
+	var expected_web_scale: float = 800.0 / 1140.0
+	var expected_web_x: float = (960.0 - 560.0 * expected_web_scale) * 0.5
+	_expect(
+		is_equal_approx(float(web_game_layout["scale"]), expected_web_scale)
+			and is_equal_approx((web_game_layout["position"] as Vector2).x, expected_web_x)
+			and is_equal_approx((web_game_layout["position"] as Vector2).y, 0.0),
+		"웹 게임 화면은 560×1140 전체를 960×800 안에 비율 유지로 중앙 정렬한다."
+	)
+	_expect(
+		screen._game_viewport != null
+			and screen._game_viewport.size == Vector2i(560, 1140)
+			and screen._game_viewport_container != null
+			and screen._game_viewport_container.stretch
+			and screen._game_host.size.is_equal_approx(Vector2(560.0, 1140.0)),
+		"게임 물리는 고정 560×1140 SubViewport에서 실행되고 표시 surface만 맞춤 확대한다."
+	)
 	var reserved_escape_result: Dictionary = screen.settings.set_binding(
 		&"pause_game",
 		0,
@@ -49,30 +79,32 @@ func _run() -> void:
 		screen.settings.language == StartScreenSettings.ENGLISH,
 		"언어 기본값은 english다."
 	)
-	screen.settings.set_language(StartScreenSettings.KOREAN)
-	_expect(
-		screen.settings.language == StartScreenSettings.KOREAN,
-		"언어 설정은 kor로 변경된다."
-	)
-	_expect(
-		screen.settings.get_passive_name(2) == "점프"
-			and screen.settings.get_passive_description(2) == "점프 높이가 높아집니다.",
-		"한국어 패시브 이름과 설명이 적용된다."
-	)
-	screen.settings.set_language(StartScreenSettings.CHINESE)
-	_expect(
-		screen.settings.language == StartScreenSettings.CHINESE
-			and screen.settings.get_action_label(&"character_jump") == "跳跃"
-			and screen.settings.get_passive_name(0) == "攻击速度"
-			and screen._text("OPTION") == "选项",
-		"중국어 설정과 핵심 메뉴 번역이 적용된다."
-	)
 	screen.settings.set_language(StartScreenSettings.ENGLISH)
 	_expect(
-		screen.settings.get_passive_name(2) == "Jump"
-			and screen.settings.get_passive_description(2) == "Increases jump height.",
-		"영어 패시브 이름과 설명이 적용된다."
+		screen.settings.language == StartScreenSettings.ENGLISH,
+		"언어 설정은 english로 유지된다."
 	)
+	_expect(
+		screen.settings.get_action_label(&"character_jump") == "Jump"
+			and screen.settings.get_passive_name(2) == "Jump"
+			and screen.settings.get_passive_description(2) == "Increases jump height.",
+		"영어 액션·패시브 이름과 설명이 적용된다."
+	)
+	_expect(
+		screen._text("OPTION") == "OPTION"
+			and screen._text("도전 모드", "CHALLENGE MODE") == "CHALLENGE MODE"
+			and screen._text("%d구역\n%d-%d층", "AREA %d\nFLOORS %d-%d")
+				== "AREA %d\nFLOORS %d-%d"
+			and screen._text("새 develop 문구", "NEW DEVELOP TEXT") == "NEW DEVELOP TEXT",
+		"영어 메뉴 문구와 폴백이 적용된다."
+	)
+	var localized_game_view := MainGameView.new()
+	_expect(
+		localized_game_view._text("목숨: %d", "LIVES: %d") == "LIVES: %d"
+			and localized_game_view._text("새 게임 문구", "NEW GAME TEXT") == "NEW GAME TEXT",
+		"게임 HUD는 영어 문구를 사용한다."
+	)
+	localized_game_view.free()
 	_expect(
 		screen.settings.is_stage_unlocked(1)
 			and not screen.settings.is_stage_unlocked(2)
@@ -161,7 +193,7 @@ func _run() -> void:
 	var original_left_keys: Array[int] = save_failure_settings.get_action_keys(&"character_left")
 	save_failure_settings.set_binding(&"character_left", 0, KEY_F9)
 	save_failure_settings.set_music_percent(25.0)
-	save_failure_settings.set_language(StartScreenSettings.KOREAN)
+	save_failure_settings.set_language(StartScreenSettings.ENGLISH)
 	_expect(
 		save_failure_settings.get_action_keys(&"character_left") == original_left_keys
 			and save_failure_settings.music_percent == 100.0
@@ -339,7 +371,7 @@ func _run() -> void:
 			and challenge_button != null
 			and not challenge_button.disabled
 			and challenge_button.position.y < 140.0
-			and locked_stage_label.text.contains("🔒")
+			and locked_stage_label.text.contains("■")
 			and screen._stage_panels[1].modulate.a < 1.0
 			and not screen._stage_buttons[1].disabled
 			and screen._stage_buttons[1].get_theme_color("font_color").a == 1.0
@@ -637,6 +669,10 @@ func _run() -> void:
 	var character: MainCharacterController = screen._game_instance.get_node("BoardPhysics/Character")
 	_expect(character.character_id == "boxer", "스테이지 게임이 선택한 복서로 시작한다.")
 	_expect(
+		screen._game_instance.get_parent() == screen._game_viewport,
+		"로드된 게임의 물리 노드는 배율이 적용되지 않는 고정 SubViewport의 직접 자식이다."
+	)
+	_expect(
 		character.lives == MainCharacterController.MAX_LIVES + 1,
 		"구매한 체력 패시브가 게임 시작 목숨에 적용된다."
 	)
@@ -649,6 +685,35 @@ func _run() -> void:
 			InputMap.action_get_events(&"character_self_respawn").size() == 1,
 			"자력 재스폰은 기본 Q 하나를 사용한다."
 		)
+		var unlock_event: InputEventKey = InputEventKey.new()
+		unlock_event.pressed = true
+		unlock_event.physical_keycode = KEY_0
+		screen._input(unlock_event)
+		await process_frame
+		_expect(
+			screen._message_overlay.visible
+				and controller.state == MainGameController.GameState.PAUSED
+				and not controller.is_physics_processing(),
+			"게임 중 0 해금 안내는 뒤의 게임 진행과 입력을 함께 멈춘다."
+		)
+		Input.action_press(&"character_jump")
+		screen._hide_message()
+		_expect(
+			controller.state == MainGameController.GameState.PLAYING
+				and controller.is_physics_processing()
+				and character._ignore_initial_jump_until_released,
+			"해금 안내를 닫은 Z 입력은 게임 재개 직후 점프로 전달되지 않는다."
+		)
+		Input.action_release(&"character_jump")
+		var keypad_unlock_event: InputEventKey = InputEventKey.new()
+		keypad_unlock_event.pressed = true
+		keypad_unlock_event.physical_keycode = KEY_KP_0
+		_expect(
+			screen._handle_debug_unlock_all_characters_input(keypad_unlock_event)
+				and screen._message_overlay.visible,
+			"키패드 0도 전체 캐릭터 해금 입력으로 처리한다."
+		)
+		screen._hide_message()
 		var escape_event: InputEventKey = InputEventKey.new()
 		escape_event.pressed = true
 		escape_event.physical_keycode = KEY_ESCAPE

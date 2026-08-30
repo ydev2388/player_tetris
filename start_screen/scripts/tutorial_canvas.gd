@@ -11,6 +11,7 @@ extends Control
 
 const ANIMATION_DATA: Script = preload("res://scripts/character_animation_data.gd") # sprite frame table utility.
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png") # tetromino cell atlas.
+const UI_FONT: FontFile = preload("res://assets/fonts/NotoSansKR-VF.ttf")
 const BLOCK_SPRITE_REGIONS: Dictionary = {
 	"cyan": Rect2(80.0, 255.0, 210.0, 215.0),
 	"orange": Rect2(1745.0, 255.0, 210.0, 215.0),
@@ -36,18 +37,17 @@ const ROTATION_KICK_DURATION: float = 0.42 # 실제 캐릭터 블록 플립 한 
 
 var page: int = 0 # 현재 draw할 0~4 page index.
 var settings: StartScreenSettings # 실제 사용자 키 이름을 조회할 non-owning 설정 참조.
-var _font: SystemFont # 모든 draw_string이 공유하는 한글 font resource.
+var _font: Font # 모든 draw_string이 공유하는 Web 내장 다국어 font resource.
 var _animation_time: float = 0.0 # 현재 page loop 안의 정규화되지 않은 경과 초.
 var _animation_accumulator: float = 0.0 # 가변 render delta를 12FPS 고정 step으로 바꾸는 잔여 시간.
 
 
 ## 상황: TutorialCanvas가 scene tree에 들어올 때 Godot가 한 번 호출한다.
-## 순서: mouse 입력 통과 → 한글 font 후보 지정 → 매-frame process 활성화.
+## 순서: mouse 입력 통과 → 프로젝트 내장 다국어 font 지정 → 매-frame process 활성화.
 ## 결과: 입력은 아래 버튼에 전달되고 animation time 갱신 준비가 끝난다.
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_font = SystemFont.new()
-	_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
+	_font = UI_FONT
 	set_process(true)
 
 

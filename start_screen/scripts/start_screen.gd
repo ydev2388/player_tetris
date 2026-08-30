@@ -9,6 +9,7 @@ const MENU_VIEWPORT_SIZE: Vector2i = Vector2i(960, 800)
 const TUTORIAL_PAGE_COUNT: int = 5
 const PORTRAIT_SOURCE: Rect2 = Rect2(0.0, 0.0, 128.0, 128.0)
 const BLOCK_TEXTURE: Texture2D = preload("res://assets/sprites/block_sprites.png")
+const UI_FONT: FontFile = preload("res://assets/fonts/NotoSansKR-VF.ttf")
 const CYAN_BLOCK_SOURCE: Rect2 = Rect2(80.0, 255.0, 210.0, 215.0)
 const ORANGE_BLOCK_SOURCE: Rect2 = Rect2(1745.0, 255.0, 210.0, 215.0)
 const TUTORIAL_CANVAS_SCRIPT: Script = preload(
@@ -76,83 +77,6 @@ const ENGLISH_TEXT: Dictionary = {
 	"실패": "FAILED", "스테이지 제한시간이 끝났습니다.": "The stage time limit expired.", "재시도": "RETRY",
 	"구역 선택": "FLOOR SELECT", "DATA 초기화": "RESET DATA",
 }
-const CHINESE_TEXT: Dictionary = {
-	"게임 설명": "游戏说明", "↑ ↓ 선택    Z 확인": "上下选择    Z确认",
-	"캐릭터 선택": "选择角色", "블록 깨러 가기": "开始关卡", "상점": "商店", "메인으로": "主菜单",
-	"상점 선택": "选择商店", "강화": "强化", "도전 모드": "挑战模式",
-	"최고 기록 %d줄": "最高纪录 %d 行", "10층 클리어 후 해금": "通关 10 层后解锁",
-	"선택 후 Z로 강화": "选择后按 Z 强化", "스테이지 선택으로": "关卡选择",
-	"패시브 초기화": "重置被动", "키 설정과 사운드 크기를 조절합니다": "调整按键、语言和音量。",
-	"이동·액션·시스템 키를\n원하는 키로 변경합니다.": "修改移动、动作和\n系统按键。",
-	"키 설정 열기": "打开按键设置", "BGM과 효과음의 크기를\n각각 조절합니다.": "分别调整 BGM 和\n音效音量。",
-	"볼륨 설정 열기": "打开音量设置", "진행 데이터 초기화": "重置进度数据",
-	"스테이지 해금과 별 재화를 지웁니다.": "删除关卡解锁和星星。",
-	"진행 상황 삭제": "删除进度", "버튼을 누른 뒤 새 키를 입력하세요": "选择按钮后输入新按键。",
-	"동작": "动作", "주 키": "主键", "보조 키": "副键", "지우기": "清除",
-	"기본값 복원": "恢复默认", "OPTION으로": "返回选项",
-	"향후 추가되는 음악과 효과음에도 설정이 유지됩니다": "此设置也会用于之后添加的音乐和音效。",
-	"BGM은 추후 추가되며 현재는 효과음만 조절합니다.": "背景音乐将在之后添加；目前只能调节音效。",
-	"BGM은 추후 추가 예정입니다.\n0%는 음소거입니다.": "背景音乐将在之后添加。\n0% 为静音。",
-	"0%는 음소거입니다. 음악은 BGM 버스,\n효과음은 SFX 버스를 지정하면 이 설정을 사용합니다.": "0% 为静音。音乐使用 BGM 总线，\n音效使用 SFX 总线。",
-	"새 키 입력": "输入新按键", "취소": "取消", "안내": "提示", "확인": "确定",
-	"진행 데이터를 삭제할까요?": "要删除进度数据吗？", "스테이지 해금, 도전 기록, 별 재화와 패시브가 초기화됩니다.": "关卡解锁、挑战记录、星星和被动强化将被重置。",
-	"삭제": "删除", "패시브를 초기화할까요?": "要重置被动强化吗？",
-	"투자한 별을 모두 돌려받습니다.": "将返还所有投入的星星。", "초기화": "重置",
-	"메뉴로 나가겠습니까?": "要返回主菜单吗？", "뒤로": "返回",
-	"실패": "失败", "스테이지 제한시간이 끝났습니다.": "关卡限制时间已结束。", "재시도": "重试",
-	"DATA 초기화": "重置数据", "뒤로가기": "返回", "LANGUAGE": "语言", "구역 선택": "选关",
-	"GAME START": "开始游戏", "OPTION": "选项", "EXIT": "退出", "STAGE SELECT": "关卡选择",
-	"KEY": "按键", "VOLUME": "音量", "KEY CUSTOM": "按键设置", "BGM": "背景音乐", "SFX": "音效",
-	"← 이전": "← 上一页", "다음 →": "下一页 →", "  보스": "  首领",
-	"별 %d개": "%d 颗星", "입장 가능": "可进入", "잠김": "未解锁",
-	"현재 효과: 목숨 +%d · Lv. %d / %d": "当前效果：生命 +%d · 等级 %d / %d",
-	"현재 효과: %s%d%% · Lv. %d / %d": "当前效果：%s%d%% · 等级 %d / %d",
-	"최대 레벨": "最高等级", "다음 비용 ★ %d": "下一级费用 ★ %d",
-	"%d층 클리어!\n%s": "%d层通关！\n%s", "별 보상 +%d   (보유 %d)": "星星奖励 +%d   (持有 %d)",
-	# 캐릭터 선택 카드.
-	"일반인": "普通人", "복서": "拳击手", "방패병": "盾卫", "소방관": "消防员",
-	"청소부": "清洁工", "성녀": "圣女", "시계공": "钟表匠", "닌자": "忍者",
-	"공격속도": "攻击速度", "이동속도": "移动速度", "점프력": "跳跃力",
-	"스태미나": "体力", "특수공격": "特殊攻击",
-	"특수 · %s": "特殊 · %s",
-	"특수 · 전력 질주": "特殊 · 全力冲刺",
-	"특수 · 가드 브레이크": "特殊 · 破防",
-	"특수 · 전방 보호벽": "特殊 · 前方护盾",
-	"특수 · 중력 물길": "特殊 · 重力水流",
-	"특수 · 대청소": "特殊 · 大扫除",
-	"특수 · 성역의 가호": "特殊 · 圣域庇护",
-	"특수 · 정지 태엽": "特殊 · 静止发条",
-	"특수 · 표창": "特殊 · 手里剑",
-	"전력 질주": "全力冲刺", "가드 브레이크": "破防", "전방 보호벽": "前方护盾",
-	"중력 물길": "重力水流", "대청소": "大扫除", "성역의 가호": "圣域庇护",
-	"정지 태엽": "静止发条", "표창": "手里剑",
-	"2초 동안 좌우 이동속도가 60% 증가한다.": "2秒内左右移动速度提升60%。",
-	"2초간 좌우 이동속도가\n60% 증가한다.": "2秒内左右移动速度\n提升60%。",
-	"전방 블록을 가능한 거리만큼 최대 3칸 민다.": "将前方方块尽量推开，最多3格。",
-	"전방 블록을 최대 3칸\n밀어낸다.": "将前方方块\n最多推开3格。",
-	"시전 방향 앞에 세로 3칸 보호벽을 2초 동안 유지한다.": "在施放方向前方竖起3格护盾，持续2秒。",
-	"전방에 3칸 보호벽을\n2초간 세운다.": "在前方竖起3格护盾，\n持续2秒。",
-	"전방에 3셀 물길을 4초 만들고 자동 낙하마다 흐르는 방향으로 1칸 이동시킨다.": "在前方制造3格水流，持续4秒；每次自动下落将方块向流向推动1格。",
-	"전방에 흐르는 물길을\n4초간 만든다.": "在前方制造流动水流，\n持续4秒。",
-	"발밑과 좌우 한 칸의 노출된 고정 블록을 최대 3개 제거한다.": "清除脚下及左右1格内暴露的固定方块，最多3个。",
-	"발밑 주변 고정 블록을\n최대 3개 제거한다.": "清除脚下周围的固定方块，\n最多3个。",
-	"3초 동안 이동속도 +20%, 노란 오라가 유지되는 동안 다음 기믹·보스 공격 1회 무효. 압착은 막지 못한다.": "3秒内移动速度+20%，黄色光环持续期间免疫下一次机关或首领攻击1次。无法抵挡挤压。",
-	"3초간 이동속도 +20%,\n공격 1회를 무효화한다.": "3秒内移动速度+20%，\n免疫1次攻击。",
-	"활성 블록과 다음 가시·결박·씨앗 발동을 3초 동안 늦춘다.": "使活动方块以及下一次尖刺、束缚、种子触发延后3秒。",
-	"활성 블록과 다음 기믹을\n3초간 멈춘다.": "使活动方块和下一次机关\n停止3秒。",
-	"전방 6칸으로 표창을 던져 활성 블록 덩어리 전체를 정확히 1칸 민다. 고정 블록에는 막힌다.": "向前方6格投出手里剑，将整个活动方块准确地推动1格。会被固定方块挡住。",
-	"전방 표창으로 활성 블록을\n1칸 밀어낸다.": "用手里剑将活动方块\n推开1格。",
-	"해금 완료": "已解锁", "잠김 · 별 %d개": "未解锁 · %d 颗星",
-	"잠김 · 전 스테이지 무피해": "未解锁 · 全关卡无伤",
-	"목표: 별 15개": "目标：15 颗星",
-	"목표: 전 스테이지 무피해": "目标：全关卡无伤",
-	"아직 해금되지 않은 캐릭터입니다.": "该角色尚未解锁。",
-	"이전": "上一个", "현재": "当前", "다음": "下一个",
-	"탑 선택": "选择塔区",
-	"%d/%d층 해금": "%d/%d 层已解锁",
-	"%d구역\n%d-%d층": "第 %d 区\n%d-%d 层",
-	"%d층%s": "第 %d 层%s",
-}
 
 enum Screen {
 	MAIN,
@@ -176,7 +100,7 @@ var current_screen: Screen = Screen.MAIN
 var tutorial_page: int = 0
 var selected_stage_number: int = 1
 
-var _font: SystemFont
+var _font: Font
 var _ui: RefCounted
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
@@ -210,8 +134,6 @@ var _character_card_normal_style: StyleBoxFlat
 var _character_prev_button: Button
 var _character_next_button: Button
 var _options_first_button: Button
-var _language_button: Button
-var _selected_language: String = StartScreenSettings.ENGLISH
 var _key_buttons: Dictionary = {}
 var _key_status: Label
 var _tutorial_canvas: StartScreenTutorialCanvas
@@ -222,14 +144,18 @@ var _master_value_label: Label
 var _music_value_label: Label
 var _sfx_value_label: Label
 var _game_host: Control
+var _game_viewport_container: SubViewportContainer
+var _game_viewport: SubViewport
 var _game_instance: Node
 var _game_exit_overlay: Control
 var _game_exit_yes_button: Button
 var _game_exit_no_button: Button
 var _game_exit_was_playing: bool = false
+var _message_game_was_playing: bool = false
 var _select_sfx_player: AudioStreamPlayer
 var _select_sfx_timer: Timer
 var _skip_initial_select_sfx: bool = true
+var _menu_confirm_z_armed: bool = true
 var _music_manager: BlockFighterMusicManager
 
 var _capture_overlay: Control
@@ -259,8 +185,7 @@ var _passive_reset_no_button: Button
 func _ready() -> void:
 	set_process_input(true)
 	set_process_unhandled_key_input(true)
-	_font = SystemFont.new()
-	_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
+	_font = UI_FONT
 	_ui = UI_SCRIPT.new(_font, PANEL_DARK, BORDER, TEXT)
 
 	settings = StartScreenSettings.new(settings_file_path)
@@ -298,6 +223,9 @@ func _exit_tree() -> void:
 
 
 func _draw() -> void:
+	if current_screen == Screen.GAME:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#0b0f17"))
+		return
 	draw_rect(Rect2(Vector2.ZERO, size), BACKGROUND)
 	for x_value: int in range(0, int(size.x) + 1, 48):
 		draw_line(
@@ -355,8 +283,6 @@ func show_tutorial() -> void:
 
 
 func show_options() -> void:
-	_selected_language = settings.language
-	_refresh_language_button()
 	_show_screen(Screen.OPTIONS)
 
 
@@ -414,9 +340,8 @@ func start_game(stage_number: int = -1, challenge_mode: bool = false) -> bool:
 	_game_instance.name = "LoadedGame"
 	_game_instance.set_meta("stage_number", stage_number)
 	_game_instance.set_meta("challenge_mode", challenge_mode)
-	_game_instance.set_meta("language", settings.language)
 	selected_stage_number = stage_number
-	_game_host.add_child(_game_instance)
+	_game_viewport.add_child(_game_instance)
 	var selected_character: MainCharacterController = _game_instance.get_node_or_null(
 		"BoardPhysics/Character"
 	) as MainCharacterController
@@ -466,9 +391,24 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventKey:
 		return
 	var key_event: InputEventKey = event as InputEventKey
-	if not key_event.pressed or key_event.echo:
+	var is_z_key: bool = (
+		key_event.physical_keycode == KEY_Z
+		or key_event.keycode == KEY_Z
+	)
+	if not key_event.pressed:
+		if is_z_key:
+			_menu_confirm_z_armed = true
 		return
-	if _handle_game_exit_prompt_input(key_event):
+	if key_event.echo:
+		return
+	if is_z_key and _screen_uses_z_confirmation():
+		if not _menu_confirm_z_armed:
+			get_viewport().set_input_as_handled()
+			return
+		_menu_confirm_z_armed = false
+	if _handle_debug_unlock_all_characters_input(key_event):
+		get_viewport().set_input_as_handled()
+	elif _handle_game_exit_prompt_input(key_event):
 		get_viewport().set_input_as_handled()
 	elif _handle_debug_completion_input(key_event):
 		get_viewport().set_input_as_handled()
@@ -478,10 +418,19 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif _handle_character_select_input(key_event):
 		get_viewport().set_input_as_handled()
-	elif _handle_language_selection_input(key_event):
-		get_viewport().set_input_as_handled()
 	elif _handle_menu_confirm_input(key_event):
 		get_viewport().set_input_as_handled()
+
+
+func _screen_uses_z_confirmation() -> bool:
+	if current_screen != Screen.GAME:
+		return true
+	return (
+		(_game_exit_overlay != null and _game_exit_overlay.visible)
+		or (_message_overlay != null and _message_overlay.visible)
+		or (_stage_result_overlay != null and _stage_result_overlay.visible)
+		or (_stage_fail_overlay != null and _stage_fail_overlay.visible)
+	)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -559,6 +508,42 @@ func _handle_debug_completion_input(key_event: InputEventKey) -> bool:
 	return true
 
 
+## 숫자열 0 또는 키패드 0을 누르면 배포 빌드를 포함해 모든 캐릭터 선택 제한을 해제한다.
+## 키 설정을 변경하는 중에는 0을 정상적인 바인딩 입력으로 사용할 수 있도록 가로채지 않는다.
+func _handle_debug_unlock_all_characters_input(key_event: InputEventKey) -> bool:
+	if _capture_overlay != null and _capture_overlay.visible:
+		return false
+	if (
+		(_game_exit_overlay != null and _game_exit_overlay.visible)
+		or (_message_overlay != null and _message_overlay.visible)
+		or (_progress_reset_overlay != null and _progress_reset_overlay.visible)
+		or (_passive_reset_overlay != null and _passive_reset_overlay.visible)
+	):
+		return false
+	var key_code: int = int(key_event.physical_keycode)
+	if key_code == KEY_NONE:
+		key_code = int(key_event.keycode)
+	if key_code != KEY_0 and key_code != KEY_KP_0:
+		return false
+	var unlock_error: Error = settings.unlock_all_characters_for_debug()
+	if unlock_error != OK:
+		_show_message(
+			_text(
+				"캐릭터 해금 상태를 저장하지 못했습니다.",
+				"Could not save the character unlock state."
+			)
+		)
+		return true
+	_refresh_character_selection()
+	_show_message(
+		_text(
+			"버그키: 모든 캐릭터가 해금되었습니다.",
+			"CHEAT: All characters unlocked."
+		)
+	)
+	return true
+
+
 ## 결과: 캐릭터 화면에서 좌우는 카드 이동, 끝 칸은 표시 window 이동, Z는 즉시 확정한다.
 func _handle_character_select_input(key_event: InputEventKey) -> bool:
 	if current_screen != Screen.CHARACTER:
@@ -576,19 +561,6 @@ func _handle_character_select_input(key_event: InputEventKey) -> bool:
 		_confirm_character_selection()
 		return true
 	return false
-
-
-func _handle_language_selection_input(key_event: InputEventKey) -> bool:
-	if current_screen != Screen.OPTIONS or _language_button == null or not _language_button.has_focus():
-		return false
-	var key_code: int = key_event.physical_keycode
-	if key_code == KEY_NONE:
-		key_code = key_event.keycode
-	if key_code != KEY_LEFT and key_code != KEY_RIGHT:
-		return false
-	_selected_language = _next_language(key_code == KEY_RIGHT)
-	_refresh_language_button()
-	return true
 
 
 func _move_character_focus(direction: int) -> void:
@@ -751,9 +723,21 @@ func _handle_back_navigation(key_event: InputEventKey) -> bool:
 func _build_interface() -> void:
 	_game_host = Control.new()
 	_game_host.name = "GameHost"
-	_game_host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_configure_game_host_layout()
 	_game_host.visible = false
 	add_child(_game_host)
+	_game_viewport_container = SubViewportContainer.new()
+	_game_viewport_container.name = "GameViewportContainer"
+	_game_viewport_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_viewport_container.stretch = true
+	_game_viewport_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	_game_host.add_child(_game_viewport_container)
+	_game_viewport = SubViewport.new()
+	_game_viewport.name = "GameViewport"
+	_game_viewport.size = MainLayout.GAME_VIEWPORT_SIZE
+	_game_viewport.disable_3d = true
+	_game_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_game_viewport_container.add_child(_game_viewport)
 
 	_build_main_screen()
 	_build_floor_select_screen()
@@ -1264,17 +1248,6 @@ func _build_options_screen() -> void:
 	)
 	volume_button.pressed.connect(show_volume)
 
-	var language_panel: Panel = _create_panel(
-		screen, Rect2(255.0, 290.0, 450.0, 60.0), PANEL, PURPLE, 12
-	)
-	_create_label(language_panel, "LANGUAGE", Rect2(24.0, 15.0, 150.0, 30.0), 18, TEXT)
-	_language_button = _create_button(
-		language_panel, _text("한국어", "ENGLISH"), Rect2(190.0, 12.0, 236.0, 36.0), PURPLE, 14
-	)
-	_language_button.name = "LanguageButton"
-	_language_button.tooltip_text = "←/→ 선택    Z 적용"
-	_language_button.pressed.connect(_confirm_language_selection)
-
 	var reset_button: Button = _create_button(
 		screen,
 		"DATA 초기화",
@@ -1730,7 +1703,7 @@ func _build_game_exit_overlay() -> void:
 	_game_exit_overlay.z_as_relative = false
 	_game_exit_overlay.z_index = 100
 	_game_exit_overlay.visible = false
-	add_child(_game_exit_overlay)
+	_game_viewport.add_child(_game_exit_overlay)
 
 	var shade: ColorRect = ColorRect.new()
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1995,6 +1968,7 @@ func _complete_stage(
 
 func _show_screen(screen_type: Screen) -> void:
 	current_screen = screen_type
+	queue_redraw()
 	if _music_manager != null:
 		if screen_type == Screen.GAME:
 			_music_manager.play_battle()
@@ -2069,7 +2043,7 @@ func _refresh_stage_select() -> void:
 			_text("최고 기록 %d줄") % settings.challenge_best_lines,
 		]
 		if challenge_unlocked
-		else "🔒 %s\n%s" % [_text("도전 모드"), _text("10층 클리어 후 해금")]
+		else "■ %s\n%s" % [_text("도전 모드"), _text("10층 클리어 후 해금")]
 	)
 	for card_index: int in range(_FLOORS_PER_GROUP):
 		var stage_number: int = _floor_number_for_card(card_index)
@@ -2086,7 +2060,7 @@ func _refresh_stage_select() -> void:
 				_text("입장 가능", "AVAILABLE"),
 			]
 			if unlocked
-			else "🔒\n%s" % _text("잠김", "LOCKED")
+			else "■\n%s" % _text("잠김", "LOCKED")
 		)
 		_stage_buttons[card_index].text = (
 			_text("블록 깨러 가기", "START STAGE") if unlocked else _text("잠김", "LOCKED")
@@ -2300,6 +2274,16 @@ func _show_message(message: String) -> void:
 		return
 	if not _message_overlay.visible:
 		_message_previous_focus = get_viewport().gui_get_focus_owner()
+		_message_game_was_playing = false
+		if current_screen == Screen.GAME:
+			var game_controller: MainGameController = _loaded_game_controller()
+			if game_controller != null:
+				_message_game_was_playing = (
+					game_controller.state == MainGameController.GameState.PLAYING
+				)
+				if _message_game_was_playing:
+					game_controller.toggle_pause()
+				game_controller.set_physics_process(false)
 	_message_label.text = message
 	_message_overlay.visible = true
 	_message_overlay.move_to_front()
@@ -2309,6 +2293,20 @@ func _show_message(message: String) -> void:
 
 func _hide_message() -> void:
 	_message_overlay.visible = false
+	var game_controller: MainGameController = _loaded_game_controller()
+	if game_controller != null:
+		game_controller.set_physics_process(true)
+		if (
+			_message_game_was_playing
+			and game_controller.state == MainGameController.GameState.PAUSED
+		):
+			game_controller.toggle_pause()
+		var loaded_character: MainCharacterController = _game_instance.get_node_or_null(
+			"BoardPhysics/Character"
+		) as MainCharacterController
+		if loaded_character != null and Input.is_action_pressed(&"character_jump"):
+			loaded_character.suppress_jump_until_released()
+	_message_game_was_playing = false
 	var previous_focus: Control = _message_previous_focus
 	_message_previous_focus = null
 	if (
@@ -2382,12 +2380,54 @@ func _loaded_game_controller() -> MainGameController:
 
 
 ## 상황: 게임 전용 560×1140 창에서 시작 메뉴로 돌아가기 직전에 호출한다.
-## 결과: content scale과 실제 창 크기를 메뉴 설계 크기 960×800으로 복원한다.
+## 결과: 데스크톱은 content scale과 실제 창 크기를 메뉴 설계 크기로 복원한다.
+##       Web은 처음부터 메뉴 viewport를 유지하므로 불필요한 HTML canvas resize를 막는다.
 func _apply_menu_viewport_size() -> void:
 	var window: Window = get_window()
 	window.content_scale_size = MENU_VIEWPORT_SIZE
-	if not DisplayServer.get_name().contains("headless"):
+	if (
+		OS.get_name() != "Web"
+		and not OS.has_feature("web")
+		and not DisplayServer.get_name().contains("headless")
+	):
 		window.size = MENU_VIEWPORT_SIZE
+
+
+## 상황: 메뉴 root 안에 고정 해상도의 세로 게임 viewport를 배치할 때 호출한다.
+## 결과: Web은 560×1140 SubViewport 결과만 960×800 canvas에 맞춰 중앙 합성한다.
+##       물리 노드 자체에는 scale을 적용하지 않아 local/global 좌표 단위가 항상 일치한다.
+func _configure_game_host_layout() -> void:
+	if OS.get_name() != "Web" and not OS.has_feature("web"):
+		_game_host.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		_game_host.position = Vector2.ZERO
+		_game_host.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+		_game_host.scale = Vector2.ONE
+		return
+	var layout: Dictionary = calculate_web_game_layout(
+		Vector2(MENU_VIEWPORT_SIZE),
+		Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+	)
+	_game_host.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_game_host.position = layout["position"] as Vector2
+	_game_host.size = Vector2(MainLayout.GAME_VIEWPORT_SIZE)
+	_game_host.scale = Vector2.ONE * float(layout["scale"])
+
+
+## 결과: content_size의 비율을 유지하면서 viewport_size 안에 모두 들어오는 scale/position을 반환한다.
+static func calculate_web_game_layout(viewport_size: Vector2, content_size: Vector2) -> Dictionary:
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return {"scale": 1.0, "position": Vector2.ZERO}
+	if content_size.x <= 0.0 or content_size.y <= 0.0:
+		return {"scale": 1.0, "position": Vector2.ZERO}
+	var fit_scale: float = minf(
+		viewport_size.x / content_size.x,
+		viewport_size.y / content_size.y
+	)
+	var fitted_size: Vector2 = content_size * fit_scale
+	return {
+		"scale": fit_scale,
+		"position": (viewport_size - fitted_size) * 0.5,
+	}
 
 
 func _play_select_sfx() -> void:
@@ -2454,64 +2494,9 @@ func _create_button(
 
 
 func _text(korean: String, english: String = "") -> String:
-	if settings == null or settings.language == StartScreenSettings.KOREAN:
-		return korean
-	if settings.language == StartScreenSettings.CHINESE:
-		return String(CHINESE_TEXT.get(korean, _chinese_fallback(korean)))
 	if not english.is_empty():
 		return english
 	return String(ENGLISH_TEXT.get(korean, LOCALIZATION.translated(korean)))
-
-
-## CHINESE_TEXT에 정확히 일치하는 키가 없을 때 완성 문자열("1층", "5층   보스", "별 3개")을
-## 패턴 키("%d층%s", "별 %d개")로 역매칭해 중국어 번역을 찾는다. 없으면 tr() 폴백.
-func _chinese_fallback(korean: String) -> String:
-	if korean.contains("층") and not korean.begins_with("층"):
-		var floor_part: String = korean.substr(0, korean.find("층"))
-		if floor_part.is_valid_int():
-			var suffix: String = korean.substr(korean.find("층") + 1)
-			var translated_suffix: String = LOCALIZATION.translated(suffix)
-			var floor_pattern: String = LOCALIZATION.translated("%d층%s")
-			return floor_pattern % [floor_part.to_int(), translated_suffix]
-	if korean.begins_with("별 ") and korean.ends_with("개"):
-		var star_part: String = korean.trim_prefix("별 ").trim_suffix("개")
-		if star_part.is_valid_int():
-			var star_pattern: String = LOCALIZATION.translated("별 %d개")
-			return star_pattern % star_part.to_int()
-	return LOCALIZATION.translated(korean)
-
-
-func _set_language(language: String) -> void:
-	settings.set_language(language)
-	get_tree().reload_current_scene()
-
-
-func _refresh_language_button() -> void:
-	if _language_button != null:
-		_language_button.text = _language_name(_selected_language)
-
-
-func _next_language(forward: bool) -> String:
-	var languages: Array[String] = [
-		StartScreenSettings.ENGLISH,
-		StartScreenSettings.KOREAN,
-		StartScreenSettings.CHINESE,
-	]
-	var index: int = languages.find(_selected_language)
-	return languages[posmod(index + (1 if forward else -1), languages.size())]
-
-
-func _language_name(language: String) -> String:
-	if language == StartScreenSettings.KOREAN:
-		return "한국어"
-	if language == StartScreenSettings.CHINESE:
-		return "中文"
-	return "ENGLISH"
-
-
-func _confirm_language_selection() -> void:
-	if settings.language != _selected_language:
-		_set_language(_selected_language)
 
 
 func _create_slider(parent: Control, rect: Rect2, initial_value: float) -> HSlider:

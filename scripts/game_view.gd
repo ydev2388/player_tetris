@@ -15,6 +15,7 @@ extends Control
 ## `queue_redraw()`는 즉시 그리지 않고 다음 draw pass에 `_draw()` 호출을 예약한다.
 
 const DISPLAY_SCALE: float = MainLayout.DISPLAY_SCALE
+const UI_FONT: FontFile = preload("res://assets/fonts/NotoSansKR-VF.ttf")
 const CELL_SIZE: float = MainLayout.CELL_SIZE
 const GAME_VIEWPORT_SIZE: Vector2i = MainLayout.GAME_VIEWPORT_SIZE
 const BOARD_ORIGIN: Vector2 = MainLayout.BOARD_ORIGIN
@@ -147,18 +148,15 @@ var _boss_falling_frame: int = 0
 var _boss_falling_frame_timer: float = 0.0
 var _boss_fallen_frame: int = 0
 var _boss_fallen_frame_timer: float = 0.0
-var _system_font: SystemFont # 위 Label과 draw_string이 공유할 한글 지원 폰트.
-var _language: String = "english"
+var _system_font: Font # 위 Label과 draw_string이 공유할 Web 내장 다국어 폰트.
 
 
 ## 상황: main.tscn의 루트 View가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
-## 순서: SystemFont 생성/후보 지정 → `_build_interface()` → 세 signal 연결 → `_refresh()`.
+## 순서: 프로젝트 내장 폰트 지정 → `_build_interface()` → 세 signal 연결 → `_refresh()`.
 ## 결과: retained Label UI가 만들어지고 이후 상태 변경을 자동 반영한다.
 func _ready() -> void:
 	_apply_game_viewport_size()
-	_language = String(get_meta("language", "english"))
-	_system_font = SystemFont.new()
-	_system_font.font_names = PackedStringArray(["Malgun Gothic", "맑은 고딕", "Segoe UI"])
+	_system_font = UI_FONT
 	_build_interface()
 	_create_binding_overlay()
 	_create_boss_display()
@@ -232,8 +230,11 @@ func _build_interface() -> void:
 
 
 ## 상황: 시작 화면 안에서 게임 장면이 열린 순간 게임 전용 논리·창 크기를 적용한다.
-## 결과: 메뉴의 960×800 배치는 유지되고 게임 화면만 1000×1080으로 확장된다.
+## 결과: 데스크톱은 세로 게임 창으로 전환하고, Web은 고정 HTML canvas 안의 GameHost가
+##       세로 게임 화면을 축소·중앙 정렬하므로 root viewport 크기를 바꾸지 않는다.
 func _apply_game_viewport_size() -> void:
+	if OS.get_name() == "Web" or OS.has_feature("web"):
+		return
 	var window: Window = get_window()
 	window.content_scale_size = GAME_VIEWPORT_SIZE
 	if not DisplayServer.get_name().contains("headless"):
@@ -650,43 +651,6 @@ func _draw_meditation_effect() -> void:
 	)
 
 
-## 상황: `_draw()`가 우측 HUD 상단의 캐릭터 정적 카드를 그릴 때 호출한다.
-## 순서: atlas의 초상 영역을 destination rect에 draw → 그 위에 캐릭터 제목 draw_string.
-## 결과: 게임 상태와 무관한 캐릭터 식별 카드가 표시된다.
-func _draw_character_card() -> void:
-	var portrait_rect: Rect2 = Rect2(Vector2(696.0, 520.0), Vector2(108.0, 196.0))
-	draw_texture_rect_region(
-		MainCharacterAnimationData.texture_for_character(character.character_id),
-		portrait_rect,
-		CHARACTER_SOURCE_RECT
-	)
-	draw_string(
-		_system_font,
-		Vector2(662.0, 538.0),
-		character.character_display_name(),
-		HORIZONTAL_ALIGNMENT_LEFT,
-		-1.0,
-		16,
-		CYAN
-	)
-
-
-## 상황: 세 핵심 상태와 초상 영역을 좁은 패널 안에서 카드로 구분한다.
-func _draw_hud_sections() -> void:
-	var card_color: Color = Color("#f8fafc")
-	var card_rects: Array[Rect2] = [
-		Rect2(576.0, 318.0, 368.0, 190.0),
-		Rect2(576.0, 516.0, 368.0, 224.0),
-		Rect2(576.0, 754.0, 368.0, 70.0),
-		Rect2(576.0, 832.0, 368.0, 64.0),
-		Rect2(576.0, 902.0, 368.0, 42.0),
-		Rect2(576.0, 950.0, 368.0, 70.0),
-	]
-	for card_rect: Rect2 in card_rects:
-		draw_rect(card_rect, card_color)
-		draw_rect(card_rect, Color("#b7c2d1"), false, 1.0)
-
-
 ## 상황: `_draw()`가 게임판 아래에 현재 캐릭터의 특수 스킬 준비도를 표시할 때 호출한다.
 ## 순서: 쿨타임 비율을 bar fill로 변환한다.
 ## 결과: 스테미나와 텍스트를 별도 HUD로 노출하지 않고 스킬 쿨타임 bar만 하단에 표시한다.
@@ -810,10 +774,6 @@ func _refresh() -> void:
 
 
 func _text(korean: String, english: String) -> String:
-	if _language == "kor":
-		return korean
-	if _language == "zh_cn":
-		return MainLocalization.translated(korean)
 	return english
 
 

@@ -48,10 +48,9 @@ MAIN(메인 메뉴)
 | `Esc` | 메뉴 복귀 확인창 |
 
 - 키는 `OPTION → KEY CUSTOM`에서 변경 가능. 볼륨 설정도 OPTION에 있음.
-- 언어: 메뉴는 한국어/영어/중국어 3개 국어, 게임 HUD는 한국어/영어만, 튜토리얼은 한국어 고정.
-  `start_screen.gd`의 `_text()`가 ENGLISH_TEXT/CHINESE_TEXT 사전을 먼저 뒤지고, 없으면
-  `scripts/localization.gd`(tr() 기반)로 폴백한다. `localization.gd` CN 사전은 CHINESE_TEXT를
-  모두 커버하도록 동기화됨(2026-08-25).
+- 언어: **영어 전용** (2026-08-30 다국어 제거). 메뉴·게임 HUD 모두 영어로 표시된다.
+  `start_screen.gd`의 `_text()`가 전달받은 영어 문구를 우선 쓰고, 없으면
+  `ENGLISH_TEXT` 사전 → `scripts/localization.gd`(tr() 기반) 순서로 폴백한다.
 - 시작 화면 게임 설명은 12FPS 애니메이션 5페이지이며 키 표시는 설정의 실제 바인딩을 읽는다.
 - 튜토리얼·문서는 이전 `V` 키 플립 또는 당기기 동작을 전제로 하지 않는다.
 

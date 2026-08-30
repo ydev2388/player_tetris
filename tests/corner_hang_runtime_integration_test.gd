@@ -85,6 +85,16 @@ func _run() -> void:
 				% [character_id, start_y, character.global_position.y, max_x_error]
 			)
 
+	await _prepare_boundary_diagonal_fixture(game, board_physics, character, "normal")
+	character._try_start_hang()
+	if not character.is_hanging:
+		failures.append("normal: boundary top release fixture did not grab")
+	else:
+		character.global_position.y = character._hang_top_global_y + 0.5
+		character._handle_hanging(1.0 / 60.0)
+		if character.is_hanging or character.velocity.x >= 0.0:
+			failures.append("normal: boundary top did not release inward")
+
 	for character_id: String in CHARACTER_IDS:
 		all_corner_frames[character_id] = {}
 		all_right_visual_offsets[character_id] = {}
@@ -100,8 +110,13 @@ func _run() -> void:
 			continue
 		if character_id == "normal":
 			character.set_passive_levels([0, 0, 0, 3, 0, 0])
-		character.global_position.y = character._hang_top_global_y
-		character._handle_hanging(1.0 / 60.0)
+		for approach_frame: int in range(120):
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				break
+		if not character._hang_corner_climb_active:
+			failures.append("%s: natural climb never entered the top transition" % character_id)
+			continue
 		if character_id == "normal":
 			var minimum_pose_duration: float = (
 				float(MainCharacterAnimationData.frame_count_for(
@@ -262,6 +277,113 @@ func _run() -> void:
 	if not character.sprite.region_filter_clip_enabled:
 		failures.append("character atlas region can sample pixels from an adjacent frame")
 
+	# 낙하 중인 피스도 상단이 비어 있으면 같은 모서리 오르기로 연결되어야 한다.
+	# 피스가 한 칸 내려갈 때 물리 위치와 최종 착지점이 함께 내려가는지도 확인한다.
+	await _prepare_active_corner_fixture(game, board_physics, character)
+	_set_up_pressed(false)
+	await process_frame
+	_set_up_pressed(true)
+	await process_frame
+	character._try_start_hang()
+	if not character.is_hanging:
+		print(
+			"ACTIVE_GRAB_DEBUG position=", character.position,
+			" ray=", character.right_ray.is_colliding(),
+			" collider=", character.right_ray.get_collider(),
+			" active_position=", board_physics.active_body.position,
+			" active_origin=", game.controller.active_origin,
+			" grab=", Input.is_action_pressed(&"character_grab"),
+			" support=", character._has_fixed_support_underfoot()
+		)
+		failures.append("normal: active piece grab failed")
+	else:
+		for approach_frame: int in range(120):
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				break
+		if not character._hang_corner_climb_active:
+			failures.append("normal: active piece never entered the top transition")
+		else:
+			var active_target_before_drop: Vector2 = character._hang_corner_climb_target_global
+			game.controller.active_origin += Vector2i.DOWN
+			board_physics.active_body.position += Vector2(0.0, MainLayout.CELL_SIZE)
+			character._handle_hanging(1.0 / 60.0)
+			if not character._hang_corner_climb_active:
+				failures.append("normal: active piece descent cancelled the top transition")
+			elif not character._hang_corner_climb_target_global.is_equal_approx(
+				active_target_before_drop + Vector2(0.0, MainLayout.CELL_SIZE)
+			):
+				failures.append("normal: active piece descent left the mantle target behind")
+			for local_cell: Vector2i in game.controller.active_local_cells():
+				var active_cell: Vector2i = game.controller.active_origin + local_cell
+				game.controller.board.cells[active_cell.y][active_cell.x] = (
+					MainTetrominoData.Type.O
+				)
+			var target_before_lock: Vector2 = character._hang_corner_climb_target_global
+			game.controller.active_origin = Vector2i(3, 0)
+			character._handle_hanging(1.0 / 60.0)
+			if (
+				not character._hang_corner_climb_active
+				or not is_instance_valid(character._hang_body)
+				or character._hang_body.name != &"LockedBlocks"
+				or not character._hang_corner_climb_target_global.is_equal_approx(
+					target_before_lock
+				)
+			):
+				failures.append("normal: locking active piece did not preserve the mantle")
+			var expected_active_target: Vector2 = character._hang_corner_climb_target_global
+			for frame_index: int in range(120):
+				if not character.is_hanging:
+					break
+				character._handle_hanging(1.0 / 60.0)
+			var active_completed_global: Vector2 = character.global_position
+			if (
+				character.is_hanging
+				or not active_completed_global.is_equal_approx(expected_active_target)
+			):
+				failures.append(
+					"normal: active piece corner climb did not finish on its moving target"
+				)
+
+	# 줄 삭제로 고정 발판이 한 칸 내려가면 진행 중인 오르기 경로도 함께 내려간다.
+	await _prepare_locked_corner_fixture(game, board_physics, character, "normal")
+	character._try_start_hang()
+	if character.is_hanging:
+		for approach_frame: int in range(120):
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				break
+	if not character._hang_corner_climb_active:
+		failures.append("normal: locked support shift fixture did not start mantle")
+	else:
+		var locked_target_before_shift: Vector2 = character._hang_corner_climb_target_global
+		game.controller.board.cells[10][5] = MainBoardModel.EMPTY
+		game.controller.board.cells[11][5] = MainTetrominoData.Type.J
+		character._handle_hanging(1.0 / 60.0)
+		if (
+			not character._hang_corner_climb_active
+			or not character._hang_corner_climb_target_global.is_equal_approx(
+				locked_target_before_shift + Vector2(0.0, MainLayout.CELL_SIZE)
+			)
+		):
+			failures.append("normal: collapsed locked support left the mantle target behind")
+
+	# 시작 후 착지 공간이 막히면 블록 안으로 들어가지 않고 즉시 매달림을 끝낸다.
+	await _prepare_locked_corner_fixture(game, board_physics, character, "normal")
+	character._try_start_hang()
+	if character.is_hanging:
+		for approach_frame: int in range(120):
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				break
+	if not character._hang_corner_climb_active:
+		failures.append("normal: blocked landing fixture did not start mantle")
+	else:
+		game.controller.board.cells[9][5] = MainTetrominoData.Type.T
+		character._handle_hanging(1.0 / 60.0)
+		if character.is_hanging:
+			failures.append("normal: newly blocked landing kept the mantle active")
+
 	# 반대쪽 면에서도 같은 단일 Sprite2D가 정확히 반전되고 같은 8프레임을 쓰는지
 	# 별도로 검증한다. 방향별로 visual node를 나누면 경계에서 한쪽이 사라지는 회귀가 생긴다.
 	await _prepare_locked_corner_fixture(game, board_physics, character, "normal", -1)
@@ -273,8 +395,12 @@ func _run() -> void:
 	if not character.is_hanging:
 		failures.append("normal: left-facing locked block grab failed")
 	else:
-		character.global_position.y = character._hang_top_global_y
-		character._handle_hanging(1.0 / 60.0)
+		for approach_frame: int in range(120):
+			character._handle_hanging(1.0 / 60.0)
+			if character._hang_corner_climb_active:
+				break
+		if not character._hang_corner_climb_active:
+			failures.append("normal: left natural climb never entered the top transition")
 		var left_corner_frames: Dictionary = {}
 		var left_visual_offsets: Dictionary = {}
 		var left_surface_offsets: Dictionary = {}
@@ -336,9 +462,11 @@ func _run() -> void:
 	character._sfx_cue_player.stream = null
 	character._meditation_loop_player.stream = null
 	game.free()
-	await process_frame
-	await physics_frame
-	await create_timer(0.25).timeout
+	# 빠른 캐릭터 교체로 예약된 wall-climb playback이 Dummy audio driver에서
+	# 해제될 시간을 주어 테스트 종료 시 오디오 리소스가 남지 않게 한다.
+	for cleanup_frame: int in range(6):
+		await process_frame
+		await physics_frame
 	if not failures.is_empty():
 		for failure: String in failures:
 			push_error(failure)
@@ -359,6 +487,9 @@ func _prepare_boundary_diagonal_fixture(
 	game.controller.board.cells[15][8] = MainTetrominoData.Type.O
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
+	# AnimatableBody2D의 sync_to_physics transform과 RayCast가 같은 tick에
+	# 갱신되는 순서는 실행 환경마다 달라질 수 있어 두 physics tick을 기다린다.
+	await physics_frame
 	await physics_frame
 	character.set_character_id(character_id)
 	character.position = Vector2(MainCharacterController.BOARD_MAX_X, 584.0)
@@ -378,6 +509,9 @@ func _prepare_locked_corner_fixture(
 ) -> void:
 	character._exit_hang()
 	game.controller.board.reset()
+	game.controller.active_type = MainTetrominoData.Type.I
+	game.controller.active_rotation = 0
+	game.controller.active_origin = Vector2i(3, 0)
 	var block_x: int = 5 if direction > 0 else 4
 	game.controller.board.cells[10][block_x] = MainTetrominoData.Type.J
 	game.controller.state = MainGameController.GameState.PLAYING
@@ -391,6 +525,31 @@ func _prepare_locked_corner_fixture(
 	character._hang_regrab_remaining = 0.0
 	var hang_ray: RayCast2D = character.right_ray if direction > 0 else character.left_ray
 	hang_ray.force_raycast_update()
+
+
+func _prepare_active_corner_fixture(
+	game: MainGameView,
+	board_physics: MainBoardPhysics,
+	character: MainCharacterController
+) -> void:
+	character._exit_hang()
+	game.controller.board.reset()
+	game.controller.active_type = MainTetrominoData.Type.O
+	game.controller.active_rotation = 0
+	game.controller.active_origin = Vector2i(4, 8)
+	game.controller.state = MainGameController.GameState.PLAYING
+	board_physics._sync_from_model()
+	# ActivePiece is an AnimatableBody2D with sync_to_physics, so wait for both
+	# its transform commit and the following query update before forcing the ray.
+	await physics_frame
+	await physics_frame
+	character.set_character_id("normal")
+	character.position = Vector2(216.0, 400.0)
+	character.velocity = Vector2.ZERO
+	character._update_facing(1.0)
+	character.stamina = MainCharacterController.MAX_STAMINA
+	character._hang_regrab_remaining = 0.0
+	character.right_ray.force_raycast_update()
 
 
 func _set_up_pressed(pressed: bool) -> void:

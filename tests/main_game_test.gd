@@ -423,8 +423,10 @@ func _run() -> void:
 	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 게임 테스트 %d개 통과" % _checks)
+		print("TEST_RESULT suite=main_game checks=%d failures=0" % _checks)
 	else:
 		push_error("실패: 최종 방향 통합 테스트 %d/%d개 실패" % [_failures, _checks])
+		print("TEST_RESULT suite=main_game checks=%d failures=%d" % [_checks, _failures])
 	quit(_failures)
 
 
@@ -2185,9 +2187,7 @@ func _test_ice_gimmick_movement() -> void:
 	controller.active_cell_indices = [0, 1, 2, 3]
 	var view: MainGameView = scene as MainGameView
 	view.queue_redraw()
-	await process_frame
-	var ice_cell_rect: Rect2 = view._cell_rect(Vector2i(4, 17))
-	view._draw_ice_cell_overlay(Vector2i(4, 17), ice_cell_rect) # 오류 없이 그려지는지.
+	await process_frame # 실제 _draw() 경로에서 overlay를 그려 엔진 draw contract도 지킨다.
 	_expect(
 		controller.board.is_ice_cell(Vector2i(4, 17))
 			and view._thorn_texture_for_stage(7) == MainGameView.ICE_BLOCK_TEXTURE,

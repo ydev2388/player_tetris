@@ -1039,8 +1039,10 @@ func _run() -> void:
 	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 UI 테스트 %d개 통과" % _checks)
+		print("TEST_RESULT suite=main_ui checks=%d failures=0" % _checks)
 	else:
 		push_error("실패: 시작 화면 통합 테스트 %d/%d개 실패" % [_failures, _checks])
+		print("TEST_RESULT suite=main_ui checks=%d failures=%d" % [_checks, _failures])
 	quit(_failures)
 
 

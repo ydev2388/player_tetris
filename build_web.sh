@@ -8,6 +8,7 @@ WEB_DIR="$ROOT_DIR/build/web"
 ZIP_PATH="$ROOT_DIR/build/block-fighter-web-1.0.2.zip"
 QA_TIMEOUT_SECONDS=${QA_TIMEOUT_SECONDS:-180}
 
+rm -rf "$QA_DIR"
 mkdir -p "$QA_DIR" "$ROOT_DIR/build"
 
 if [ ! -x "$GODOT_BIN" ]; then
@@ -31,28 +32,33 @@ run_step() {
 	printf '[QA] %s\n' "$step_name"
 	if timeout "$QA_TIMEOUT_SECONDS" "$@" >"$log_path" 2>&1; then
 		return 0
+	else
+		status=$?
+		printf '[QA] %s failed (exit %s)\n' "$step_name" "$status" >&2
+		tail -80 "$log_path" >&2 || true
+		exit "$status"
 	fi
-	status=$?
-	printf '[QA] %s failed (exit %s)\n' "$step_name" "$status" >&2
-	tail -80 "$log_path" >&2 || true
-	exit "$status"
 }
 
 check_test_log() {
-	log_path=$1
-	if grep -nE 'SCRIPT ERROR|Parse Error|ERROR:|ObjectDB instances were leaked|Resource still in use|resources still in use' "$log_path"; then
-		printf '%s\n' "Disallowed test error in $log_path" >&2
-		exit 1
-	fi
+	for log_path in "$@"
+	do
+		if grep -nE 'SCRIPT ERROR|Parse Error|ERROR:|ObjectDB instances were leaked|Resource still in use|resources still in use' "$log_path"; then
+			printf '%s\n' "Disallowed test error in $log_path" >&2
+			exit 1
+		fi
+	done
 }
 
 run_step import "$GODOT_BIN" --headless --editor --path "$ROOT_DIR" --log-file "$QA_DIR/import-godot.log" --quit
 
 run_step main_game_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/main-game-godot.log" --script res://tests/main_game_test.gd
-check_test_log "$QA_DIR/main_game_test.log"
+check_test_log "$QA_DIR/main_game_test.log" "$QA_DIR/main-game-godot.log"
+grep -qx 'TEST_RESULT suite=main_game checks=230 failures=0' "$QA_DIR/main_game_test.log"
 
 run_step main_ui_test "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/main-ui-godot.log" --script res://start_screen/tests/main_ui_test.gd
-check_test_log "$QA_DIR/main_ui_test.log"
+check_test_log "$QA_DIR/main_ui_test.log" "$QA_DIR/main-ui-godot.log"
+grep -qx 'TEST_RESULT suite=main_ui checks=115 failures=0' "$QA_DIR/main_ui_test.log"
 
 for test_path in \
 	tests/hang_runtime_integration_test.gd \
@@ -66,7 +72,7 @@ for test_path in \
 do
 	step_name=$(basename "$test_path" .gd)
 	run_step "$step_name" "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/$step_name-godot.log" --script "res://$test_path"
-	check_test_log "$QA_DIR/$step_name.log"
+	check_test_log "$QA_DIR/$step_name.log" "$QA_DIR/$step_name-godot.log"
 done
 
 rm -rf "$WEB_DIR"
@@ -74,7 +80,7 @@ rm -f "$ZIP_PATH"
 mkdir -p "$WEB_DIR"
 
 run_step web_export "$GODOT_BIN" --headless --path "$ROOT_DIR" --log-file "$QA_DIR/web-export-godot.log" --export-release Web "$WEB_DIR/index.html"
-if grep -nE 'SCRIPT ERROR|Parse Error|ERROR:|ObjectDB instances were leaked|Resource still in use|resources still in use' "$QA_DIR/web_export.log"; then
+if grep -nE 'SCRIPT ERROR|Parse Error|ERROR:|ObjectDB instances were leaked|Resource still in use|resources still in use' "$QA_DIR/web_export.log" "$QA_DIR/web-export-godot.log"; then
 	printf '%s\n' "Disallowed export error in $QA_DIR/web_export.log" >&2
 	exit 1
 fi

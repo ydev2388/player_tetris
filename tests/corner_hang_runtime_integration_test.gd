@@ -537,6 +537,11 @@ func _prepare_active_corner_fixture(
 	game.controller.active_type = MainTetrominoData.Type.O
 	game.controller.active_rotation = 0
 	game.controller.active_origin = Vector2i(4, 8)
+	game.controller.active_cell_indices = [0, 1, 2, 3]
+	game.controller._fall_accumulator = 0.0
+	game.controller._lock_accumulator = 0.0
+	game.controller._lock_resets = 0
+	game.controller.fall_freeze_remaining = 0.0
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	# ActivePiece is an AnimatableBody2D with sync_to_physics, so wait for both
@@ -553,8 +558,9 @@ func _prepare_active_corner_fixture(
 
 
 func _set_up_pressed(pressed: bool) -> void:
-	var event := InputEventKey.new()
-	event.keycode = KEY_UP
-	event.physical_keycode = KEY_UP
-	event.pressed = pressed
-	Input.parse_input_event(event)
+	# 이 테스트는 등반 상태 전이를 검증한다. OS key event의 frame 전달 시점에
+	# 의존하지 않도록 이미 별도 테스트가 보장하는 action을 직접 구동한다.
+	if pressed:
+		Input.action_press(&"character_climb_up")
+	else:
+		Input.action_release(&"character_climb_up")

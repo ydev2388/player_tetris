@@ -96,6 +96,17 @@ godot --path .
 
 Godot 4.7.1 기준 게임 로직·물리·시작 화면 테스트를 실행하고 Web release를 내보냅니다.
 
+정식 itch.io 릴리스는 버전, commit, annotated tag, 빌드 로그, 산출물과 SHA-256을
+하나로 연결하는 `release.ps1`을 사용합니다. 절차와 각 증거의 의미는
+[`docs/RELEASE_EVIDENCE_KO.md`](docs/RELEASE_EVIDENCE_KO.md)에 정리되어 있습니다.
+
+```powershell
+pwsh -NoProfile -File .\release.ps1
+```
+
+`build_web.sh`는 Linux 개발 환경의 QA/export 진입점이며, 정식 태그 릴리스 증거는
+`release.ps1`의 `build/releases/<version>-<commit>/` 결과를 기준으로 합니다.
+
 ```sh
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --import
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/main_game_test.gd

@@ -1,13 +1,7 @@
 class_name MainPieceBag
 extends RefCounted
 
-## [역할 / C++ 대응]
-## 테트리스의 7-bag 난수 생성기다. 각 묶음에는 7종이 정확히 한 번씩 들어간다.
-## `_pieces`는 `std::vector<int>`, `_random`은 난수 엔진에 대응한다.
-##
-## [호출 관계]
-## 생성/호출자: GameController.reset_game(), spawn_next_piece(), 단위 테스트.
-## 호출 대상: MainTetrominoData.TYPE_COUNT와 Godot RandomNumberGenerator.
+## Deterministic seven-bag component. MainGameSession owns the queue and its private random stream.
 
 var _random: RandomNumberGenerator = RandomNumberGenerator.new() # bag 셔플에만 쓰는 난수 엔진.
 var _pieces: Array[int] = [] # 아직 뽑히지 않은 타입들. 배열 뒤쪽에서 하나씩 꺼낸다.

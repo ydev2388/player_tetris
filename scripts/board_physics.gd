@@ -91,7 +91,7 @@ func _rebuild_locked_colliders() -> void:
 	_clear_shapes(locked_body)
 	for y: int in range(MainBoardModel.HEIGHT):
 		for x: int in range(MainBoardModel.WIDTH):
-			if controller.board.cells[y][x] == MainBoardModel.EMPTY:
+			if controller.board.get_cell(Vector2i(x, y)) == MainBoardModel.EMPTY:
 				continue
 			var center: Vector2 = Vector2( # 숨은 행 offset을 뺀 해당 셀의 픽셀 중심.
 				(float(x) + 0.5) * CELL_SIZE,
@@ -148,7 +148,7 @@ func _add_box_shape(body: CollisionObject2D, center: Vector2, box_size: Vector2)
 ## 순서: seed 17에서 시작해 행 우선 모든 셀을 `hash*31 + value+2`로 누적.
 ## 결과: 보드를 바꾸지 않고 현재 셀 배열의 정수 signature를 반환한다.
 func _board_signature() -> int:
-	return hash(controller.board.cells)
+	return controller.board.content_signature()
 
 
 ## 상황: 새 collision이 물리 공간에 반영된 다음 frame 끝에서 deferred 호출된다.

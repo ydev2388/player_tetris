@@ -57,6 +57,7 @@ const WATER_PATH_SOURCE_VISIBLE_Y: float = 21.0
 const WATER_PATH_SOURCE_VISIBLE_HEIGHT: float = 6.0
 const WATER_PATH_DISPLAY_HEIGHT: float = 14.0
 const WATER_PATH_SURFACE_OVERLAP: float = 4.0
+const WATER_PATH_COMMIT_PULSE_SECONDS: float = 0.18
 const CLEANUP_VFX: Texture2D = preload("res://assets/sprites/effects/cleaner/cleanup_dust.png")
 const CLOCK_WAVE_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_wave.png")
 const CLOCK_GEAR_VFX: Texture2D = preload("res://assets/sprites/effects/clockmaker/clock_gear_ring.png")
@@ -148,6 +149,7 @@ var _boss_falling_frame: int = 0
 var _boss_falling_frame_timer: float = 0.0
 var _boss_fallen_frame: int = 0
 var _boss_fallen_frame_timer: float = 0.0
+var _water_path_commit_pulse_remaining: float = 0.0
 var _system_font: Font # 위 Label과 draw_string이 공유할 Web 내장 다국어 폰트.
 
 
@@ -161,6 +163,8 @@ func _ready() -> void:
 	_create_binding_overlay()
 	_create_boss_display()
 	controller.game_changed.connect(_refresh)
+	controller.game_event_committed.connect(_on_game_event_committed)
+	character.ability_event_committed.connect(_on_character_ability_event_committed)
 	controller.boss_attacked.connect(_start_boss_thorn_attack)
 	controller.boss_attacked.connect(_start_boss_ice_hit)
 	character.stats_changed.connect(_refresh)
@@ -171,6 +175,29 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_advance_boss_animation(delta)
+	if _water_path_commit_pulse_remaining > 0.0:
+		_water_path_commit_pulse_remaining = maxf(
+			0.0,
+			_water_path_commit_pulse_remaining - maxf(delta, 0.0)
+		)
+		queue_redraw()
+
+
+func _on_game_event_committed(event: MainGameEvent) -> void:
+	match event.kind:
+		MainGameEvent.Kind.FIREFIGHTER_WATER_COMMITTED:
+			_water_path_commit_pulse_remaining = WATER_PATH_COMMIT_PULSE_SECONDS
+			queue_redraw()
+		MainGameEvent.Kind.FIREFIGHTER_WATER_CLEARED:
+			_water_path_commit_pulse_remaining = 0.0
+			queue_redraw()
+		_:
+			# 사건은 표현을 깨우는 계기이고 실제 그리기 원본은 항상 최신 snapshot이다.
+			queue_redraw()
+
+
+func _on_character_ability_event_committed(_event: MainGameEvent) -> void:
+	queue_redraw()
 
 
 ## 상황: 최초 표시 또는 `queue_redraw()` 이후 Godot CanvasItem draw pass에서 호출된다.
@@ -330,7 +357,9 @@ func _draw_board() -> void:
 	for y: int in range(MainBoardModel.VISIBLE_HEIGHT):
 		for x: int in range(MainBoardModel.WIDTH):
 			var cell_rect: Rect2 = _cell_rect(Vector2i(x, y + MainBoardModel.HIDDEN_ROWS)) # 현재 화면 셀 사각형.
-			var piece_type: int = controller.board.cells[y + MainBoardModel.HIDDEN_ROWS][x] # 고정 타입/EMPTY.
+			var piece_type: int = controller.board.get_cell(
+				Vector2i(x, y + MainBoardModel.HIDDEN_ROWS)
+			) # 고정 타입/EMPTY.
 			if piece_type != MainBoardModel.EMPTY:
 				_draw_block(cell_rect, piece_type, 1.0)
 				var board_cell := Vector2i(x, y + MainBoardModel.HIDDEN_ROWS)
@@ -365,11 +394,17 @@ func _draw_board() -> void:
 
 func _draw_character_skill_effects() -> void:
 	var animated_frame: int = int(Time.get_ticks_msec() / 120)
-	if controller.fall_freeze_remaining > 0.0:
+	if controller.fall_freeze_remaining() > 0.0:
 		_draw_clock_freeze_effect(animated_frame)
-	if not controller.water_path_cells.is_empty():
+	var water_cells: Array[Vector2i] = controller.water_path_snapshot()
+	if not water_cells.is_empty():
 		var water_frame: int = animated_frame % 4
-		for cell: Vector2i in controller.water_path_cells:
+		var pulse_alpha: float = clampf(
+			_water_path_commit_pulse_remaining / WATER_PATH_COMMIT_PULSE_SECONDS,
+			0.0,
+			1.0
+		)
+		for cell: Vector2i in water_cells:
 			if cell.y < MainBoardModel.HIDDEN_ROWS:
 				continue
 			draw_texture_rect_region(
@@ -377,11 +412,19 @@ func _draw_character_skill_effects() -> void:
 				_water_path_display_rect(cell),
 				_water_path_source_rect(water_frame)
 			)
+			if pulse_alpha > 0.0:
+				draw_texture_rect_region(
+					WATER_PATH_VFX,
+					_water_path_display_rect(cell).grow(2.0 * pulse_alpha),
+					_water_path_source_rect(water_frame),
+					Color(0.72, 0.95, 1.0, 0.55 * pulse_alpha)
+				)
 
-	if character.barrier_remaining() > 0.0 and not controller.transient_blocker_cells.is_empty():
+	var barrier_cells: Array[Vector2i] = controller.transient_blocker_snapshot()
+	if controller.barrier_remaining() > 0.0 and not barrier_cells.is_empty():
 		var pulse: float = 0.55 + 0.15 * sin(float(Time.get_ticks_msec()) / 85.0)
-		var fade: float = clampf(character.barrier_remaining() / 0.25, 0.0, 1.0)
-		for cell: Vector2i in controller.transient_blocker_cells:
+		var fade: float = clampf(controller.barrier_remaining() / 0.25, 0.0, 1.0)
+		for cell: Vector2i in barrier_cells:
 			if cell.y < MainBoardModel.HIDDEN_ROWS:
 				continue
 			var barrier_rect: Rect2 = _cell_rect(cell).grow(-3.0)
@@ -406,9 +449,12 @@ func _draw_character_skill_effects() -> void:
 			Rect2(sprint_frame * 128.0, 0.0, 128.0, 128.0)
 		)
 
-	if character.character_id == "ninja" and not character.ninja_special_result().is_empty():
+	var ninja_snapshot: MainNinjaProjectileSnapshot = null
+	if character.character_id == "ninja":
+		ninja_snapshot = character.ninja_projectile_snapshot()
+	if ninja_snapshot != null:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		_draw_ninja_shuriken_effect()
+		_draw_ninja_shuriken_effect(ninja_snapshot)
 		return
 	if not character.is_special_animating():
 		return
@@ -465,10 +511,11 @@ func _draw_clockmaker_cast_effect() -> void:
 
 
 func _draw_clock_freeze_effect(animated_frame: int) -> void:
-	var remaining_ratio: float = clampf(controller.fall_freeze_remaining / 3.0, 0.0, 1.0)
+	var freeze_remaining: float = controller.fall_freeze_remaining()
+	var remaining_ratio: float = clampf(freeze_remaining / 3.0, 0.0, 1.0)
 	var ending_factor: float = 1.0
-	if controller.fall_freeze_remaining < 0.4:
-		ending_factor = clampf(controller.fall_freeze_remaining / 0.4, 0.0, 1.0)
+	if freeze_remaining < 0.4:
+		ending_factor = clampf(freeze_remaining / 0.4, 0.0, 1.0)
 		ending_factor *= 0.62 + 0.38 * absf(sin(float(Time.get_ticks_msec()) / 48.0))
 	var pulse: float = 0.08 + 0.025 * sin(float(Time.get_ticks_msec()) / 140.0)
 	draw_rect(Rect2(BOARD_ORIGIN, BOARD_SIZE), Color(0.10, 0.68, 0.78, pulse * ending_factor))
@@ -541,20 +588,15 @@ func _draw_clock_freeze_effect(animated_frame: int) -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
-func _draw_ninja_shuriken_effect() -> void:
-	var result: Dictionary = character.ninja_special_result()
-	if result.is_empty():
-		return
-	if not result.has("position"):
-		return
-	var board_position: Vector2 = result["position"] as Vector2
+func _draw_ninja_shuriken_effect(snapshot: MainNinjaProjectileSnapshot) -> void:
+	var board_position: Vector2 = snapshot.position
 	var center: Vector2 = ninja_shuriken_canvas_position(board_position)
-	var direction_now: int = int(result.get("direction", character.facing))
+	var direction_now: int = snapshot.direction
 	var spin_frame_now: int = posmod(
-		floori(float(result.get("flight_elapsed", 0.0)) / 0.045),
+		floori(snapshot.flight_elapsed / 0.045),
 		4
 	)
-	if bool(result.get("in_flight", false)):
+	if snapshot.in_flight:
 		draw_texture_rect_region(
 			SHURIKEN_SPIN_VFX,
 			Rect2(center - Vector2.ONE * 16.0, Vector2.ONE * 32.0),
@@ -575,12 +617,12 @@ func _draw_ninja_shuriken_effect() -> void:
 			)
 		return
 	var impact_progress_now: float = clampf(
-		float(result.get("impact_elapsed", 0.0)) / MainCharacterController.SHURIKEN_IMPACT_DURATION,
+		snapshot.impact_elapsed / MainGameRules.NINJA_SHURIKEN_IMPACT_DURATION_SECONDS,
 		0.0,
 		0.999
 	)
 	var impact_frame_now: int = floori(impact_progress_now * 4.0)
-	var source_y_now: float = 0.0 if bool(result.get("success", false)) else 64.0
+	var source_y_now: float = 0.0 if snapshot.succeeded else 64.0
 	draw_texture_rect_region(
 		SHURIKEN_IMPACT_VFX,
 		Rect2(center - Vector2.ONE * 32.0, Vector2.ONE * 64.0),

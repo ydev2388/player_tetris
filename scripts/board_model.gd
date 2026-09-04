@@ -1,15 +1,8 @@
 class_name MainBoardModel
 extends RefCounted
 
-## [역할 / C++ 대응]
-## 화면과 물리 엔진에 의존하지 않는 10×22 논리 보드다.
-## `cells[y][x]`에는 EMPTY(-1) 또는 TetrominoData.Type 정수가 저장된다.
-## C++로 보면 규칙을 담당하는 순수 모델 클래스이며, 소유자는 GameController다.
-##
-## [호출 관계]
-## 생성자/주 호출자: GameController. 조회 호출자: GameView, BoardPhysics,
-## CharacterController, 테스트. 이 클래스는 signal을 내보내지 않는다.
-## 변경 알림은 상위 GameController가 담당한다.
+## Pure 10x22 logical board with transactional cell mutation and detached snapshots.
+## MainGameSession owns this model; View, Physics, and tests read it through controller/session APIs.
 
 const WIDTH: int = 10 # 보드의 가로 셀 수. 유효 x는 0~9.
 const VISIBLE_HEIGHT: int = 20 # 플레이어에게 그려지는 행 수.
@@ -17,9 +10,10 @@ const HIDDEN_ROWS: int = 2 # 스폰/top-out 판정에 쓰는 화면 위 숨은 �
 const HEIGHT: int = VISIBLE_HEIGHT + HIDDEN_ROWS # 실제 저장되는 전체 행 수(22).
 const EMPTY: int = -1 # 셀이 어떤 테트로미노에도 점유되지 않았음을 나타내는 sentinel.
 
-# 행 우선 2차원 배열: `cells[y][x]`. PackedInt32Array는 연속 int32 저장소다.
-var cells: Array[PackedInt32Array] = [] # 실제 보드 저장소. 바깥 index=y, 안쪽 index=x.
-var ice_cells: Array[PackedByteArray] = []
+# 행 우선 2차원 배열. 외부에는 복사 snapshot과 조회/명령 API만 노출한다.
+# GDScript의 `_`는 강제 private는 아니지만, 제품 코드와 테스트 모두 이 경계를 지킨다.
+var _cells: Array[PackedInt32Array] = []
+var _ice_cells: Array[PackedByteArray] = []
 
 
 ## 상황: `MainBoardModel.new()`로 논리 보드를 만들 때 자동 호출된다.
@@ -33,20 +27,49 @@ func _init() -> void:
 ## 순서: ① 기존 cells clear ② HEIGHT번 `_empty_row()`를 만들어 append.
 ## 결과: 이전 고정 블록이 모두 사라지고 정확히 22×10 EMPTY 상태가 된다.
 func reset() -> void:
-	cells.clear()
-	ice_cells.clear()
+	_cells.clear()
+	_ice_cells.clear()
 	for _y: int in range(HEIGHT):
-		cells.append(_empty_row())
-		ice_cells.append(_empty_ice_row())
+		_cells.append(_empty_row())
+		_ice_cells.append(_empty_ice_row())
 
 
 func is_ice_cell(cell: Vector2i) -> bool:
-	return is_inside(cell) and ice_cells[cell.y][cell.x] == 1
+	return is_inside(cell) and _ice_cells[cell.y][cell.x] == 1
 
 
 func _set_ice_cell(cell: Vector2i, active: bool) -> void:
 	if is_inside(cell):
-		ice_cells[cell.y][cell.x] = 1 if active else 0
+		_ice_cells[cell.y][cell.x] = 1 if active else 0
+
+
+## View/Physics/테스트가 보드 전체를 비교해야 할 때 쓰는 읽기 전용 deep copy다.
+## 반환 배열을 변경해도 원본 보드는 바뀌지 않는다.
+func create_snapshot() -> Dictionary:
+	var cell_rows: Array[PackedInt32Array] = []
+	var ice_rows: Array[PackedByteArray] = []
+	for y: int in range(HEIGHT):
+		cell_rows.append(_cells[y].duplicate())
+		ice_rows.append(_ice_cells[y].duplicate())
+	return {
+		"cells": cell_rows,
+		"ice_cells": ice_rows,
+	}
+
+
+## BoardPhysics의 변경 감지용 값이다. 내부 배열 자체는 노출하지 않는다.
+func content_signature() -> int:
+	return hash([_cells, _ice_cells])
+
+
+## 단일 셀을 불변식을 지키며 변경한다. EMPTY 셀에는 얼음 metadata를 남기지 않는다.
+## 테스트 fixture와 향후 stage setup도 raw 배열 대신 이 명령을 사용한다.
+func set_cell(cell: Vector2i, piece_type: int, ice: bool = false) -> bool:
+	if not is_inside(cell) or not _is_valid_piece_type(piece_type, true):
+		return false
+	_cells[cell.y][cell.x] = piece_type
+	_set_ice_cell(cell, ice and piece_type != EMPTY)
+	return true
 
 
 func _empty_row() -> PackedInt32Array:
@@ -69,7 +92,7 @@ func can_place_cells(local_cells: Array[Vector2i], origin: Vector2i) -> bool:
 		var board_cell: Vector2i = origin + local_cell # 피스 로컬 좌표를 보드 절대 셀로 변환한 값.
 		if not is_inside(board_cell):
 			return false
-		if cells[board_cell.y][board_cell.x] != EMPTY:
+		if _cells[board_cell.y][board_cell.x] != EMPTY:
 			return false
 	return true
 
@@ -86,18 +109,30 @@ func get_drop_distance_cells(local_cells: Array[Vector2i], origin: Vector2i) -> 
 
 ## 상황: lock delay가 끝나 활성 피스를 논리 보드에 고정할 때 호출한다.
 ## 순서: 로컬 셀 순회 → 보드 좌표 변환 → 안전 범위 확인 → piece_type 기록.
-## 결과: 해당 cells가 EMPTY에서 타입 정수로 바뀐다. 줄 삭제는 이 함수가 하지 않는다.
+## 결과: 모든 대상이 유효할 때만 한 번에 고정하고 true를 반환한다.
+##       범위 밖·중복·점유 대상이 하나라도 있으면 원본을 바꾸지 않고 false다.
 func lock_cells(
 	piece_type: int,
 	local_cells: Array[Vector2i],
 	origin: Vector2i,
 	ice: bool = false
-) -> void:
+) -> bool:
+	if not _is_valid_piece_type(piece_type) or local_cells.is_empty():
+		return false
+	var target_cells: Array[Vector2i] = []
 	for local_cell: Vector2i in local_cells:
-		var board_cell: Vector2i = origin + local_cell # 실제 cells[y][x]에 기록할 절대 셀.
-		if is_inside(board_cell):
-			cells[board_cell.y][board_cell.x] = piece_type
-			_set_ice_cell(board_cell, ice)
+		var board_cell: Vector2i = origin + local_cell
+		if (
+			not is_inside(board_cell)
+			or board_cell in target_cells
+			or _cells[board_cell.y][board_cell.x] != EMPTY
+		):
+			return false
+		target_cells.append(board_cell)
+	for board_cell: Vector2i in target_cells:
+		_cells[board_cell.y][board_cell.x] = piece_type
+		_set_ice_cell(board_cell, ice)
+	return true
 
 
 ## 상황: 피스를 고정한 직후 완성된 줄을 정리하고 삭제 개수가 필요할 때 호출한다.
@@ -114,15 +149,15 @@ func clear_full_lines() -> int:
 		if _is_row_full(y):
 			cleared += 1
 		else:
-			survivors.append(cells[y].duplicate())
-			ice_survivors.append(ice_cells[y].duplicate())
+			survivors.append(_cells[y].duplicate())
+			ice_survivors.append(_ice_cells[y].duplicate())
 
 	while survivors.size() < HEIGHT:
 		survivors.push_front(_empty_row())
 		ice_survivors.push_front(_empty_ice_row())
 
-	cells = survivors
-	ice_cells = ice_survivors
+	_cells = survivors
+	_ice_cells = ice_survivors
 	return cleared
 
 
@@ -133,7 +168,7 @@ func clear_full_lines() -> int:
 func has_blocks_in_hidden_rows() -> bool:
 	for y: int in range(HIDDEN_ROWS):
 		for x: int in range(WIDTH):
-			if cells[y][x] != EMPTY:
+			if _cells[y][x] != EMPTY:
 				return true
 	return false
 
@@ -151,19 +186,19 @@ func is_inside(cell: Vector2i) -> bool:
 func get_cell(cell: Vector2i) -> int:
 	if not is_inside(cell):
 		return EMPTY
-	return cells[cell.y][cell.x]
+	return _cells[cell.y][cell.x]
 
 
 ## 고정 블록 하나를 인접한 빈 셀로 옮긴다. 특수 스킬용 원자적 모델 연산이다.
 func move_cell(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 	if not is_inside(from_cell) or not is_inside(to_cell):
 		return false
-	if cells[from_cell.y][from_cell.x] == EMPTY or cells[to_cell.y][to_cell.x] != EMPTY:
+	if _cells[from_cell.y][from_cell.x] == EMPTY or _cells[to_cell.y][to_cell.x] != EMPTY:
 		return false
-	var piece_type: int = cells[from_cell.y][from_cell.x]
+	var piece_type: int = _cells[from_cell.y][from_cell.x]
 	var ice: bool = is_ice_cell(from_cell)
-	cells[from_cell.y][from_cell.x] = EMPTY
-	cells[to_cell.y][to_cell.x] = piece_type
+	_cells[from_cell.y][from_cell.x] = EMPTY
+	_cells[to_cell.y][to_cell.x] = piece_type
 	_set_ice_cell(from_cell, false)
 	_set_ice_cell(to_cell, ice)
 	return true
@@ -171,9 +206,9 @@ func move_cell(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 
 ## 고정 블록 한 칸을 제거한다. 범위 밖이나 빈 셀은 false다.
 func remove_cell(cell: Vector2i) -> bool:
-	if not is_inside(cell) or cells[cell.y][cell.x] == EMPTY:
+	if not is_inside(cell) or _cells[cell.y][cell.x] == EMPTY:
 		return false
-	cells[cell.y][cell.x] = EMPTY
+	_cells[cell.y][cell.x] = EMPTY
 	_set_ice_cell(cell, false)
 	return true
 
@@ -183,6 +218,12 @@ func remove_cell(cell: Vector2i) -> bool:
 ## 결과: 행을 변경하지 않고 완성 여부만 반환한다.
 func _is_row_full(y: int) -> bool:
 	for x: int in range(WIDTH):
-		if cells[y][x] == EMPTY:
+		if _cells[y][x] == EMPTY:
 			return false
 	return true
+
+
+func _is_valid_piece_type(piece_type: int, allow_empty: bool = false) -> bool:
+	if allow_empty and piece_type == EMPTY:
+		return true
+	return piece_type >= 0 and piece_type < MainTetrominoData.TYPE_COUNT

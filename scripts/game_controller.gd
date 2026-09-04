@@ -1,20 +1,12 @@
 class_name MainGameController
 extends Node
 
-## [역할 / C++ 대응]
-## 테트리스 규칙과 시간 진행의 중앙 오케스트레이터다. BoardModel과 PieceBag을 소유하고
-## 활성/다음 피스, 줄 수, 게임 상태를 authoritative state로 유지한다.
-##
-## [호출 관계]
-## Godot: `_ready()`, 매 프레임 `_process(delta)`.
-## CharacterController: set_meditation_active(), push_active_piece(), try_rotate(), end_game().
-## GameView/BoardPhysics/CharacterController: 상태를 읽고 signal을 구독한다.
-## 호출 대상: BoardModel, PieceBag, TetrominoData, InputActions.
-##
-## `signal`은 C++ observer/event에 해당한다. `.emit()`하면 `.connect(callback)`으로
-## 등록된 GameView/BoardPhysics/CharacterController 함수가 호출된다.
+## Scene adapter and frame orchestrator.
+## MainGameSession owns logical state; this Node translates Godot lifecycle, delta, input,
+## scene references, and signals into session commands while preserving the existing public API.
 
 signal game_changed # 피스/상태 변경 후 View와 BoardPhysics에 동기화를 요구한다.
+signal game_event_committed(event: MainGameEvent) # 규칙 상태 커밋 뒤 typed 사건을 전달한다.
 signal game_restarted # 전체 초기화 후 Character와 BoardPhysics에도 reset을 요구한다.
 signal active_piece_descended(previous_origin: Vector2i, current_origin: Vector2i)
 signal lines_cleared # 완성 행 제거 직후 SFX 등 피드백을 알린다.
@@ -46,6 +38,10 @@ const LOCK_DELAY_SECONDS: float = 0.5 # 접지 후 고정까지 허용하는 게
 const MAX_LOCK_RESETS: int = 15 # 이동/회전으로 lock delay를 초기화할 수 있는 최대 횟수.
 const MEDITATION_TIME_SCALE: float = 2.0 # 명상 시 기본 속도에 추가로 적용할 배율.
 const GRAVITY_INTERVAL_SECONDS: float = 0.4666666666666667 # 셀당 고정 낙하 간격(초).
+const FIREFIGHTER_WATER_MAX_STEPS: int = MainGameRules.FIREFIGHTER_WATER_MAX_STEPS
+const FIREFIGHTER_WATER_DURATION_SECONDS: float = MainGameRules.FIREFIGHTER_WATER_DURATION_SECONDS
+const SHIELD_BARRIER_DURATION_SECONDS: float = MainGameRules.SHIELD_BARRIER_DURATION_SECONDS
+const CLOCK_FREEZE_DURATION_SECONDS: float = MainGameRules.CLOCK_FREEZE_DURATION_SECONDS
 const SPAWN_RANDOM_SEED_OFFSET: int = 20839 # bag과 spawn-x 난수열을 분리하는 seed offset.
 const GIMMICK_RANDOM_SEED_OFFSET: int = 39107 # 기믹 난수열을 기존 spawn 난수와 분리하는 seed offset.
 const FLOORS_PER_THEME: int = 5 # 테마(보스 층)마다 묶는 층 수. 5층마다 보스가 나온다.
@@ -150,65 +146,161 @@ const I_KICKS: Dictionary = {
 	"0>3": [Vector2i(0, 0), Vector2i(-1, 0), Vector2i(2, 0), Vector2i(-1, -2), Vector2i(2, 1)],
 }
 
-# authoritative game state. View/Physics/Character는 읽거나 public method로만 변경한다.
-var board: MainBoardModel = MainBoardModel.new() # 고정 셀을 소유하는 유일한 논리 보드.
-var bag: MainPieceBag # 아직 나오지 않은 7-bag 피스 순서를 소유한다.
-var state: GameState = GameState.PLAYING # 입력/시간 진행 허용 여부를 결정한다.
-var meditation_active: bool = false # true면 테트리스 시간만 2배로 진행된다.
-var fall_freeze_remaining: float = 0.0 # 시계공 특수 스킬로 피스 입력·낙하·고정을 멈추는 시간.
-var future_gimmick_freeze_remaining: float = 0.0 # 새 가시/결박/씨앗 발동만 늦추는 시간.
+# MainGameSession owns authoritative state. It is intentionally not exposed as a mutable
+# public object; external collaborators read snapshots and use Controller commands.
+var _session: MainGameSession = MainGameSession.new()
 
-var active_type: int = MainTetrominoData.Type.T # 현재 낙하 중인 Type enum 정수.
-var active_rotation: int = 0 # 활성 피스 회전 상태 0/1/2/3 = 0/90/180/270도.
-var active_origin: Vector2i = Vector2i(3, SPAWN_Y) # 로컬 셀을 더할 보드 원점.
-var active_cell_indices: Array[int] = [0, 1, 2, 3] # 팬 토스 뒤에도 원래 회전 중심을 보존하는 셀 식별자.
-var next_type: int = MainTetrominoData.Type.I # 다음 spawn의 타입.
-var active_piece_has_thorns: bool = false # 현재 활성 피스에만 한 번 정해지는 가시 여부.
-var thorn_visible: bool = false # 가시 피스의 현재 ON/OFF phase 표시 상태.
-var thorn_phase_timer: float = 0.0 # 가시 ON/OFF phase accumulator.
+var board: MainBoardModel:
+	get: return _session.board_state
+var bag: MainPieceBag:
+	get: return _session.piece_queue
+	set(value): _session.piece_queue = value
+var state: GameState:
+	get: return _session.game_state
+	set(value): _session.game_state = value
+var meditation_active: bool:
+	get: return _session.meditation_active
+	set(value): _session.meditation_active = value
+var _fall_freeze_remaining: float:
+	get: return _session.fall_freeze_remaining
+var _future_gimmick_freeze_remaining: float:
+	get: return _session.future_gimmick_freeze_remaining
 
-var transient_blocker_cells: Array[Vector2i] = [] # 방패병 보호벽처럼 고정시키지 않는 임시 충돌 셀.
-var water_path_cells: Array[Vector2i] = [] # 소방관 물길이 차지하는 빈 표면 셀.
-var water_path_direction: int = 0
+var active_type: int:
+	get: return _session.active_type
+	set(value): _session.active_type = value
+var active_rotation: int:
+	get: return _session.active_rotation
+	set(value): _session.active_rotation = value
+var active_origin: Vector2i:
+	get: return _session.active_origin
+	set(value): _session.active_origin = value
+var active_cell_indices: Array[int]:
+	get: return _session.active_cell_indices
+	set(value): _session.active_cell_indices = value
+var next_type: int:
+	get: return _session.next_type
+	set(value): _session.next_type = value
+var active_piece_has_thorns: bool:
+	get: return _session.active_piece_has_thorns
+	set(value): _session.active_piece_has_thorns = value
+var thorn_visible: bool:
+	get: return _session.thorn_visible
+	set(value): _session.thorn_visible = value
+var thorn_phase_timer: float:
+	get: return _session.thorn_phase_timer
+	set(value): _session.thorn_phase_timer = value
 
-var score: int = 0 # 줄 삭제 공식으로 누적되는 총점.
-var level: int = 1 # 중력 간격과 점수 배율에 쓰는 현재 레벨.
-var total_lines: int = 0 # 제거한 누적 행 수. 10줄마다 level이 증가한다.
-var stage_number: int = 1
-var challenge_mode: bool = false
-var stage_time_remaining: float = SURVIVAL_TIME_SECONDS
-var boss_health: int = 0
-var boss_fall_position: Vector2 = Vector2(
-	BOSS_POSITION.x,
-	BOSS_POSITION.y + BOSS_DOWN_DISPLAY_SIZE.y * 0.5
-)
-var boss_fall_target_y: float = boss_fall_position.y
-var boss_down_timer: float = 0.0
-var boss_dying_timer: float = 0.0
-var boss_fall_hold_timer: float = 0.0
-var boss_down: bool = false
-var boss_falling: bool = false
-var boss_fallen: bool = false
-var boss_seeds: Array[Dictionary] = []
-var boss_seed_timer: float = 0.0
-var boss_seed_first_cast_done: bool = false
-var icicles: Array[Dictionary] = []
-var icicle_check_timer: float = 0.0
-var icicle_probability: float = ICICLE_PROBABILITY
-var icicle_first_check_pending: bool = true
+var _transient_blocker_cells: Array[Vector2i]:
+	get: return _session.transient_blocker_cells
+var _barrier_remaining: float:
+	get: return _session.barrier_remaining
+var _barrier_direction: int:
+	get: return _session.barrier_direction
+var _water_path_cells: Array[Vector2i]:
+	get: return _session.water_path_cells
+var _water_path_direction: int:
+	get: return _session.water_path_direction
+var _water_path_remaining: float:
+	get: return _session.water_path_remaining
 
-# 현재 피스 하나에만 적용되는 내부 accumulator/counter.
-var _fall_accumulator: float = 0.0 # 한 셀 낙하로 아직 소비되지 않은 게임 시간(초).
-var _lock_accumulator: float = 0.0 # 현재 접지에서 누적된 고정 대기시간(초).
-var _lock_resets: int = 0 # 현재 피스의 이동/회전 lock delay 초기화 횟수.
-var _spawn_random: RandomNumberGenerator = RandomNumberGenerator.new() # spawn x 전용 난수 엔진.
-var _gimmick_random: RandomNumberGenerator = RandomNumberGenerator.new() # 기믹 전용 결정론 난수 엔진.
-var _gimmick_roll_overrides: Array[bool] = [] # 자동 테스트가 확률 결과만 주입하는 내부 훅.
-var binding_check_timer: float = 0.0 # 속박 적용 스테이지의 10초 주기 accumulator.
-var binding_probability: float = BINDING_PROBABILITY # 다음 속박 판정에 사용할 누적 확률.
-var binding_first_check_pending: bool = true
-var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
-@onready var character: MainCharacterController = get_node_or_null("../BoardPhysics/Character") as MainCharacterController
+var score: int:
+	get: return _session.score
+	set(value): _session.score = value
+var level: int:
+	get: return _session.level
+	set(value): _session.level = value
+var total_lines: int:
+	get: return _session.total_lines
+	set(value): _session.total_lines = value
+var stage_number: int:
+	get: return _session.stage_number
+	set(value): _session.stage_number = value
+var challenge_mode: bool:
+	get: return _session.challenge_mode
+	set(value): _session.challenge_mode = value
+var stage_time_remaining: float:
+	get: return _session.stage_time_remaining
+	set(value): _session.stage_time_remaining = value
+var boss_health: int:
+	get: return _session.boss_health
+	set(value): _session.boss_health = value
+var boss_fall_position: Vector2:
+	get: return _session.boss_fall_position
+	set(value): _session.boss_fall_position = value
+var boss_fall_target_y: float:
+	get: return _session.boss_fall_target_y
+	set(value): _session.boss_fall_target_y = value
+var boss_down_timer: float:
+	get: return _session.boss_down_timer
+	set(value): _session.boss_down_timer = value
+var boss_dying_timer: float:
+	get: return _session.boss_dying_timer
+	set(value): _session.boss_dying_timer = value
+var boss_fall_hold_timer: float:
+	get: return _session.boss_fall_hold_timer
+	set(value): _session.boss_fall_hold_timer = value
+var boss_down: bool:
+	get: return _session.boss_down
+	set(value): _session.boss_down = value
+var boss_falling: bool:
+	get: return _session.boss_falling
+	set(value): _session.boss_falling = value
+var boss_fallen: bool:
+	get: return _session.boss_fallen
+	set(value): _session.boss_fallen = value
+var boss_seeds: Array[Dictionary]:
+	get: return _session.boss_seeds
+	set(value): _session.boss_seeds = value
+var boss_seed_timer: float:
+	get: return _session.boss_seed_timer
+	set(value): _session.boss_seed_timer = value
+var boss_seed_first_cast_done: bool:
+	get: return _session.boss_seed_first_cast_done
+	set(value): _session.boss_seed_first_cast_done = value
+var icicles: Array[Dictionary]:
+	get: return _session.icicles
+	set(value): _session.icicles = value
+var icicle_check_timer: float:
+	get: return _session.icicle_check_timer
+	set(value): _session.icicle_check_timer = value
+var icicle_probability: float:
+	get: return _session.icicle_probability
+	set(value): _session.icicle_probability = value
+var icicle_first_check_pending: bool:
+	get: return _session.icicle_first_check_pending
+	set(value): _session.icicle_first_check_pending = value
+
+var _fall_accumulator: float:
+	get: return _session.fall_accumulator
+	set(value): _session.fall_accumulator = value
+var _lock_accumulator: float:
+	get: return _session.lock_accumulator
+	set(value): _session.lock_accumulator = value
+var _lock_resets: int:
+	get: return _session.lock_resets
+	set(value): _session.lock_resets = value
+var _spawn_random: RandomNumberGenerator:
+	get: return _session.spawn_random
+var _gimmick_random: RandomNumberGenerator:
+	get: return _session.gimmick_random
+var _gimmick_roll_overrides: Array[bool]:
+	get: return _session.gimmick_roll_overrides
+	set(value): _session.gimmick_roll_overrides = value
+var binding_check_timer: float:
+	get: return _session.binding_check_timer
+	set(value): _session.binding_check_timer = value
+var binding_probability: float:
+	get: return _session.binding_probability
+	set(value): _session.binding_probability = value
+var binding_first_check_pending: bool:
+	get: return _session.binding_first_check_pending
+	set(value): _session.binding_first_check_pending = value
+var _shown_stage_seconds: int:
+	get: return _session.shown_stage_seconds
+	set(value): _session.shown_stage_seconds = value
+
+var _character_port: MainCharacterRuntimePort
 
 
 ## 상황: main.tscn의 GameController가 씬 트리에 들어올 때 Godot가 한 번 호출한다.
@@ -217,11 +309,26 @@ var _shown_stage_seconds: int = ceili(SURVIVAL_TIME_SECONDS)
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	INPUT_ACTIONS.ensure_defaults()
+	_bind_character_runtime_port(get_node_or_null("../BoardPhysics/Character"))
 	var game_root: Node = get_parent()
 	if game_root != null:
 		stage_number = int(game_root.get_meta("stage_number", 1))
 		challenge_mode = bool(game_root.get_meta("challenge_mode", false))
 	reset_game()
+
+
+func _bind_character_runtime_port(character_node: Node) -> void:
+	if character_node == null:
+		_character_port = null
+		return
+	_character_port = MainCharacterRuntimePort.new(
+		Callable(character_node, "get_max_lives"),
+		Callable(character_node, "character_collider_snapshot"),
+		Callable(character_node, "is_binding_active"),
+		Callable(character_node, "apply_binding"),
+		Callable(character_node, "take_thorn_damage"),
+		Callable(character_node, "clear_local_runtime_state")
+	)
 
 
 ## 상황: Godot physics frame마다 호출되는 C++ update loop 대응 함수다.
@@ -247,12 +354,11 @@ func _physics_process(delta: float) -> void:
 		return
 	if state != GameState.PLAYING:
 		return
-	if fall_freeze_remaining > 0.0:
-		fall_freeze_remaining = maxf(0.0, fall_freeze_remaining - delta)
-		future_gimmick_freeze_remaining = maxf(
-			0.0,
-			future_gimmick_freeze_remaining - delta
-		)
+	_advance_water_path(delta)
+	_advance_barrier(delta)
+	if _fall_freeze_remaining > 0.0:
+		var freeze_result: MainCommandResult = _session.advance_clockmaker(delta)
+		_emit_committed_events(freeze_result.events)
 		_advance_stage_gimmicks(delta, true)
 		_advance_stage_timer(delta)
 		game_changed.emit()
@@ -308,17 +414,16 @@ func _advance_lock_delay(effective_delta: float) -> void:
 ##       → next 확보 → 첫 spawn → restarted/change signal.
 ## 결과: 이전 상태가 모두 폐기되고 같은 seed면 같은 게임 순서를 재현한다.
 func reset_game(seed_value: int = -1) -> void:
-	board.reset()
-	bag = MainPieceBag.new(seed_value)
-	if seed_value >= 0:
-		_spawn_random.seed = seed_value + SPAWN_RANDOM_SEED_OFFSET
-		_gimmick_random.seed = seed_value + GIMMICK_RANDOM_SEED_OFFSET
-	else:
-		_spawn_random.randomize()
-		_gimmick_random.randomize()
-	total_lines = 0
-	score = 0
-	level = 1
+	_session.reset_board_and_random(
+		seed_value,
+		SPAWN_RANDOM_SEED_OFFSET,
+		GIMMICK_RANDOM_SEED_OFFSET
+	)
+	_session.reset_player_gameplay(
+		_character_port.max_lives(MainGameRules.DEFAULT_PLAYER_LIVES)
+		if _character_port != null
+		else MainGameRules.DEFAULT_PLAYER_LIVES
+	)
 	boss_health = BOSS_MAX_HEALTH if is_boss_stage() else 0
 	boss_fall_position = Vector2(
 		BOSS_POSITION.x,
@@ -335,9 +440,7 @@ func reset_game(seed_value: int = -1) -> void:
 	_shown_stage_seconds = ceili(stage_time_remaining)
 	state = GameState.PLAYING
 	meditation_active = false
-	fall_freeze_remaining = 0.0
-	future_gimmick_freeze_remaining = 0.0
-	clear_skill_effects()
+	clear_skill_effects(MainGameEvent.ClearReason.GAME_RESET, false)
 	boss_seeds.clear()
 	boss_seed_timer = 0.0
 	boss_seed_first_cast_done = false
@@ -405,7 +508,7 @@ func get_boss_landing_y() -> float:
 		if cell_top < boss_rect.end.y:
 			continue
 		for x: int in range(MainBoardModel.WIDTH):
-			if board.cells[y][x] == MainBoardModel.EMPTY:
+			if board.get_cell(Vector2i(x, y)) == MainBoardModel.EMPTY:
 				continue
 			var cell_left: float = float(x) * MainLayout.CELL_SIZE
 			var cell_right: float = cell_left + MainLayout.CELL_SIZE
@@ -549,8 +652,8 @@ func _attempt_binding_roll() -> void:
 		)
 		return
 	binding_probability = BINDING_PROBABILITY
-	if is_instance_valid(character):
-		character.apply_binding(get_binding_duration_seconds())
+	if _character_port != null:
+		_character_port.apply_binding(get_binding_duration_seconds())
 
 
 func get_binding_duration_seconds() -> float:
@@ -558,7 +661,7 @@ func get_binding_duration_seconds() -> float:
 
 
 func _character_is_bound() -> bool:
-	return is_instance_valid(character) and character.is_bound
+	return _character_port != null and _character_port.is_bound()
 
 
 func _next_gimmick_roll() -> bool:
@@ -660,7 +763,7 @@ func _advance_icicle_movement(delta: float, future_triggers_frozen: bool) -> boo
 				_apply_icicle_damage()
 				changed = true
 				continue
-			if _icicle_overlaps_active_piece(sweep) or _icicle_overlaps_cells(sweep, transient_blocker_cells):
+			if _icicle_overlaps_active_piece(sweep) or _icicle_overlaps_cells(sweep, _transient_blocker_cells):
 				changed = true
 				continue
 			var floor_hit: bool = _icicle_hits_floor(pos.y, next_y)
@@ -677,7 +780,7 @@ func _advance_icicle_movement(delta: float, future_triggers_frozen: bool) -> boo
 			_apply_icicle_damage()
 			changed = true
 			continue
-		if _icicle_overlaps_active_piece(sweep_fall) or _icicle_overlaps_cells(sweep_fall, transient_blocker_cells):
+		if _icicle_overlaps_active_piece(sweep_fall) or _icicle_overlaps_cells(sweep_fall, _transient_blocker_cells):
 			changed = true
 			continue
 		if _icicle_hits_floor(pos.y, next_y_fall):
@@ -727,9 +830,10 @@ func _icicle_sweep_rect(x: float, current_y: float, next_y: float) -> Rect2:
 
 
 func _icicle_overlaps_character(rect: Rect2) -> bool:
-	if not is_instance_valid(character):
+	if _character_port == null:
 		return false
-	return rect.intersects(character._character_collider_rect())
+	var character_rect: Variant = _character_port.collider_rect()
+	return character_rect is Rect2 and rect.intersects(character_rect as Rect2)
 
 
 func _icicle_overlaps_active_piece(rect: Rect2) -> bool:
@@ -748,8 +852,8 @@ func _icicle_overlaps_cells(rect: Rect2, cells: Array[Vector2i]) -> bool:
 
 
 func _apply_icicle_damage() -> void:
-	if is_instance_valid(character):
-		character.take_thorn_damage("고드름 피해! 목숨 -1")
+	if _character_port != null:
+		_character_port.take_hazard_damage("고드름 피해! 목숨 -1")
 
 
 func _remove_icicles_overlapping_cells(locked_cells: Array[Vector2i]) -> bool:
@@ -818,7 +922,7 @@ func _advance_boss_seeds(delta: float) -> bool:
 		var position: Vector2 = seed["position"] as Vector2
 		var previous_y: float = position.y
 		var settled: bool = bool(seed["settled"])
-		if _boss_seed_overlaps_cells(_boss_seed_rect(position), transient_blocker_cells):
+		if _boss_seed_overlaps_cells(_boss_seed_rect(position), _transient_blocker_cells):
 			changed = true
 			continue
 		if settled:
@@ -855,7 +959,7 @@ func _advance_boss_seeds(delta: float) -> bool:
 			continue
 		if _boss_seed_overlaps_cells(
 			_boss_seed_sweep_rect(position.x, previous_y, next_y),
-			transient_blocker_cells
+			_transient_blocker_cells
 		):
 			changed = true
 			continue
@@ -910,9 +1014,10 @@ func _boss_seed_sweep_rect(x: float, current_y: float, next_y: float) -> Rect2:
 
 
 func _boss_seed_overlaps_character(seed_rect: Rect2) -> bool:
-	if not is_instance_valid(character):
+	if _character_port == null:
 		return false
-	return seed_rect.intersects(character._character_collider_rect())
+	var character_rect: Variant = _character_port.collider_rect()
+	return character_rect is Rect2 and seed_rect.intersects(character_rect as Rect2)
 
 
 func _boss_seed_overlaps_active_piece(seed_rect: Rect2) -> bool:
@@ -934,8 +1039,8 @@ func _boss_seed_overlaps_cells(seed_rect: Rect2, cells: Array[Vector2i]) -> bool
 
 
 func _apply_boss_seed_binding() -> void:
-	if is_instance_valid(character):
-		character.apply_binding(BOSS_BINDING_DURATION_SECONDS)
+	if _character_port != null:
+		_character_port.apply_binding(BOSS_BINDING_DURATION_SECONDS)
 
 
 func _remove_boss_seeds_overlapping_cells(locked_cells: Array[Vector2i]) -> bool:
@@ -1008,22 +1113,99 @@ func set_meditation_active(active: bool) -> void:
 	meditation_active = active and state == GameState.PLAYING
 
 
-## 시계공의 정지 태엽. 지속 중에는 활성 피스의 입력·낙하·고정 시간이 모두 멈춘다.
-func freeze_falling_blocks(seconds: float) -> bool:
-	if state != GameState.PLAYING or seconds <= 0.0:
-		return false
-	fall_freeze_remaining = maxf(fall_freeze_remaining, seconds)
-	future_gimmick_freeze_remaining = maxf(future_gimmick_freeze_remaining, seconds)
-	game_changed.emit()
-	return true
+## 외부 계층이 GameSession 원본을 보관하지 않고도 현재 런을 복원할 수 있는 읽기 모델이다.
+func session_snapshot() -> Dictionary:
+	return {
+		"board": _session.board_snapshot(),
+		"active_piece": _session.active_piece_snapshot(),
+		"progress": _session.progress_snapshot(),
+		"skill_effects": _session.skill_effect_snapshot(),
+	}
 
 
-func clear_fall_freeze() -> void:
-	if fall_freeze_remaining <= 0.0 and future_gimmick_freeze_remaining <= 0.0:
-		return
-	fall_freeze_remaining = 0.0
-	future_gimmick_freeze_remaining = 0.0
+func active_piece_snapshot() -> Dictionary:
+	return _session.active_piece_snapshot()
+
+
+func progress_snapshot() -> Dictionary:
+	return _session.progress_snapshot()
+
+
+func player_lives() -> int:
+	return _session.lives
+
+
+func set_player_lives(value: int) -> void:
+	_session.set_player_lives(value)
+
+
+func set_player_rotation_cooldown(value: float) -> void:
+	_session.set_rotation_cooldown(value)
+
+
+func set_player_special_cooldown(value: float) -> void:
+	_session.set_special_cooldown(value)
+
+
+func player_rotation_cooldown_remaining() -> float:
+	return _session.rotation_cooldown_remaining
+
+
+func player_special_cooldown_remaining() -> float:
+	return _session.special_cooldown_remaining
+
+
+func advance_player_cooldowns(delta: float) -> void:
+	_session.advance_player_cooldowns(delta)
+
+
+func lose_player_life(amount: int = 1) -> int:
+	return _session.lose_life(amount)
+
+
+func reset_player_gameplay(max_lives: int) -> void:
+	_session.reset_player_gameplay(max_lives)
+
+
+func fall_freeze_remaining() -> float:
+	return _fall_freeze_remaining
+
+
+func future_gimmick_freeze_remaining() -> float:
+	return _future_gimmick_freeze_remaining
+
+
+func transient_blocker_snapshot() -> Array[Vector2i]:
+	return _transient_blocker_cells.duplicate()
+
+
+func barrier_remaining() -> float:
+	return _barrier_remaining
+
+
+func barrier_direction() -> int:
+	return _barrier_direction
+
+
+## 시계공의 정지 태엽을 규칙 상수로 커밋한다.
+func execute_clockmaker_cast(command: MainAbilityCastCommand) -> MainCommandResult:
+	var result := _session.execute_clockmaker_cast(command)
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
 	game_changed.emit()
+	return result
+
+
+func clear_fall_freeze(
+	reason: int = MainGameEvent.ClearReason.MANUAL
+) -> MainCommandResult:
+	var result := _session.clear_clockmaker(reason)
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
+	game_changed.emit()
+	return result
 
 
 ## 현재 회전 상태에서 팬 토스로 남아 있는 셀만 반환한다.
@@ -1062,34 +1244,50 @@ func can_place_active(
 		return false
 	if include_transient_blockers:
 		for local_cell: Vector2i in local_cells:
-			if origin + local_cell in transient_blocker_cells:
+			if origin + local_cell in _transient_blocker_cells:
 				return false
 	return true
 
 
-func set_transient_blockers(cells: Array[Vector2i]) -> void:
-	transient_blocker_cells = cells.duplicate()
+func execute_shield_guard_cast(command: MainAbilityCastCommand) -> MainCommandResult:
+	var result := _session.execute_shield_guard_cast(command, active_board_cells())
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
 	game_changed.emit()
+	return result
 
 
-func clear_transient_blockers() -> void:
-	if transient_blocker_cells.is_empty():
-		return
-	transient_blocker_cells.clear()
+func clear_transient_blockers(
+	reason: int = MainGameEvent.ClearReason.MANUAL
+) -> MainCommandResult:
+	var result := _session.clear_barrier(reason)
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
 	game_changed.emit()
+	return result
 
 
-func clear_skill_effects() -> void:
-	fall_freeze_remaining = 0.0
-	future_gimmick_freeze_remaining = 0.0
-	transient_blocker_cells.clear()
-	water_path_cells.clear()
-	water_path_direction = 0
+func clear_skill_effects(
+	water_clear_reason: int = MainGameEvent.ClearReason.GAME_RESET,
+	notify_change: bool = true
+) -> void:
+	var had_changed_state: bool = (
+		_fall_freeze_remaining > 0.0
+		or _future_gimmick_freeze_remaining > 0.0
+		or not _transient_blocker_cells.is_empty()
+		or has_water_path()
+	)
+	var committed_events: Array[MainGameEvent] = _session.clear_skill_effects(water_clear_reason)
+	_emit_committed_events(committed_events)
+	if notify_change and had_changed_state:
+		game_changed.emit()
 
 
 func clear_runtime_state() -> void:
 	meditation_active = false
-	clear_skill_effects()
+	clear_skill_effects(MainGameEvent.ClearReason.GAME_RESET, false)
 	_reset_active_piece_gimmick()
 	boss_seeds.clear()
 	boss_seed_timer = 0.0
@@ -1101,63 +1299,163 @@ func clear_runtime_state() -> void:
 	binding_check_timer = 0.0
 	binding_probability = BINDING_PROBABILITY
 	binding_first_check_pending = true
-	if is_instance_valid(character):
-		character.clear_runtime_state()
+	if _character_port != null:
+		_character_port.clear_runtime_state(MainGameEvent.ClearReason.GAME_RESET)
 	game_changed.emit()
 
 
-## 소방관의 물길을 고정 블록과 바닥만 기준으로 계산한다.
-func create_water_path(start_cell: Vector2i, direction: int, maximum_steps: int = 3) -> bool:
-	water_path_cells.clear()
-	water_path_direction = signi(direction)
-	if state != GameState.PLAYING or water_path_direction == 0 or maximum_steps < 1:
+func has_water_path() -> bool:
+	return _session.has_water_path()
+
+
+func water_path_snapshot() -> Array[Vector2i]:
+	return _water_path_cells.duplicate()
+
+
+func water_path_direction() -> int:
+	return _water_path_direction
+
+
+func water_path_remaining() -> float:
+	return _water_path_remaining
+
+
+func _validate_ability_command(
+	command: MainAbilityCastCommand,
+	expected_ability_id: StringName,
+	require_direction: bool = false
+) -> MainCommandResult:
+	if state != GameState.PLAYING:
+		return MainCommandResult.failed(
+			MainCommandResult.GAME_NOT_PLAYING,
+			"Ability command requires a playing game."
+		)
+	if command == null or command.ability_id != expected_ability_id:
+		return MainCommandResult.failed(
+			MainCommandResult.INVALID_ABILITY,
+			"Ability command does not match the execution boundary."
+		)
+	if require_direction and command.direction != -1 and command.direction != 1:
+		return MainCommandResult.failed(
+			MainCommandResult.INVALID_DIRECTION,
+			"Ability cast direction must be -1 or 1."
+		)
+	return MainCommandResult.succeeded()
+
+
+func execute_boxer_cast(command: MainAbilityCastCommand) -> MainCommandResult:
+	var validation: MainCommandResult = _validate_ability_command(command, &"boxer", true)
+	if not validation.ok:
+		return validation
+	var target: Variant = null
+	var active_cells: Array[Vector2i] = active_board_cells()
+	for candidate: Vector2i in command.cells:
+		if not board.is_inside(candidate):
+			continue
+		if candidate in active_cells:
+			target = candidate
+			break
+		if board.get_cell(candidate) == MainBoardModel.EMPTY:
+			continue
+		var above := candidate + Vector2i.UP
+		if board.is_inside(above) and board.get_cell(above) != MainBoardModel.EMPTY:
+			continue
+		target = candidate
+		break
+	if target == null:
+		return MainCommandResult.failed(
+			MainCommandResult.NO_VALID_TARGET,
+			"Boxer cast has no exposed target in its captured cells."
+		)
+	var moved: int = push_front_target(target as Vector2i, command.direction, 3, true, false)
+	if moved <= 0:
+		return MainCommandResult.failed(
+			MainCommandResult.PATH_BLOCKED,
+			"Boxer target could not move in the cast direction."
+		)
+	var event := MainGameEvent.ability_committed(
+		&"boxer", [target as Vector2i], command.direction, 0.0, moved
+	)
+	_emit_committed_events([event])
+	game_changed.emit()
+	return MainCommandResult.succeeded([event])
+
+
+func execute_cleaner_cast(command: MainAbilityCastCommand) -> MainCommandResult:
+	var validation: MainCommandResult = _validate_ability_command(command, &"cleaner")
+	if not validation.ok:
+		return validation
+	if not board.is_inside(command.start_cell):
+		return MainCommandResult.failed(
+			MainCommandResult.INVALID_START_CELL,
+			"Cleaner cast center is outside the board."
+		)
+	var receipt: MainBoardMutationReceipt = _clean_exposed_cells(command.start_cell)
+	if receipt.is_empty():
+		return MainCommandResult.failed(
+			MainCommandResult.NO_VALID_TARGET,
+			"Cleaner cast found no exposed fixed block."
+		)
+	var event := MainGameEvent.ability_committed(
+		&"cleaner", receipt.cells, 0, 0.0, receipt.count
+	)
+	_emit_committed_events([event])
+	game_changed.emit()
+	return MainCommandResult.succeeded([event])
+
+
+## 소방관 cast context를 검증하고 물길 상태 전체를 한 번에 커밋한다.
+func execute_firefighter_cast(command: MainFirefighterCastCommand) -> MainCommandResult:
+	var result := _session.execute_firefighter_cast(command)
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
+	game_changed.emit()
+	return result
+
+
+func clear_water_path(
+	reason: int = MainGameEvent.ClearReason.MANUAL
+) -> MainCommandResult:
+	var result := _session.clear_water_path(reason)
+	if not result.ok:
+		return result
+	_emit_committed_events(result.events)
+	game_changed.emit()
+	return result
+
+
+func _emit_committed_events(events: Array[MainGameEvent]) -> void:
+	for event: MainGameEvent in events:
+		game_event_committed.emit(event)
+
+
+func _advance_water_path(delta: float) -> void:
+	var result: MainCommandResult = _session.advance_water_path(delta)
+	if result.ok and not result.events.is_empty():
+		_emit_committed_events(result.events)
 		game_changed.emit()
-		return false
-
-	var cursor: Vector2i = start_cell
-	for _step: int in range(maximum_steps):
-		if cursor.x < 0 or cursor.x >= MainBoardModel.WIDTH:
-			break
-		cursor.y = clampi(cursor.y, 0, MainBoardModel.HEIGHT - 1)
-		while cursor.y < MainBoardModel.HEIGHT - 1:
-			var below := cursor + Vector2i.DOWN
-			if board.get_cell(below) != MainBoardModel.EMPTY:
-				break
-			cursor = below
-		if board.get_cell(cursor) != MainBoardModel.EMPTY:
-			break
-		if cursor not in water_path_cells:
-			water_path_cells.append(cursor)
-		var next := cursor + Vector2i(water_path_direction, 0)
-		if next.x < 0 or next.x >= MainBoardModel.WIDTH:
-			break
-		if board.get_cell(next) != MainBoardModel.EMPTY:
-			break
-		cursor = next
-	game_changed.emit()
-	return not water_path_cells.is_empty()
 
 
-func clear_water_path() -> void:
-	if water_path_cells.is_empty():
-		return
-	water_path_cells.clear()
-	water_path_direction = 0
-	game_changed.emit()
+func _advance_barrier(delta: float) -> void:
+	var result: MainCommandResult = _session.advance_barrier(delta)
+	if result.ok and not result.events.is_empty():
+		_emit_committed_events(result.events)
+		game_changed.emit()
 
 
 func _apply_water_slide_if_needed() -> void:
-	if water_path_cells.is_empty():
+	if not has_water_path():
 		return
 	var touches_water: bool = false
 	for cell: Vector2i in active_board_cells():
-		if cell in water_path_cells:
+		if cell in _water_path_cells:
 			touches_water = true
 			break
 	if not touches_water:
 		return
 	var was_grounded: bool = is_grounded()
-	var target := active_origin + Vector2i(water_path_direction, 0)
+	var target := active_origin + Vector2i(_water_path_direction, 0)
 	if can_place_active(target):
 		active_origin = target
 		_reset_lock_after_transform(was_grounded)
@@ -1169,22 +1467,34 @@ func push_front_target(
 	target_cell: Vector2i,
 	direction: int,
 	maximum_distance: int,
-	require_exposed_fixed: bool = false
+	require_exposed_fixed: bool = false,
+	notify_change: bool = true
 ) -> int:
 	if state != GameState.PLAYING or direction == 0 or maximum_distance < 1:
 		return 0
 	var step_x: int = signi(direction)
+	var character_cells: Array[Vector2i] = _character_occupied_cells_snapshot()
 	if target_cell in active_board_cells():
 		var was_grounded: bool = is_grounded()
 		var moved_active: int = 0
 		for distance: int in range(1, maximum_distance + 1):
-			if not can_place_active(active_origin + Vector2i(step_x * distance, 0)):
+			var candidate_origin := active_origin + Vector2i(step_x * distance, 0)
+			if (
+				not can_place_active(candidate_origin)
+				or _piece_overlaps_forbidden_cells(
+					active_type,
+					active_rotation,
+					candidate_origin,
+					character_cells
+				)
+			):
 				break
 			moved_active = distance
 		if moved_active > 0:
 			active_origin += Vector2i(step_x * moved_active, 0)
 			_reset_lock_after_transform(was_grounded)
-			game_changed.emit()
+			if notify_change:
+				game_changed.emit()
 		return moved_active
 
 	if board.get_cell(target_cell) == MainBoardModel.EMPTY:
@@ -1200,20 +1510,61 @@ func push_front_target(
 	var moved_fixed: int = 0
 	for _distance: int in range(maximum_distance):
 		var destination := current + Vector2i(step_x, 0)
-		if destination in active_board_cells() or not board.move_cell(current, destination):
+		if (
+			destination in active_board_cells()
+			or destination in character_cells
+			or not board.move_cell(current, destination)
+		):
 			break
 		current = destination
 		moved_fixed += 1
 	if moved_fixed > 0:
-		game_changed.emit()
+		if notify_change:
+			game_changed.emit()
 	return moved_fixed
 
 
+func _character_occupied_cells_snapshot() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if _character_port == null:
+		return result
+	var rect_value: Variant = _character_port.collider_rect()
+	if not rect_value is Rect2:
+		return result
+	var character_rect: Rect2 = rect_value as Rect2
+	for y: int in range(MainBoardModel.HEIGHT):
+		for x: int in range(MainBoardModel.WIDTH):
+			var cell := Vector2i(x, y)
+			var cell_rect := Rect2(
+				Vector2(
+					float(x) * MainLayout.CELL_SIZE,
+					float(y - MainBoardModel.HIDDEN_ROWS) * MainLayout.CELL_SIZE
+				),
+				Vector2.ONE * MainLayout.CELL_SIZE
+			)
+			if (
+				character_rect.position.x < cell_rect.end.x
+				and character_rect.end.x > cell_rect.position.x
+				and character_rect.position.y < cell_rect.end.y
+				and character_rect.end.y > cell_rect.position.y
+			):
+				result.append(cell)
+	return result
+
+
 ## 캐릭터 발밑을 중심으로 노출된 고정 블록을 최대 세 칸 제거한다.
-func clean_exposed_cells(center_below: Vector2i) -> int:
+func clean_exposed_cells(center_below: Vector2i, notify_change: bool = true) -> int:
+	var receipt: MainBoardMutationReceipt = _clean_exposed_cells(center_below)
+	if notify_change and not receipt.is_empty():
+		game_changed.emit()
+	return receipt.count
+
+
+## 실제로 제거된 셀만 기록해 상태 커밋과 사건 payload가 어긋나지 않게 한다.
+func _clean_exposed_cells(center_below: Vector2i) -> MainBoardMutationReceipt:
 	if state != GameState.PLAYING:
-		return 0
-	var removed: int = 0
+		return MainBoardMutationReceipt.new()
+	var removed_cells: Array[Vector2i] = []
 	var active_cells: Array[Vector2i] = active_board_cells()
 	var ordered_offsets: Array[int] = [0, -1, 1]
 	for x_offset: int in ordered_offsets:
@@ -1230,10 +1581,8 @@ func clean_exposed_cells(center_below: Vector2i) -> int:
 		):
 			continue
 		if board.remove_cell(cell):
-			removed += 1
-	if removed > 0:
-		game_changed.emit()
-	return removed
+			removed_cells.append(cell)
+	return MainBoardMutationReceipt.new(removed_cells)
 
 
 ## 청소부의 대청소. 화면 하단 세 줄에서 위 블록을 받치지 않는 고정 블록을 제거한다.
@@ -1345,9 +1694,12 @@ func _spawn_origin_overlaps_character(
 	local_cells: Array[Vector2i],
 	origin: Vector2i
 ) -> bool:
-	if not is_instance_valid(character):
+	if _character_port == null:
 		return false
-	var character_rect: Rect2 = character._character_collider_rect()
+	var character_rect_value: Variant = _character_port.collider_rect()
+	if not character_rect_value is Rect2:
+		return false
+	var character_rect: Rect2 = character_rect_value as Rect2
 	for local_cell: Vector2i in local_cells:
 		var board_cell: Vector2i = origin + local_cell
 		var cell_rect: Rect2 = Rect2(
@@ -1376,9 +1728,12 @@ func _spawn_origin_overlaps_character_descent_path(
 	local_cells: Array[Vector2i],
 	origin: Vector2i
 ) -> bool:
-	if not is_instance_valid(character):
+	if _character_port == null:
 		return false
-	var character_rect: Rect2 = character._character_collider_rect()
+	var character_rect_value: Variant = _character_port.collider_rect()
+	if not character_rect_value is Rect2:
+		return false
+	var character_rect: Rect2 = character_rect_value as Rect2
 	var character_top_row: int = clampi(
 		floori(character_rect.position.y / MainLayout.CELL_SIZE) + MainBoardModel.HIDDEN_ROWS,
 		0,
@@ -1534,14 +1889,18 @@ func lock_active_piece() -> void:
 	if state != GameState.PLAYING:
 		return
 
-	_remove_boss_seeds_overlapping_cells(active_board_cells())
-	_remove_icicles_overlapping_cells(active_board_cells())
-	board.lock_cells(
+	var locked_cells: Array[Vector2i] = active_board_cells()
+	var locked: bool = board.lock_cells(
 		active_type,
 		active_local_cells(),
 		active_origin,
 		active_piece_is_ice()
 	)
+	if not locked:
+		push_error("활성 피스 고정이 BoardModel 검증에서 거부되었습니다.")
+		return
+	_remove_boss_seeds_overlapping_cells(locked_cells)
+	_remove_icicles_overlapping_cells(locked_cells)
 	var cleared: int = board.clear_full_lines() # 이번 고정으로 동시에 삭제된 행 수.
 	if cleared > 0:
 		_apply_line_clear_rewards(cleared)

@@ -109,6 +109,7 @@ pwsh -NoProfile -File .\release.ps1
 
 ```sh
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --import
+./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/contracts/pure_contract_test.gd
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/main_game_test.gd
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://start_screen/tests/main_ui_test.gd
 ./Godot_v4.7.1-stable_linux.x86_64 --headless --path . --export-release Web build/web/index.html
@@ -130,7 +131,8 @@ Web 결과는 `build/web/`에 생성됩니다. 브라우저 보안 정책 때문
 - `scripts/`: 보드, 물리, 캐릭터, UI와 입력 코드
 - `start_screen/`: 시작 메뉴, 튜토리얼과 키·볼륨 설정
 - `assets/`: 블록·캐릭터 PNG 스프라이트와 SFX 음원
-- `tests/`: 게임 로직과 물리 통합 테스트
+- `tests/`: 순수 계약, Scene 연결, 런타임 통합 테스트. 계층 기준은
+  [`tests/TEST_EVIDENCE_LAYERS_KO.md`](tests/TEST_EVIDENCE_LAYERS_KO.md)
 - `docs/`: 게임 총정리(`GAME_OVERVIEW_KO.md`)와 온보딩·조사 기록
 
 Godot의 `.godot/` 캐시와 빌드 결과물은 저장소에 포함하지 않습니다.

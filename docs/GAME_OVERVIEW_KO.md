@@ -26,7 +26,8 @@ MAIN(메인 메뉴)
 뒤로가기: GAME → STAGE_SELECT → FLOOR_SELECT → MAIN (Esc/X)
 ```
 
-- 모든 메뉴 UI는 `start_screen/scripts/start_screen.gd`에서 코드 생성.
+- 메뉴 UI 노드는 `start_screen/scripts/start_screen.gd`에서 조립하지만, 현재 화면과 표시 전환은
+  `ScreenRouter`, 각 화면 root·진입 동작은 개별 `ScreenView` 인스턴스가 소유한다.
 - 스테이지 = 별도 씬 없음. `main.tscn` 하나를 인스턴스화하고
   `set_meta("stage_number", n)` / `set_meta("challenge_mode", bool)`로 전달.
 - 규칙은 `scripts/game_controller.gd`의 `STAGE_GIMMICKS` 딕셔너리 하나가 전부.
@@ -154,16 +155,25 @@ MAIN(메인 메뉴)
 
 | 경로 | 역할 |
 | --- | --- |
-| `start_screen/scripts/start_screen.gd` | 모든 메뉴 UI·화면 전환·게임 인스턴스 수명 |
-| `start_screen/scripts/start_screen_settings.gd` | 세이브/해금/별/패시브/언어/오디오 (`STAGE_COUNT=10`) |
+| `start_screen/scripts/start_screen.gd` | 메뉴 조립 composition root·사용자 흐름·게임 인스턴스 수명 |
+| `start_screen/scripts/screen_router.gd` · `screen_view.gd` | 현재 화면/표시 전환 · 화면별 root/진입 초점 |
+| `start_screen/scripts/start_screen_settings.gd` | 입력·언어 설정과 기존 호출 호환 facade |
+| `start_screen/scripts/progression_service.gd` | 해금·별·무피해·패시브·도전 기록 규칙과 원본 상태 |
+| `start_screen/scripts/settings_repository.gd` | `ConfigFile` 읽기/쓰기와 schema 직렬화 |
+| `start_screen/scripts/audio_settings_adapter.gd` | 볼륨 원본 값과 `AudioServer` bus 적용 |
 | `scripts/game_controller.gd` | 게임 규칙·`STAGE_GIMMICKS`·SRS 킷표·보스 판정 |
 | `scripts/game_view.gd` | 보드/HUD/VFX 즉시 렌더링 |
-| `scripts/character_controller.gd` | 캐릭터 이동/공격/스킬/피해 |
+| `scripts/character_controller.gd` | 캐릭터 상태 흐름을 조정하는 Godot `CharacterBody2D` 셸 |
+| `scripts/character_motor.gd` · `character_input_adapter.gd` | 이동·충돌·매달림 상태 / Godot Input 변환 |
+| `scripts/character_ability_resolver.gd` · `character_ability_policy.gd` | 8캐릭터 스킬 정책·명령 생성·실행 대상 선택 |
+| `scripts/character_presenter.gd` · `character_audio_adapter.gd` | 애니메이션·Sprite 투영 / SFX 채널·재생 수명 |
 | `scripts/board_model.gd` · `board_physics.gd` · `main_layout.gd` | 보드 모델/물리/좌표 상수 |
 | `scripts/character_data.gd` | 8캐릭터 능력치 |
 | `scenes/main.tscn` | 게임 씬 (meta로 층 번호 전달) |
-| `tests/main_game_test.gd` · `start_screen/tests/main_ui_test.gd` | 회귀 테스트 (메인 229개 / UI 108개) |
-| `tests/*_runtime_integration_test.gd` | 독립 런타임 통합 테스트 8종 |
+| `tests/contracts/pure_contract_test.gd` | Scene 없는 상태·명령·사건·실패 snapshot 계약 55개 |
+| `tests/main_game_test.gd` · `start_screen/tests/main_ui_test.gd` | Scene 연결 회귀 테스트 (메인 281개 / UI 134개) |
+| `tests/*_runtime_integration_test.gd` | 독립 런타임 통합 테스트 9종 |
+| `tests/TEST_EVIDENCE_LAYERS_KO.md` | 순수 계약 / Scene 연결 / 배포 증거의 분류 기준 |
 | `build_web.sh` | 공식 검증 파이프라인 (import→테스트→Web export→ZIP→smoke) |
 
 - `tools/` 디렉터리(자산 생성 파이썬/PS1 스크립트)와 `tests/capture_corner_climb_timing.gd`는

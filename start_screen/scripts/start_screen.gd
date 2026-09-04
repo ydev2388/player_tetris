@@ -96,12 +96,15 @@ enum Screen {
 @export var suppress_quit_for_tests: bool = false
 
 var settings: StartScreenSettings
-var current_screen: Screen = Screen.MAIN
+var current_screen: Screen:
+	get:
+		return Screen.MAIN if _screen_router == null else _screen_router.current_screen
 var tutorial_page: int = 0
 var selected_stage_number: int = 1
 
 var _font: Font
 var _ui: RefCounted
+var _screen_router: BlockFighterScreenRouter
 var _screens: Dictionary = {}
 var _main_buttons: Array[Button] = []
 var _stage_panels: Array[Panel] = []
@@ -143,6 +146,9 @@ var _tutorial_next_button: Button
 var _master_value_label: Label
 var _music_value_label: Label
 var _sfx_value_label: Label
+var _master_slider: HSlider
+var _music_slider: HSlider
+var _sfx_slider: HSlider
 var _game_host: Control
 var _game_viewport_container: SubViewportContainer
 var _game_viewport: SubViewport
@@ -187,6 +193,7 @@ func _ready() -> void:
 	set_process_unhandled_key_input(true)
 	_font = UI_FONT
 	_ui = UI_SCRIPT.new(_font, PANEL_DARK, BORDER, TEXT)
+	_screen_router = BlockFighterScreenRouter.new(Screen.MAIN)
 
 	settings = StartScreenSettings.new(settings_file_path)
 	settings.name = "StartScreenSettings"
@@ -726,6 +733,7 @@ func _build_interface() -> void:
 	_configure_game_host_layout()
 	_game_host.visible = false
 	add_child(_game_host)
+	_screen_router.set_game_host(_game_host)
 	_game_viewport_container = SubViewportContainer.new()
 	_game_viewport_container.name = "GameViewportContainer"
 	_game_viewport_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -755,6 +763,7 @@ func _build_interface() -> void:
 	_build_game_exit_overlay()
 	_build_stage_result_overlay()
 	_build_stage_fail_overlay()
+	_configure_screen_focus()
 
 
 func _build_main_screen() -> void:
@@ -1434,6 +1443,7 @@ func _build_volume_screen() -> void:
 		"MasterSlider",
 		_on_master_changed
 	)
+	_master_slider = panel.get_node("MasterSlider") as HSlider
 	_music_value_label = _create_volume_row(
 		panel,
 		"BGM",
@@ -1443,6 +1453,7 @@ func _build_volume_screen() -> void:
 		"MusicSlider",
 		_on_music_changed
 	)
+	_music_slider = panel.get_node("MusicSlider") as HSlider
 	_sfx_value_label = _create_volume_row(
 		panel,
 		"SFX",
@@ -1452,6 +1463,7 @@ func _build_volume_screen() -> void:
 		"SfxSlider",
 		_on_sfx_changed
 	)
+	_sfx_slider = panel.get_node("SfxSlider") as HSlider
 
 	var back_button: Button = _create_button(
 		screen,
@@ -1967,55 +1979,40 @@ func _complete_stage(
 
 
 func _show_screen(screen_type: Screen) -> void:
-	current_screen = screen_type
+	if not _screen_router.route(screen_type, Screen.GAME):
+		push_error("등록되지 않은 시작 화면입니다: %s" % screen_type)
+		return
 	queue_redraw()
 	if _music_manager != null:
 		if screen_type == Screen.GAME:
 			_music_manager.play_battle()
 		else:
 			_music_manager.play_menu()
-	for stored_screen: Variant in _screens.values():
-		(stored_screen as Control).visible = false
-	_game_host.visible = screen_type == Screen.GAME
-	if screen_type != Screen.GAME:
-		(_screens[screen_type] as Control).visible = true
 
-	match screen_type:
-		Screen.MAIN:
-			_main_buttons[0].grab_focus.call_deferred()
-		Screen.FLOOR_SELECT:
-			if not _floor_group_buttons.is_empty():
-				_floor_group_buttons[0].grab_focus.call_deferred()
-		Screen.STAGE_SELECT:
-			if not _stage_buttons.is_empty():
-				var focus_card: int = clampi(
-					selected_stage_number - 1 - _selected_floor_group * _FLOORS_PER_GROUP,
-					0,
-					_stage_buttons.size() - 1
-				)
-				if _stage_buttons[focus_card].disabled:
-					focus_card = 0
-				_stage_buttons[focus_card].grab_focus.call_deferred()
-		Screen.CHARACTER:
-			for button: Button in _character_buttons:
-				if button.visible:
-					button.grab_focus.call_deferred()
-					break
-		Screen.TUTORIAL:
-			_tutorial_next_button.grab_focus.call_deferred()
-		Screen.OPTIONS:
-			if _options_first_button != null:
-				_options_first_button.grab_focus.call_deferred()
-		Screen.SHOP:
-			if not _shop_cards.is_empty():
-				var index: int = clampi(
-					_selected_shop_index,
-					0,
-					_shop_cards.size() - 1
-				)
-				_shop_cards[index].grab_focus.call_deferred()
-		_:
-			pass
+func _configure_screen_focus() -> void:
+	_screen_router.configure_view_focus(Screen.MAIN, _main_buttons)
+	_screen_router.configure_view_focus(Screen.FLOOR_SELECT, _floor_group_buttons)
+	_screen_router.configure_view_focus(
+		Screen.STAGE_SELECT,
+		_stage_buttons,
+		Callable(self, "_preferred_stage_focus_index")
+	)
+	_screen_router.configure_view_focus(Screen.CHARACTER, _character_buttons)
+	_screen_router.configure_view_focus(Screen.TUTORIAL, [_tutorial_next_button])
+	_screen_router.configure_view_focus(Screen.OPTIONS, [_options_first_button])
+	_screen_router.configure_view_focus(
+		Screen.SHOP,
+		_shop_cards,
+		Callable(self, "_preferred_shop_focus_index")
+	)
+
+
+func _preferred_stage_focus_index() -> int:
+	return selected_stage_number - 1 - _selected_floor_group * _FLOORS_PER_GROUP
+
+
+func _preferred_shop_focus_index() -> int:
+	return _selected_shop_index
 
 
 func _refresh_tutorial() -> void:
@@ -2240,24 +2237,49 @@ func _show_binding_result(result: Dictionary) -> void:
 
 
 func _reset_keys() -> void:
-	settings.reset_bindings_to_defaults()
+	var result: Dictionary = settings.reset_bindings_to_defaults()
+	if not bool(result.get("ok", false)):
+		_show_binding_result(result)
+		return
 	_key_status.text = _text("모든 키를 기본값으로 복원했습니다.", "All keys were restored to defaults.")
 	_key_status.modulate = CYAN
 
 
 func _on_master_changed(value: float) -> void:
-	settings.set_master_percent(value)
-	_master_value_label.text = "%d%%" % roundi(value)
+	var result: Dictionary = settings.set_master_percent(value)
+	_sync_volume_controls()
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "Could not save master volume.")))
 
 
 func _on_music_changed(value: float) -> void:
-	settings.set_music_percent(value)
-	_music_value_label.text = "%d%%" % roundi(value)
+	var result: Dictionary = settings.set_music_percent(value)
+	_sync_volume_controls()
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "Could not save music volume.")))
 
 
 func _on_sfx_changed(value: float) -> void:
-	settings.set_sfx_percent(value)
-	_sfx_value_label.text = "%d%%" % roundi(value)
+	var result: Dictionary = settings.set_sfx_percent(value)
+	_sync_volume_controls()
+	if not bool(result.get("ok", false)):
+		_show_message(String(result.get("message", "Could not save sound-effect volume.")))
+
+
+## 저장 성공 여부와 무관하게 UI는 Settings가 확정한 값만 표시한다.
+func _sync_volume_controls() -> void:
+	if is_instance_valid(_master_slider):
+		_master_slider.set_value_no_signal(settings.master_percent)
+	if is_instance_valid(_music_slider):
+		_music_slider.set_value_no_signal(settings.music_percent)
+	if is_instance_valid(_sfx_slider):
+		_sfx_slider.set_value_no_signal(settings.sfx_percent)
+	if is_instance_valid(_master_value_label):
+		_master_value_label.text = "%d%%" % roundi(settings.master_percent)
+	if is_instance_valid(_music_value_label):
+		_music_value_label.text = "%d%%" % roundi(settings.music_percent)
+	if is_instance_valid(_sfx_value_label):
+		_sfx_value_label.text = "%d%%" % roundi(settings.sfx_percent)
 
 
 func _is_enter_key(key_event: InputEventKey) -> bool:
@@ -2447,6 +2469,7 @@ func _create_screen(screen_name: String, screen_type: Screen) -> Control:
 	screen.visible = false
 	add_child(screen)
 	_screens[screen_type] = screen
+	_screen_router.register_view(screen_type, screen)
 	return screen
 
 

@@ -7,26 +7,19 @@ signal progress_changed
 signal settings_error(message: String)
 
 const DEFAULT_SETTINGS_PATH: String = "user://start_screen_settings.cfg"
-const SETTINGS_SCHEMA_VERSION: int = 3
-const MUSIC_BUS: StringName = &"BGM"
-const SFX_BUS: StringName = &"SFX"
+const SETTINGS_SCHEMA_VERSION: int = 4
+const MUSIC_BUS: StringName = BlockFighterAudioSettingsAdapter.MUSIC_BUS
+const SFX_BUS: StringName = BlockFighterAudioSettingsAdapter.SFX_BUS
 const INPUT_ACTIONS: Script = preload("res://scripts/input_actions.gd")
 const LOCALIZATION: Script = preload("res://scripts/localization.gd")
-const CHARACTER_DATA: Script = preload("res://scripts/character_data.gd")
+const SETTINGS_CODEC: Script = preload("res://start_screen/scripts/settings_codec.gd")
 const ACTION_DEFINITIONS: Array[Dictionary] = INPUT_ACTIONS.DEFINITIONS
 const SELF_RESPAWN_ACTION: StringName = &"character_self_respawn"
 const SELF_RESPAWN_MIGRATION_KEYS: Array[int] = [KEY_Q, KEY_K, KEY_BACKSPACE]
-const STAGE_COUNT: int = 10
-const STAGE_NO_DAMAGE_COUNT: int = 5
-const MAX_STAGE_STARS: int = 3
-const PASSIVE_IDS: Array[String] = [
-	"attack_speed",
-	"move",
-	"jump",
-	"stamina",
-	"special_skill",
-	"health",
-]
+const STAGE_COUNT: int = BlockFighterProgressionService.STAGE_COUNT
+const STAGE_NO_DAMAGE_COUNT: int = STAGE_COUNT
+const MAX_STAGE_STARS: int = BlockFighterProgressionService.MAX_STAGE_STARS
+const PASSIVE_IDS: Array[String] = BlockFighterProgressionService.PASSIVE_IDS
 const PASSIVE_NAMES: Array[String] = ["공속", "이동", "점프", "스태미나", "특수스킬", "체력"]
 const PASSIVE_DESCRIPTIONS: Array[String] = [
 	"기본 공격과 회전킥의 재사용 대기시간이 줄어듭니다.",
@@ -45,26 +38,78 @@ const PASSIVE_DESCRIPTIONS_ENGLISH: Array[String] = [
 	"Reduces special skill cooldowns.",
 	"Adds one life per level.",
 ]
-const MAX_PASSIVE_LEVEL: int = 3
+const MAX_PASSIVE_LEVEL: int = BlockFighterProgressionService.MAX_PASSIVE_LEVEL
 const ENGLISH: String = "english"
 
-var settings_path: String = DEFAULT_SETTINGS_PATH
-var master_percent: float = 100.0
-var music_percent: float = 100.0
-var sfx_percent: float = 100.0
+var _progression_service := BlockFighterProgressionService.new()
+var _audio_settings_adapter := BlockFighterAudioSettingsAdapter.new()
+var _settings_repository: BlockFighterSettingsRepository
+var _detached_settings_path: String = DEFAULT_SETTINGS_PATH
+
+var settings_path: String:
+	get:
+		return (
+			_settings_repository.settings_path
+			if _settings_repository != null
+			else _detached_settings_path
+		)
+	set(value):
+		_detached_settings_path = value
+		if _settings_repository != null:
+			_settings_repository.settings_path = value
+var master_percent: float:
+	get:
+		return _audio_settings_adapter.master_percent
+	set(value):
+		_audio_settings_adapter.master_percent = value
+var music_percent: float:
+	get:
+		return _audio_settings_adapter.music_percent
+	set(value):
+		_audio_settings_adapter.music_percent = value
+var sfx_percent: float:
+	get:
+		return _audio_settings_adapter.sfx_percent
+	set(value):
+		_audio_settings_adapter.sfx_percent = value
 var language: String = ENGLISH
-var stage_best_stars: Array[int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-var stage_no_damage_clears: Array[bool] = [false, false, false, false, false]
-var star_currency: int = 0
-var passive_levels: Array[int] = [0, 0, 0, 0, 0, 0]
-var challenge_best_lines: int = 0
-var debug_all_characters_unlocked: bool = false
+var stage_best_stars: Array[int]:
+	get:
+		return _progression_service.stage_best_stars
+	set(value):
+		_progression_service.stage_best_stars.assign(value)
+var stage_no_damage_clears: Array[bool]:
+	get:
+		return _progression_service.stage_no_damage_clears
+	set(value):
+		_progression_service.stage_no_damage_clears.assign(value)
+var star_currency: int:
+	get:
+		return _progression_service.star_currency
+	set(value):
+		_progression_service.star_currency = value
+var passive_levels: Array[int]:
+	get:
+		return _progression_service.passive_levels
+	set(value):
+		_progression_service.passive_levels.assign(value)
+var challenge_best_lines: int:
+	get:
+		return _progression_service.challenge_best_lines
+	set(value):
+		_progression_service.challenge_best_lines = value
+var debug_all_characters_unlocked: bool:
+	get:
+		return _progression_service.debug_all_characters_unlocked
+	set(value):
+		_progression_service.debug_all_characters_unlocked = value
 
 var _bindings: Dictionary = {}
 
 
 func _init(custom_settings_path: String = DEFAULT_SETTINGS_PATH) -> void:
-	settings_path = custom_settings_path
+	_detached_settings_path = custom_settings_path
+	_settings_repository = BlockFighterSettingsRepository.new(custom_settings_path)
 
 
 func _ready() -> void:
@@ -192,48 +237,53 @@ func find_conflict(
 	return {}
 
 
-func reset_bindings_to_defaults() -> void:
+func reset_bindings_to_defaults() -> Dictionary:
 	var previous_state: Dictionary = _snapshot_state()
 	_load_default_bindings()
 	apply_bindings()
-	if save_settings() != OK:
+	var save_error: Error = save_settings()
+	if save_error != OK:
 		_restore_state(previous_state)
-		return
+		return _failure("기본 키 설정을 저장하지 못했습니다: %s" % error_string(save_error))
 	bindings_changed.emit()
+	return {"ok": true, "message": "All keys were restored to defaults."}
 
 
 func apply_bindings() -> void:
 	INPUT_ACTIONS.apply_bindings(_bindings)
 
 
-func set_master_percent(value: float) -> void:
+func set_master_percent(value: float) -> Dictionary:
 	var previous_state: Dictionary = _snapshot_state()
-	master_percent = clampf(value, 0.0, 100.0)
-	_apply_all_bus_volumes()
-	if save_settings() != OK:
+	_audio_settings_adapter.set_master_percent(value)
+	var save_error: Error = save_settings()
+	if save_error != OK:
 		_restore_state(previous_state)
-		return
+		return _failure("마스터 볼륨을 저장하지 못했습니다: %s" % error_string(save_error))
 	audio_changed.emit()
+	return {"ok": true, "percent": master_percent}
 
 
-func set_music_percent(value: float) -> void:
+func set_music_percent(value: float) -> Dictionary:
 	var previous_state: Dictionary = _snapshot_state()
-	music_percent = clampf(value, 0.0, 100.0)
-	_apply_all_bus_volumes()
-	if save_settings() != OK:
+	_audio_settings_adapter.set_music_percent(value)
+	var save_error: Error = save_settings()
+	if save_error != OK:
 		_restore_state(previous_state)
-		return
+		return _failure("음악 볼륨을 저장하지 못했습니다: %s" % error_string(save_error))
 	audio_changed.emit()
+	return {"ok": true, "percent": music_percent}
 
 
-func set_sfx_percent(value: float) -> void:
+func set_sfx_percent(value: float) -> Dictionary:
 	var previous_state: Dictionary = _snapshot_state()
-	sfx_percent = clampf(value, 0.0, 100.0)
-	_apply_all_bus_volumes()
-	if save_settings() != OK:
+	_audio_settings_adapter.set_sfx_percent(value)
+	var save_error: Error = save_settings()
+	if save_error != OK:
 		_restore_state(previous_state)
-		return
+		return _failure("효과음 볼륨을 저장하지 못했습니다: %s" % error_string(save_error))
 	audio_changed.emit()
+	return {"ok": true, "percent": sfx_percent}
 
 
 func set_language(value: String) -> void:
@@ -248,137 +298,83 @@ func set_language(value: String) -> void:
 
 
 func get_stage_best_stars(stage_number: int) -> int:
-	if stage_number < 1 or stage_number > STAGE_COUNT:
-		return 0
-	return stage_best_stars[stage_number - 1]
+	return _progression_service.get_stage_best_stars(stage_number)
 
 
 func is_stage_unlocked(stage_number: int) -> bool:
-	if stage_number < 1 or stage_number > STAGE_COUNT:
-		return false
-	if stage_number == 1:
-		return true
-	return get_stage_best_stars(stage_number - 1) > 0
+	return _progression_service.is_stage_unlocked(stage_number)
 
 
 func is_challenge_unlocked() -> bool:
-	return get_stage_best_stars(STAGE_COUNT) > 0
+	return _progression_service.is_challenge_unlocked()
 
 
 func get_total_best_stars() -> int:
-	var total: int = 0
-	for stars: int in stage_best_stars:
-		total += stars
-	return total
+	return _progression_service.get_total_best_stars()
 
 
 func is_stage_cleared_without_damage(stage_number: int) -> bool:
-	if stage_number < 1 or stage_number > STAGE_NO_DAMAGE_COUNT:
-		return false
-	return stage_no_damage_clears[stage_number - 1]
+	return _progression_service.is_stage_cleared_without_damage(stage_number)
 
 
 func has_all_stage_no_damage_clears() -> bool:
-	for cleared_without_damage: bool in stage_no_damage_clears:
-		if not cleared_without_damage:
-			return false
-	return true
+	return _progression_service.has_all_stage_no_damage_clears()
 
 
 ## 캐릭터 해금은 현재 별 화폐가 아니라 저장된 스테이지별 최고 별의 합으로 계산한다.
 ## 상점에서 별을 사용하거나 게임을 재실행해도 이미 달성한 해금은 유지된다.
 func is_character_unlocked(character_id: String) -> bool:
-	if not CHARACTER_DATA.has_character(character_id):
-		return false
-	if debug_all_characters_unlocked:
-		return true
-	var profile: Dictionary = CHARACTER_DATA.profile_for(character_id)
-	if bool(profile.get("unlock_all_no_damage", false)):
-		return has_all_stage_no_damage_clears()
-	return get_total_best_stars() >= int(profile.get("unlock_stars", 0))
+	return _progression_service.is_character_unlocked(character_id)
 
 
 ## 숫자 0 버그키에서 호출한다. 스테이지 진행과 재화는 바꾸지 않고 캐릭터 선택 제한만
 ## 해제하며, 재실행 뒤에도 유지되도록 즉시 저장한다.
 func unlock_all_characters_for_debug() -> Error:
-	if debug_all_characters_unlocked:
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	if not _progression_service.unlock_all_characters_for_debug():
 		return OK
-	debug_all_characters_unlocked = true
 	var save_error: Error = save_settings()
 	if save_error != OK:
-		debug_all_characters_unlocked = false
+		_progression_service.restore(previous_progress)
 		return save_error
 	progress_changed.emit()
 	return OK
 
 
 func get_passive_level(passive_id: String) -> int:
-	var index: int = PASSIVE_IDS.find(passive_id)
-	if index < 0:
-		return 0
-	return passive_levels[index]
+	return _progression_service.get_passive_level(passive_id)
 
 
 func get_passive_cost(passive_id: String) -> int:
-	if not PASSIVE_IDS.has(passive_id):
-		return 0
-	var level: int = get_passive_level(passive_id)
-	return 0 if level >= MAX_PASSIVE_LEVEL else level + 1
+	return _progression_service.get_passive_cost(passive_id)
 
 
 func get_passive_levels() -> Array[int]:
-	return passive_levels.duplicate()
+	return _progression_service.get_passive_levels()
 
 
 func upgrade_passive(passive_id: String) -> Dictionary:
-	var index: int = PASSIVE_IDS.find(passive_id)
-	if index < 0:
-		return _failure("알 수 없는 패시브입니다.")
-	var current_level: int = passive_levels[index]
-	if current_level >= MAX_PASSIVE_LEVEL:
-		return _failure("이미 최대 레벨입니다.")
-	var cost: int = current_level + 1
-	if star_currency < cost:
-		return _failure("별이 부족합니다. 필요한 별: %d개" % cost)
-
-	var previous_currency: int = star_currency
-	passive_levels[index] = current_level + 1
-	star_currency -= cost
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	var result: Dictionary = _progression_service.upgrade_passive(passive_id)
+	if not bool(result.get("ok", false)):
+		return result
 	var save_error: Error = save_settings()
 	if save_error != OK:
-		passive_levels[index] = current_level
-		star_currency = previous_currency
+		_progression_service.restore(previous_progress)
 		return _failure("패시브 강화를 저장하지 못했습니다: %s" % error_string(save_error))
 	progress_changed.emit()
-	return {
-		"ok": true,
-		"passive_id": passive_id,
-		"level": passive_levels[index],
-		"cost": cost,
-		"star_currency": star_currency,
-	}
+	return result
 
 
 func reset_passive_upgrades() -> Dictionary:
-	var previous_levels: Array[int] = passive_levels.duplicate()
-	var previous_currency: int = star_currency
-	var refund: int = 0
-	for level: int in passive_levels:
-		for spent_level: int in range(1, level + 1):
-			refund += spent_level
-	passive_levels.fill(0)
-	star_currency += refund
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	var result: Dictionary = _progression_service.reset_passive_upgrades()
 	var save_error: Error = save_settings()
 	if save_error != OK:
-		passive_levels = previous_levels
-		star_currency = previous_currency
+		_progression_service.restore(previous_progress)
 		return _failure("패시브 초기화를 저장하지 못했습니다: %s" % error_string(save_error))
 	progress_changed.emit()
-	return {
-		"ok": true,
-		"refund": refund,
-		"star_currency": star_currency,
-	}
+	return result
 
 
 func complete_stage(
@@ -387,112 +383,66 @@ func complete_stage(
 	remaining_lives: int = -1,
 	cleared_without_damage: bool = false
 ) -> Dictionary:
-	if stage_number < 1 or stage_number > STAGE_COUNT:
-		return _failure("알 수 없는 스테이지입니다.")
-	if stars < 1:
-		return _failure("스테이지 클리어 별은 1개 이상이어야 합니다.")
-
-	var awarded_stars: int = clampi(stars, 1, MAX_STAGE_STARS)
-	var previous_stars: int = get_stage_best_stars(stage_number)
-	var reward: int = maxi(awarded_stars - previous_stars, 0)
-	var previous_currency: int = star_currency
-	var previous_no_damage: bool = is_stage_cleared_without_damage(stage_number)
-	var progress_changed_now: bool = awarded_stars > previous_stars
-	progress_changed_now = progress_changed_now or (
-		stage_number <= STAGE_NO_DAMAGE_COUNT
-		and cleared_without_damage
-		and not previous_no_damage
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	var result: Dictionary = _progression_service.complete_stage(
+		stage_number, stars, remaining_lives, cleared_without_damage
 	)
-	if progress_changed_now:
-		if awarded_stars > previous_stars:
-			stage_best_stars[stage_number - 1] = awarded_stars
-			star_currency += reward
-		if stage_number <= STAGE_NO_DAMAGE_COUNT:
-			stage_no_damage_clears[stage_number - 1] = (
-				previous_no_damage or cleared_without_damage
-			)
+	if not bool(result.get("ok", false)):
+		return result
+	if bool(result.get("changed", false)):
 		var save_error: Error = save_settings()
 		if save_error != OK:
-			stage_best_stars[stage_number - 1] = previous_stars
-			star_currency = previous_currency
-			if stage_number <= STAGE_NO_DAMAGE_COUNT:
-				stage_no_damage_clears[stage_number - 1] = previous_no_damage
+			_progression_service.restore(previous_progress)
 			return _failure(
 				"스테이지 결과를 저장하지 못했습니다: %s" % error_string(save_error)
 			)
 		progress_changed.emit()
-	return {
-		"ok": true,
-		"stage_number": stage_number,
-		"previous_stars": previous_stars,
-		"stars": get_stage_best_stars(stage_number),
-		"remaining_lives": remaining_lives,
-		"cleared_without_damage": is_stage_cleared_without_damage(stage_number),
-		"reward": reward,
-		"star_currency": star_currency,
-	}
+	result.erase("changed")
+	return result
 
 
 func record_challenge_lines(lines: int) -> Error:
-	var normalized_lines: int = maxi(lines, 0)
-	if normalized_lines <= challenge_best_lines:
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	if not _progression_service.record_challenge_lines(lines):
 		return OK
-	var previous_best: int = challenge_best_lines
-	challenge_best_lines = normalized_lines
 	var save_error: Error = save_settings()
 	if save_error != OK:
-		challenge_best_lines = previous_best
+		_progression_service.restore(previous_progress)
 		return save_error
 	progress_changed.emit()
 	return OK
 
 
 func reset_stage_progress() -> Error:
-	var previous_stars: Array[int] = stage_best_stars.duplicate()
-	var previous_no_damage: Array[bool] = stage_no_damage_clears.duplicate()
-	var previous_currency: int = star_currency
-	var previous_passive_levels: Array[int] = passive_levels.duplicate()
-	var previous_challenge_best: int = challenge_best_lines
-	var previous_debug_unlock: bool = debug_all_characters_unlocked
-	stage_best_stars.fill(0)
-	stage_no_damage_clears.fill(false)
-	star_currency = 0
-	passive_levels.fill(0)
-	challenge_best_lines = 0
-	debug_all_characters_unlocked = false
+	var previous_progress: Dictionary = _progression_service.snapshot()
+	_progression_service.reset_stage_progress()
 	var save_error: Error = save_settings()
 	if save_error != OK:
-		stage_best_stars = previous_stars
-		stage_no_damage_clears = previous_no_damage
-		star_currency = previous_currency
-		passive_levels = previous_passive_levels
-		challenge_best_lines = previous_challenge_best
-		debug_all_characters_unlocked = previous_debug_unlock
+		_progression_service.restore(previous_progress)
 		return save_error
 	progress_changed.emit()
 	return OK
 
 
 func ensure_audio_buses() -> void:
-	_ensure_audio_bus(MUSIC_BUS)
-	_ensure_audio_bus(SFX_BUS)
+	_audio_settings_adapter.ensure_buses()
 
 
 func apply_audio() -> void:
-	ensure_audio_buses()
-	_apply_all_bus_volumes()
+	_audio_settings_adapter.apply()
 
 
 func load_settings() -> void:
 	_reset_settings_to_defaults()
 	LOCALIZATION.install(language)
 
-	var config: ConfigFile = ConfigFile.new()
-	var load_error: Error = config.load(settings_path)
-	if load_error != OK:
-		if load_error != ERR_FILE_NOT_FOUND:
+	var loaded: Dictionary = _settings_repository.load_config()
+	if not bool(loaded.get("ok", false)):
+		var load_error: Error = loaded.get("error", FAILED)
+		if not bool(loaded.get("missing", false)):
 			settings_error.emit("설정 파일을 읽지 못했습니다: %s" % error_string(load_error))
 		return
+	var config: ConfigFile = loaded["config"] as ConfigFile
 
 	var needs_save: bool = false
 	if _load_bindings_from_config(config):
@@ -501,7 +451,7 @@ func load_settings() -> void:
 		needs_save = true
 	if _migrate_rotation_kick_binding():
 		needs_save = true
-	if not config.has_section_key("input", String(SELF_RESPAWN_ACTION)):
+	if not SETTINGS_CODEC.has_binding(config, SELF_RESPAWN_ACTION):
 		if _migrate_self_respawn_binding():
 			needs_save = true
 	if _load_audio_from_config(config):
@@ -510,7 +460,7 @@ func load_settings() -> void:
 		needs_save = true
 	if _restore_defaults_for_duplicate_keys():
 		needs_save = true
-	if config.get_value("meta", "version", 0) != SETTINGS_SCHEMA_VERSION:
+	if SETTINGS_CODEC.version(config) != SETTINGS_SCHEMA_VERSION:
 		needs_save = true
 	# 언어를 설정 파일에서 읽은 뒤 TranslationServer locale을 다시 맞춘다.
 	# (_reset_settings_to_defaults() 시점에는 기본값 ENGLISH가 설치되므로)
@@ -521,16 +471,9 @@ func load_settings() -> void:
 
 func _reset_settings_to_defaults() -> void:
 	_load_default_bindings()
-	master_percent = 100.0
-	music_percent = 100.0
-	sfx_percent = 100.0
+	_audio_settings_adapter.reset_defaults()
 	language = ENGLISH
-	stage_best_stars = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-	stage_no_damage_clears = [false, false, false, false, false]
-	star_currency = 0
-	passive_levels = [0, 0, 0, 0, 0, 0]
-	challenge_best_lines = 0
-	debug_all_characters_unlocked = false
+	_progression_service.reset_defaults()
 
 
 func _load_bindings_from_config(config: ConfigFile) -> bool:
@@ -538,13 +481,11 @@ func _load_bindings_from_config(config: ConfigFile) -> bool:
 	for definition: Dictionary in ACTION_DEFINITIONS:
 		var action_name: StringName = definition["action"]
 		var slot_count: int = int(definition.get("slots", 1))
-		if not config.has_section_key("input", String(action_name)):
+		if not SETTINGS_CODEC.has_binding(config, action_name):
 			changed = true
 			continue
-		var stored_value: Variant = config.get_value(
-			"input",
-			String(action_name),
-			_bindings[action_name]
+		var stored_value: Variant = SETTINGS_CODEC.binding(
+			config, action_name, _bindings[action_name]
 		)
 		var parsed: Array = _parse_key_array(
 			stored_value,
@@ -611,8 +552,8 @@ func _migrate_rotation_kick_binding() -> bool:
 
 func _load_audio_from_config(config: ConfigFile) -> bool:
 	var changed: bool = false
-	var master_value: Variant = config.get_value("audio", "master_percent", 100.0)
-	if not config.has_section_key("audio", "master_percent"):
+	var master_value: Variant = SETTINGS_CODEC.audio(config, &"master")
+	if not SETTINGS_CODEC.has_audio(config, &"master"):
 		changed = true
 	if _is_finite_number(master_value):
 		master_percent = clampf(float(master_value), 0.0, 100.0)
@@ -620,8 +561,8 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 	else:
 		master_percent = 100.0
 		changed = true
-	var music_value: Variant = config.get_value("audio", "music_percent", 100.0)
-	if not config.has_section_key("audio", "music_percent"):
+	var music_value: Variant = SETTINGS_CODEC.audio(config, &"music")
+	if not SETTINGS_CODEC.has_audio(config, &"music"):
 		changed = true
 	if _is_finite_number(music_value):
 		music_percent = clampf(float(music_value), 0.0, 100.0)
@@ -629,8 +570,8 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 	else:
 		music_percent = 100.0
 		changed = true
-	var sfx_value: Variant = config.get_value("audio", "sfx_percent", 100.0)
-	if not config.has_section_key("audio", "sfx_percent"):
+	var sfx_value: Variant = SETTINGS_CODEC.audio(config, &"sfx")
+	if not SETTINGS_CODEC.has_audio(config, &"sfx"):
 		changed = true
 	if _is_finite_number(sfx_value):
 		sfx_percent = clampf(float(sfx_value), 0.0, 100.0)
@@ -638,8 +579,8 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 	else:
 		sfx_percent = 100.0
 		changed = true
-	var stored_language: Variant = config.get_value("options", "language", ENGLISH)
-	if not config.has_section_key("options", "language"):
+	var stored_language: Variant = SETTINGS_CODEC.language(config, ENGLISH)
+	if not SETTINGS_CODEC.has_language(config):
 		changed = true
 	language = ENGLISH
 	if String(stored_language) != ENGLISH:
@@ -649,20 +590,16 @@ func _load_audio_from_config(config: ConfigFile) -> bool:
 
 func _load_progress_from_config(config: ConfigFile) -> bool:
 	var changed: bool = false
-	var stored_debug_unlock: Variant = config.get_value(
-		"progress",
-		"debug_all_characters_unlocked",
-		false
-	)
-	if not config.has_section_key("progress", "debug_all_characters_unlocked"):
+	var stored_debug_unlock: Variant = SETTINGS_CODEC.debug_unlock(config)
+	if not SETTINGS_CODEC.has_debug_unlock(config):
 		changed = true
 	if stored_debug_unlock is bool:
 		debug_all_characters_unlocked = bool(stored_debug_unlock)
 	else:
 		debug_all_characters_unlocked = false
 		changed = true
-	var stored_challenge_best: Variant = config.get_value("progress", "challenge_best_lines", 0)
-	if not config.has_section_key("progress", "challenge_best_lines"):
+	var stored_challenge_best: Variant = SETTINGS_CODEC.challenge_best(config)
+	if not SETTINGS_CODEC.has_challenge_best(config):
 		changed = true
 	if _is_finite_number(stored_challenge_best):
 		challenge_best_lines = maxi(int(stored_challenge_best), 0)
@@ -672,8 +609,8 @@ func _load_progress_from_config(config: ConfigFile) -> bool:
 	else:
 		challenge_best_lines = 0
 		changed = true
-	var stored_currency: Variant = config.get_value("progress", "star_currency", 0)
-	if not config.has_section_key("progress", "star_currency"):
+	var stored_currency: Variant = SETTINGS_CODEC.star_currency(config)
+	if not SETTINGS_CODEC.has_star_currency(config):
 		changed = true
 	if _is_finite_number(stored_currency):
 		star_currency = maxi(int(stored_currency), 0)
@@ -682,12 +619,8 @@ func _load_progress_from_config(config: ConfigFile) -> bool:
 		star_currency = 0
 		changed = true
 	for stage_number: int in range(1, STAGE_COUNT + 1):
-		var stored_stars: Variant = config.get_value(
-			"progress",
-			"stage_%d_best_stars" % stage_number,
-			0
-		)
-		if not config.has_section_key("progress", "stage_%d_best_stars" % stage_number):
+		var stored_stars: Variant = SETTINGS_CODEC.stage_best(config, stage_number)
+		if not SETTINGS_CODEC.has_stage_best(config, stage_number):
 			changed = true
 		if _is_finite_number(stored_stars):
 			stage_best_stars[stage_number - 1] = clampi(
@@ -704,30 +637,23 @@ func _load_progress_from_config(config: ConfigFile) -> bool:
 			changed = true
 	# 구버전(5층까지) 세이브에서 5층을 클리어했으면 6층을 해금한다.
 	# stage_6_best_stars 키가 없을 때만 1회 적용되어 이후 저장 시 재적용되지 않는다.
-	if not config.has_section_key("progress", "stage_6_best_stars"):
+	if not SETTINGS_CODEC.has_stage_best(config, 6):
 		if stage_best_stars[4] > 0 and stage_best_stars[5] == 0:
 			stage_best_stars[5] = 1
 			changed = true
 	for stage_number: int in range(1, STAGE_NO_DAMAGE_COUNT + 1):
-		var no_damage_key: String = "stage_%d_no_damage" % stage_number
-		var stored_no_damage: Variant = config.get_value(
-			"progress",
-			no_damage_key,
-			false
+		var stored_no_damage: Variant = SETTINGS_CODEC.stage_no_damage(
+			config, stage_number
 		)
-		if not config.has_section_key("progress", no_damage_key):
+		if not SETTINGS_CODEC.has_stage_no_damage(config, stage_number):
 			changed = true
 		if stored_no_damage is bool:
 			stage_no_damage_clears[stage_number - 1] = bool(stored_no_damage)
 		else:
 			stage_no_damage_clears[stage_number - 1] = false
 			changed = true
-	var stored_passive_levels: Variant = config.get_value(
-		"progress",
-		"passive_levels",
-		[]
-	)
-	if not config.has_section_key("progress", "passive_levels"):
+	var stored_passive_levels: Variant = SETTINGS_CODEC.passive_levels(config)
+	if not SETTINGS_CODEC.has_passive_levels(config):
 		changed = true
 	if stored_passive_levels is Array:
 		var values: Array = stored_passive_levels as Array
@@ -768,35 +694,14 @@ func _restore_defaults_for_duplicate_keys() -> bool:
 
 
 func save_settings() -> Error:
-	var config: ConfigFile = ConfigFile.new()
-	config.set_value("meta", "version", SETTINGS_SCHEMA_VERSION)
-	for definition: Dictionary in ACTION_DEFINITIONS:
-		var action_name: StringName = definition["action"]
-		config.set_value("input", String(action_name), get_action_keys(action_name))
-	config.set_value("audio", "master_percent", master_percent)
-	config.set_value("audio", "music_percent", music_percent)
-	config.set_value("audio", "sfx_percent", sfx_percent)
-	config.set_value("options", "language", language)
-	config.set_value("progress", "star_currency", star_currency)
-	config.set_value("progress", "passive_levels", passive_levels)
-	config.set_value("progress", "challenge_best_lines", challenge_best_lines)
-	config.set_value(
-		"progress",
-		"debug_all_characters_unlocked",
-		debug_all_characters_unlocked
+	var save_error: Error = _settings_repository.save(
+		SETTINGS_SCHEMA_VERSION,
+		ACTION_DEFINITIONS,
+		_bindings,
+		language,
+		_audio_settings_adapter.snapshot(),
+		_progression_service.snapshot()
 	)
-	for stage_number: int in range(1, STAGE_COUNT + 1):
-		config.set_value(
-			"progress",
-			"stage_%d_best_stars" % stage_number,
-			get_stage_best_stars(stage_number)
-		)
-		config.set_value(
-			"progress",
-			"stage_%d_no_damage" % stage_number,
-			is_stage_cleared_without_damage(stage_number)
-		)
-	var save_error: Error = config.save(settings_path)
 	if save_error != OK:
 		settings_error.emit("설정을 저장하지 못했습니다: %s" % error_string(save_error))
 	return save_error
@@ -805,40 +710,17 @@ func save_settings() -> Error:
 func _snapshot_state() -> Dictionary:
 	return {
 		"bindings": _bindings.duplicate(true),
-		"master_percent": master_percent,
-		"music_percent": music_percent,
-		"sfx_percent": sfx_percent,
 		"language": language,
-		"stage_best_stars": stage_best_stars.duplicate(),
-		"stage_no_damage_clears": stage_no_damage_clears.duplicate(),
-		"star_currency": star_currency,
-		"passive_levels": passive_levels.duplicate(),
-		"challenge_best_lines": challenge_best_lines,
-		"debug_all_characters_unlocked": debug_all_characters_unlocked,
+		"audio": _audio_settings_adapter.snapshot(),
+		"progression": _progression_service.snapshot(),
 	}
 
 
 func _restore_state(snapshot: Dictionary) -> void:
 	_bindings = (snapshot["bindings"] as Dictionary).duplicate(true)
-	master_percent = float(snapshot["master_percent"])
-	music_percent = float(snapshot["music_percent"])
-	sfx_percent = float(snapshot["sfx_percent"])
 	language = String(snapshot["language"])
-	stage_best_stars.clear()
-	var saved_stars: Array = snapshot["stage_best_stars"] as Array
-	for value: Variant in saved_stars:
-		stage_best_stars.append(int(value))
-	stage_no_damage_clears.clear()
-	var saved_no_damage: Array = snapshot["stage_no_damage_clears"] as Array
-	for value: Variant in saved_no_damage:
-		stage_no_damage_clears.append(bool(value))
-	star_currency = int(snapshot["star_currency"])
-	challenge_best_lines = int(snapshot["challenge_best_lines"])
-	debug_all_characters_unlocked = bool(snapshot["debug_all_characters_unlocked"])
-	passive_levels.clear()
-	var saved_passives: Array = snapshot["passive_levels"] as Array
-	for value: Variant in saved_passives:
-		passive_levels.append(int(value))
+	_audio_settings_adapter.restore(snapshot["audio"] as Dictionary, false)
+	_progression_service.restore(snapshot["progression"] as Dictionary)
 	apply_bindings()
 	apply_audio()
 
@@ -920,33 +802,5 @@ func _has_duplicate_keys() -> bool:
 	return false
 
 
-func _ensure_audio_bus(bus_name: StringName) -> void:
-	if AudioServer.get_bus_index(bus_name) >= 0:
-		return
-	AudioServer.add_bus()
-	AudioServer.set_bus_name(AudioServer.bus_count - 1, bus_name)
-
-
-func _apply_bus_volume(bus_name: StringName, percent: float) -> void:
-	var bus_index: int = AudioServer.get_bus_index(bus_name)
-	if bus_index < 0:
-		return
-	# ponytail: UI 값과 무관하게 SFX 실제 출력을 절반으로 고정. SFX 전용
-	# 조절이 필요해지면 percent를 저장 값으로 바꿔 옵션에 노출한다.
-	var effective_percent: float = percent * (0.5 if bus_name == SFX_BUS else 1.0)
-	var muted: bool = effective_percent <= 0.0
-	AudioServer.set_bus_mute(bus_index, muted)
-	AudioServer.set_bus_volume_db(
-		bus_index,
-		-80.0 if muted else linear_to_db(effective_percent / 100.0) - 10.0
-	)
-
-
-func _apply_all_bus_volumes() -> void:
-	# 마스터 볼륨은 BGM/SFX 각각에 곱해 적용한다.
-	_apply_bus_volume(MUSIC_BUS, music_percent * master_percent / 100.0)
-	_apply_bus_volume(SFX_BUS, sfx_percent * master_percent / 100.0)
-
-
 func _failure(message: String) -> Dictionary:
-	return {"ok": false, "message": "Operation failed."}
+	return {"ok": false, "message": message}

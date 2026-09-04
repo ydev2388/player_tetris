@@ -57,6 +57,100 @@ func _run() -> void:
 			and screen._game_host.size.is_equal_approx(Vector2(560.0, 1140.0)),
 		"게임 물리는 고정 560×1140 SubViewport에서 실행되고 표시 surface만 맞춤 확대한다."
 	)
+	_expect(
+		screen._screen_router is BlockFighterScreenRouter
+			and screen.current_screen == screen._screen_router.current_screen,
+		"화면 전환 상태는 StartScreen이 아니라 ScreenRouter가 소유한다."
+	)
+	var all_screen_views_connected: bool = screen._screen_router._views.size() == 9
+	for screen_id: Variant in screen._screens:
+		var registered_view: BlockFighterScreenView = screen._screen_router.view_for(int(screen_id))
+		all_screen_views_connected = all_screen_views_connected and (
+			registered_view != null
+			and registered_view.root == screen._screens[screen_id]
+		)
+	_expect(
+		all_screen_views_connected,
+		"게임 외 각 메뉴 화면은 독립 ScreenView 인스턴스로 Router에 등록된다."
+	)
+	var main_screen_view: BlockFighterScreenView = screen._screen_router.view_for(
+		BlockFighterStartScreen.Screen.MAIN
+	)
+	_expect(
+		main_screen_view._focus_candidates.size() == screen._main_buttons.size()
+			and not main_screen_view._focus_candidates.is_empty(),
+		"화면 진입 포커스 후보 선택은 StartScreen match가 아니라 각 ScreenView가 소유한다."
+	)
+	_expect(
+		screen._screen_router.view_for(BlockFighterStartScreen.Screen.MAIN).root.visible
+			and not screen._game_host.visible,
+		"현재 화면 View만 표시되고 게임 host는 메뉴에서 숨겨진다."
+	)
+	var screen_before_invalid_route: int = screen.current_screen
+	_expect(
+		not screen._screen_router.route(999, BlockFighterStartScreen.Screen.GAME)
+			and screen.current_screen == screen_before_invalid_route,
+		"등록되지 않은 화면 요청은 현재 화면 상태를 바꾸지 않는다."
+	)
+	screen.show_tutorial()
+	await process_frame
+	var tutorial_view: BlockFighterScreenView = screen._screen_router.view_for(
+		BlockFighterStartScreen.Screen.TUTORIAL
+	)
+	_expect(
+		screen.current_screen == BlockFighterStartScreen.Screen.TUTORIAL
+			and tutorial_view.root.visible
+			and not screen._screen_router.view_for(BlockFighterStartScreen.Screen.MAIN).root.visible,
+		"ScreenRouter가 화면 전환과 대상 View 진입을 한 경계에서 처리한다."
+	)
+	screen.show_main_menu()
+	await process_frame
+	_expect(
+		screen.settings._progression_service is BlockFighterProgressionService
+			and screen.settings._audio_settings_adapter is BlockFighterAudioSettingsAdapter
+			and screen.settings._settings_repository is BlockFighterSettingsRepository,
+		"진행도 규칙, 오디오 적용, 설정 저장은 서로 다른 객체가 소유한다."
+	)
+	_expect(
+		screen.settings.star_currency
+			== screen.settings._progression_service.star_currency
+			and screen.settings.music_percent
+			== screen.settings._audio_settings_adapter.music_percent,
+		"기존 Settings 공개 API는 분리된 원본 상태를 위임하는 호환 facade다."
+	)
+	_expect(
+		screen.settings._settings_repository.settings_path == TEST_SETTINGS_PATH,
+		"SettingsRepository만 현재 ConfigFile 저장 경로를 소유한다."
+	)
+	var repository_source := FileAccess.get_file_as_string(
+		"res://start_screen/scripts/settings_repository.gd"
+	)
+	var settings_source := FileAccess.get_file_as_string(
+		"res://start_screen/scripts/start_screen_settings.gd"
+	)
+	var codec_source := FileAccess.get_file_as_string(
+		"res://start_screen/scripts/settings_codec.gd"
+	)
+	_expect(
+		repository_source.find("set_value") == -1
+			and settings_source.find("get_value") == -1
+			and codec_source.find("set_value") >= 0
+			and codec_source.find("get_value") >= 0,
+		"ConfigFile schema key는 Codec, 파일 경로는 Repository, 값 검증은 Settings로 분리된다."
+	)
+	var detached_progress_snapshot: Dictionary = (
+		screen.settings._progression_service.snapshot()
+	)
+	(detached_progress_snapshot["stage_best_stars"] as Array)[0] = 3
+	_expect(
+		screen.settings.get_stage_best_stars(1) == 0,
+		"ProgressionService 스냅샷을 외부에서 바꿔도 원본 진행도는 오염되지 않는다."
+	)
+	_expect(
+		AudioServer.get_bus_index(BlockFighterAudioSettingsAdapter.MUSIC_BUS) >= 0
+			and AudioServer.get_bus_index(BlockFighterAudioSettingsAdapter.SFX_BUS) >= 0,
+		"AudioSettingsAdapter가 BGM/SFX AudioServer 경계를 생성하고 적용한다."
+	)
 	var reserved_escape_result: Dictionary = screen.settings.set_binding(
 		&"pause_game",
 		0,
@@ -191,8 +285,13 @@ func _run() -> void:
 	)
 	save_failure_settings.load_settings()
 	var original_left_keys: Array[int] = save_failure_settings.get_action_keys(&"character_left")
-	save_failure_settings.set_binding(&"character_left", 0, KEY_F9)
-	save_failure_settings.set_music_percent(25.0)
+	var failed_binding_result: Dictionary = save_failure_settings.set_binding(
+		&"character_left",
+		0,
+		KEY_F9
+	)
+	var failed_music_result: Dictionary = save_failure_settings.set_music_percent(25.0)
+	var failed_reset_result: Dictionary = save_failure_settings.reset_bindings_to_defaults()
 	save_failure_settings.set_language(StartScreenSettings.ENGLISH)
 	_expect(
 		save_failure_settings.get_action_keys(&"character_left") == original_left_keys
@@ -200,7 +299,77 @@ func _run() -> void:
 			and save_failure_settings.language == StartScreenSettings.ENGLISH,
 		"설정 저장 실패 시 키·볼륨·언어의 메모리 값을 이전 상태로 되돌린다."
 	)
+	_expect(
+		not bool(failed_binding_result.get("ok", true))
+			and not bool(failed_music_result.get("ok", true))
+			and not bool(failed_reset_result.get("ok", true))
+			and "저장" in String(failed_binding_result.get("message", ""))
+			and "저장" in String(failed_music_result.get("message", ""))
+			and "저장" in String(failed_reset_result.get("message", "")),
+		"설정 명령은 저장 실패를 구체적 실패 결과로 호출자에게 전달한다."
+	)
 	save_failure_settings.free()
+
+	var original_screen_settings_path: String = screen.settings.settings_path
+	var committed_music_percent: float = screen.settings.music_percent
+	screen.settings.settings_path = "user://missing_settings_directory/settings.cfg"
+	screen._on_music_changed(25.0)
+	_expect(
+		screen.settings.music_percent == committed_music_percent
+			and is_equal_approx(screen._music_slider.value, committed_music_percent)
+			and screen._music_value_label.text == "%d%%" % roundi(committed_music_percent),
+		"볼륨 저장 실패 후 slider와 label은 롤백된 committed 값을 다시 표시한다."
+	)
+	screen.settings.settings_path = original_screen_settings_path
+	screen._hide_message()
+
+	var no_damage_path: String = "res://build/main_ui_no_damage_settings.cfg"
+	var no_damage_settings := StartScreenSettings.new(no_damage_path)
+	for stage_number: int in range(1, StartScreenSettings.STAGE_COUNT):
+		no_damage_settings.complete_stage(stage_number, 3, 3, true)
+	_expect(
+		not no_damage_settings.is_character_unlocked("ninja"),
+		"1~9층만 무피해이면 전 스테이지 조건의 닌자는 잠겨 있다."
+	)
+	no_damage_settings.complete_stage(StartScreenSettings.STAGE_COUNT, 3, 2, false)
+	_expect(
+		not no_damage_settings.is_character_unlocked("ninja"),
+		"10층을 피해 입고 클리어해도 닌자는 잠겨 있다."
+	)
+	no_damage_settings.complete_stage(StartScreenSettings.STAGE_COUNT, 3, 3, true)
+	_expect(
+		no_damage_settings.is_character_unlocked("ninja"),
+		"1~10층을 모두 무피해로 클리어해야 닌자가 해금된다."
+	)
+	var no_damage_reload := StartScreenSettings.new(no_damage_path)
+	no_damage_reload.load_settings()
+	_expect(
+		no_damage_reload.is_stage_cleared_without_damage(10)
+			and no_damage_reload.is_character_unlocked("ninja"),
+		"10층 무피해 기록과 닌자 해금이 재실행 후에도 유지된다."
+	)
+	no_damage_settings.free()
+	no_damage_reload.free()
+
+	var legacy_no_damage_path: String = "res://build/main_ui_legacy_no_damage_settings.cfg"
+	var legacy_no_damage_config := ConfigFile.new()
+	legacy_no_damage_config.set_value("meta", "version", 3)
+	for stage_number: int in range(1, 6):
+		legacy_no_damage_config.set_value(
+			"progress",
+			"stage_%d_no_damage" % stage_number,
+			true
+		)
+	legacy_no_damage_config.save(legacy_no_damage_path)
+	var migrated_no_damage_settings := StartScreenSettings.new(legacy_no_damage_path)
+	migrated_no_damage_settings.load_settings()
+	_expect(
+		migrated_no_damage_settings.is_stage_cleared_without_damage(5)
+			and not migrated_no_damage_settings.is_stage_cleared_without_damage(6)
+			and not migrated_no_damage_settings.is_character_unlocked("ninja"),
+		"구버전 5층 무피해 세이브는 새 6~10층 기록을 false로 안전하게 확장한다."
+	)
+	migrated_no_damage_settings.free()
 	_expect(
 		screen.settings.get_passive_level("attack_speed") == 0
 			and screen.settings.get_passive_cost("attack_speed") == 1
@@ -1036,6 +1205,10 @@ func _run() -> void:
 	var corrupt_settings_path: String = ProjectSettings.globalize_path(corrupt_path)
 	if FileAccess.file_exists(corrupt_settings_path):
 		DirAccess.remove_absolute(corrupt_settings_path)
+	for generated_path: String in [no_damage_path, legacy_no_damage_path]:
+		var absolute_generated_path: String = ProjectSettings.globalize_path(generated_path)
+		if FileAccess.file_exists(absolute_generated_path):
+			DirAccess.remove_absolute(absolute_generated_path)
 	await create_timer(0.25).timeout
 	if _failures == 0:
 		print("성공: 메인 UI 테스트 %d개 통과" % _checks)

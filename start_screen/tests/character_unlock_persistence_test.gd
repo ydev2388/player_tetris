@@ -42,10 +42,14 @@ func _run() -> void:
 	_expect(reloaded.is_character_unlocked("boxer"), "boxer unlock reapplies after restart")
 	_expect(reloaded.is_stage_cleared_without_damage(1), "no-damage clear reloads")
 
-	for stage_number: int in range(2, StartScreenSettings.STAGE_COUNT + 1):
+	for stage_number: int in range(2, 6):
 		var result: Dictionary = reloaded.complete_stage(stage_number, 3, 3, true)
 		_expect(bool(result.get("ok", false)), "stage %d progress saves" % stage_number)
 	_expect(reloaded.is_character_unlocked("clockmaker"), "fifteen stars unlock clockmaker")
+	_expect(not reloaded.is_character_unlocked("ninja"), "first five no-damage clears do not unlock ninja")
+	for stage_number: int in range(6, StartScreenSettings.STAGE_COUNT + 1):
+		var result: Dictionary = reloaded.complete_stage(stage_number, 3, 3, true)
+		_expect(bool(result.get("ok", false)), "stage %d progress saves" % stage_number)
 	_expect(reloaded.is_character_unlocked("ninja"), "all no-damage clears unlock ninja")
 
 	var final_reload := StartScreenSettings.new(TEST_SETTINGS_PATH)
@@ -61,7 +65,7 @@ func _run() -> void:
 	debug_reload.free()
 	reloaded.free()
 	final_reload.free()
-	print("CHARACTER_UNLOCK_PERSISTENCE_RESULT failures=", _failures)
+	print("CHARACTER_UNLOCK_PERSISTENCE_RESULT failures=", _failures.size())
 	quit(0 if _failures.is_empty() else 1)
 
 

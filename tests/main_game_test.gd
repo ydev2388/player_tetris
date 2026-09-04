@@ -24,6 +24,11 @@ var _checks: int = 0 # 수행한 assertion 총수.
 var _failures: int = 0 # false였던 assertion 수이자 process exit code.
 var _stage_cleared_captured: bool = false # stage_cleared 발생 감지용. lambda는 지역 변수를 값 캡처하므로 멤버를 쓴다.
 var _stage_failed_captured: bool = false # stage_failed 발생 감지용.
+var _game_changed_count: int = 0
+var _captured_game_events: Array[MainGameEvent] = []
+var _captured_character_events: Array[MainGameEvent] = []
+var _event_controller: MainGameController
+var _committed_state_was_visible: bool = false
 
 
 func _on_stage_cleared_captured(_cleared_lines: int) -> void:
@@ -32,6 +37,30 @@ func _on_stage_cleared_captured(_cleared_lines: int) -> void:
 
 func _on_stage_failed_captured() -> void:
 	_stage_failed_captured = true
+
+
+func _on_game_changed_counted() -> void:
+	_game_changed_count += 1
+
+
+func _on_game_event_captured(event: MainGameEvent) -> void:
+	_captured_game_events.append(event)
+	if (
+		event.kind == MainGameEvent.Kind.FIREFIGHTER_WATER_COMMITTED
+		and is_instance_valid(_event_controller)
+	):
+		_committed_state_was_visible = (
+			_event_controller.water_path_snapshot() == event.cells
+			and _event_controller.water_path_direction() == event.direction
+			and is_equal_approx(
+				_event_controller.water_path_remaining(),
+				event.duration_seconds
+			)
+		)
+
+
+func _on_character_ability_event_captured(event: MainGameEvent) -> void:
+	_captured_character_events.append(event)
 
 
 ## 상황: SceneTree test runner가 생성될 때 자동 호출된다.
@@ -78,6 +107,11 @@ func _run() -> void:
 		INPUT_ACTIONS.get_default_keys(&"character_special") == [KEY_V],
 		"특수 스킬 기본 키는 V다."
 	)
+	_test_board_transaction_contracts()
+	_test_game_session_contracts()
+	_test_character_architecture_contracts()
+	_test_water_path_failure_contract()
+	_test_other_ability_command_contracts()
 	var controller: MainGameController = GAME_CONTROLLER.new() # scene 없이 process API만 검사할 임시 객체.
 	controller.reset_game(20260801)
 	var boss_board_rect: Rect2 = Rect2(MainLayout.BOARD_ORIGIN, MainLayout.BOARD_SIZE)
@@ -404,6 +438,7 @@ func _run() -> void:
 	)
 	_test_board_coordinate_alignment()
 	_test_stage_rule_contracts()
+	await _test_game_session_character_binding()
 	await _test_boss_display_assets()
 	_test_spawn_side_margin()
 	await _test_restart_state_invariance()
@@ -428,6 +463,591 @@ func _run() -> void:
 		push_error("실패: 최종 방향 통합 테스트 %d/%d개 실패" % [_failures, _checks])
 		print("TEST_RESULT suite=main_game checks=%d failures=%d" % [_checks, _failures])
 	quit(_failures)
+
+
+func _test_character_architecture_contracts() -> void:
+	var frame := MainCharacterInputFrame.new(2.0, true, true, false, true)
+	_expect(
+		is_equal_approx(frame.horizontal, 1.0)
+			and frame.jump_pressed
+			and frame.jump_held
+			and frame.punch_pressed,
+		"InputFrame은 한 물리 프레임의 입력을 정규화된 값으로 묶는다."
+	)
+	var resolver := MainCharacterAbilityResolver.new()
+	var expected_ids: Array[StringName] = [
+		&"normal", &"boxer", &"shield_guard", &"firefighter",
+		&"cleaner", &"chef", &"clockmaker", &"ninja",
+	]
+	var supported_ids := resolver.supported_character_ids()
+	var all_registered := supported_ids.size() == expected_ids.size()
+	for character_id: StringName in expected_ids:
+		all_registered = all_registered and supported_ids.has(character_id)
+	_expect(all_registered, "AbilityResolver는 기본 8개 캐릭터 정책을 한 registry에서 관리한다.")
+	_expect(
+		is_equal_approx(resolver.policy_for("firefighter").delay_seconds, 0.6)
+			and resolver.policy_for("firefighter").requires_ground
+			and is_equal_approx(resolver.policy_for("boxer").delay_seconds, 0.25)
+			and not resolver.policy_for("boxer").requires_ground,
+		"캐릭터별 시전 지연과 접지 조건은 CharacterController 분기 밖의 정책이다."
+	)
+	var context := {
+		"position": Vector2(100.0, 200.0),
+		"direction": -1,
+		"front_cell": Vector2i(4, 8),
+		"below_cell": Vector2i(4, 9),
+		"boxer_cells": [Vector2i(3, 8)],
+		"barrier_cells": [Vector2i(3, 7), Vector2i(3, 8)],
+	}
+	var firefighter := resolver.prepare("firefighter", context)
+	context["front_cell"] = Vector2i(9, 9)
+	context["direction"] = 1
+	_expect(
+		firefighter.command is MainFirefighterCastCommand
+			and firefighter.command.start_cell == Vector2i(4, 8)
+			and firefighter.command.direction == -1,
+		"AbilityResolver는 입력 순간의 소방관 cast context를 값 객체로 고정한다."
+	)
+	var motor := MainCharacterMotor.new()
+	var body := CharacterBody2D.new()
+	body.velocity = Vector2.ZERO
+	motor.apply_gravity(body, false, 100.0, 2.0, 150.0, 1.0)
+	motor.approach_horizontal_velocity(body, 50.0, 20.0, 1.0)
+	_expect(
+		is_equal_approx(body.velocity.x, 20.0)
+			and is_equal_approx(body.velocity.y, 100.0),
+		"CharacterMotor는 속도 적분을 CharacterController와 독립적으로 수행한다."
+	)
+	motor.is_hanging = true
+	var hang_body := Node2D.new()
+	motor.hang_body = hang_body
+	motor.reset_hang()
+	_expect(
+		not motor.is_hanging and motor.hang_body == null,
+		"CharacterMotor가 매달림 상태와 초기화 불변식을 소유한다."
+	)
+	hang_body.free()
+	body.free()
+	var sprite := Sprite2D.new()
+	var presenter := MainCharacterPresenter.new()
+	presenter.setup(sprite)
+	presenter.animation_state = "jump"
+	presenter.set_facing_left(true)
+	presenter.apply_geometry(Vector2(2.0, 2.0), Vector2(3.0, 4.0))
+	_expect(
+		sprite.flip_h
+			and sprite.scale == Vector2(2.0, 2.0)
+			and sprite.position == Vector2(3.0, 4.0)
+			and presenter.animation_state == "jump",
+		"CharacterPresenter가 애니메이션 상태와 Sprite 투영을 함께 소유한다."
+	)
+	sprite.free()
+	var controller_source := FileAccess.get_file_as_string(
+		"res://scripts/character_controller.gd"
+	)
+	_expect(
+		controller_source.find("Input.is_action") == -1
+			and controller_source.find("Input.get_axis") == -1
+			and controller_source.find("match character_id") == -1,
+		"CharacterController는 Godot Input과 캐릭터 ID별 match에 직접 의존하지 않는다."
+	)
+	var resolver_source := FileAccess.get_file_as_string(
+		"res://scripts/character_ability_resolver.gd"
+	)
+	_expect(
+		resolver_source.find("has_method") == -1
+			and resolver_source.find("executor_method") == -1
+			and resolver_source.find("target.call") == -1,
+		"Ability 정책 실행은 문자열 메서드 reflection 대신 등록 시 검증되는 Callable을 사용한다."
+	)
+	var game_controller_source := FileAccess.get_file_as_string(
+		"res://scripts/game_controller.gd"
+	)
+	_expect(
+		game_controller_source.find("MainCharacterController") == -1
+			and game_controller_source.find("character._character_collider_rect") == -1,
+		"GameController는 CharacterController 구체 타입과 private collider 대신 RuntimePort에 의존한다."
+	)
+
+
+func _test_board_transaction_contracts() -> void:
+	var board := MainBoardModel.new()
+	board.set_cell(Vector2i(2, 5), MainTetrominoData.Type.T, true)
+	var detached_snapshot: Dictionary = board.create_snapshot()
+	var detached_cells: Array = detached_snapshot["cells"] as Array
+	(detached_cells[5] as PackedInt32Array)[2] = MainBoardModel.EMPTY
+	_expect(
+		board.get_cell(Vector2i(2, 5)) == MainTetrominoData.Type.T
+			and board.is_ice_cell(Vector2i(2, 5)),
+		"보드 snapshot 변경은 authoritative BoardModel을 변경하지 않는다."
+	)
+
+	var before_invalid: Dictionary = board.create_snapshot()
+	var outside_lock: bool = board.lock_cells(
+		MainTetrominoData.Type.O,
+		[Vector2i.ZERO, Vector2i(0, 1)],
+		Vector2i(-1, 0)
+	)
+	_expect(
+		not outside_lock and board.create_snapshot() == before_invalid,
+		"범위 밖 셀이 포함된 lock은 전체 보드를 무변경으로 유지한다."
+	)
+
+	var occupied_lock: bool = board.lock_cells(
+		MainTetrominoData.Type.O,
+		[Vector2i.ZERO, Vector2i(1, 0)],
+		Vector2i(2, 5)
+	)
+	_expect(
+		not occupied_lock and board.create_snapshot() == before_invalid,
+		"점유 셀이 포함된 lock은 기존 블록을 덮어쓰지 않는다."
+	)
+
+	var duplicate_lock: bool = board.lock_cells(
+		MainTetrominoData.Type.O,
+		[Vector2i.ZERO, Vector2i.ZERO],
+		Vector2i(6, 6)
+	)
+	_expect(
+		not duplicate_lock and board.create_snapshot() == before_invalid,
+		"중복 셀이 포함된 lock은 부분 피스를 만들지 않는다."
+	)
+
+	var valid_lock: bool = board.lock_cells(
+		MainTetrominoData.Type.I,
+		[Vector2i.ZERO, Vector2i.RIGHT, Vector2i(2, 0), Vector2i(3, 0)],
+		Vector2i(3, 10),
+		true
+	)
+	var valid_cells_committed: bool = valid_lock
+	for x: int in range(3, 7):
+		valid_cells_committed = (
+			valid_cells_committed
+			and board.get_cell(Vector2i(x, 10)) == MainTetrominoData.Type.I
+			and board.is_ice_cell(Vector2i(x, 10))
+		)
+	_expect(
+		valid_cells_committed,
+		"유효한 lock은 일반 셀과 얼음 metadata를 함께 한 번에 커밋한다."
+	)
+
+	board.set_cell(Vector2i(3, 10), MainBoardModel.EMPTY, true)
+	_expect(
+		board.get_cell(Vector2i(3, 10)) == MainBoardModel.EMPTY
+			and not board.is_ice_cell(Vector2i(3, 10)),
+		"빈 셀에는 얼음 metadata가 남지 않는다."
+	)
+	var before_invalid_type: Dictionary = board.create_snapshot()
+	_expect(
+		not board.set_cell(Vector2i(0, 0), MainTetrominoData.TYPE_COUNT)
+			and not board.lock_cells(
+				MainTetrominoData.TYPE_COUNT,
+				[Vector2i.ZERO],
+				Vector2i.ZERO
+			)
+			and board.create_snapshot() == before_invalid_type,
+		"정의되지 않은 블록 타입은 보드에 기록되지 않는다."
+	)
+
+
+func _test_game_session_contracts() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	controller.reset_game(314159)
+	var aggregate_snapshot: Dictionary = controller.session_snapshot()
+	_expect(
+		aggregate_snapshot.has("board")
+			and aggregate_snapshot.has("active_piece")
+			and aggregate_snapshot.has("progress")
+			and aggregate_snapshot.has("skill_effects"),
+		"GameSession의 BoardState, ActivePiece, 진행도, 스킬 결과는 하나의 읽기 snapshot으로 투영된다."
+	)
+
+	controller.score = 700
+	controller.level = 4
+	controller.total_lines = 31
+	controller.active_origin = Vector2i(5, 8)
+	var written_snapshot: Dictionary = controller.session_snapshot()
+	var written_progress: Dictionary = written_snapshot["progress"] as Dictionary
+	var written_piece: Dictionary = written_snapshot["active_piece"] as Dictionary
+	_expect(
+		int(written_progress["score"]) == 700
+			and int(written_progress["level"]) == 4
+			and int(written_progress["total_lines"]) == 31
+			and written_piece["origin"] == Vector2i(5, 8),
+		"The compatibility API writes progress and ActivePiece state into GameSession."
+	)
+
+	controller.stage_number = 7
+	controller.stage_time_remaining = 42.5
+	controller.active_rotation = 2
+	_expect(
+		controller.stage_number == 7
+			and is_equal_approx(controller.stage_time_remaining, 42.5)
+			and controller.active_rotation == 2,
+		"GameController reads stage and piece state from the session without a duplicate source."
+	)
+
+	var piece_snapshot: Dictionary = controller.active_piece_snapshot()
+	var detached_indices: Array = piece_snapshot["cell_indices"] as Array
+	detached_indices.clear()
+	var progress_snapshot: Dictionary = controller.progress_snapshot()
+	progress_snapshot["score"] = -1
+	_expect(
+		controller.active_cell_indices == [0, 1, 2, 3]
+			and controller.score == 700,
+		"Session snapshots cannot mutate ActivePiece or progress originals."
+	)
+
+	var same_seed: MainGameController = GAME_CONTROLLER.new()
+	same_seed.reset_game(314159)
+	controller.reset_game(314159)
+	_expect(
+		controller.active_type == same_seed.active_type
+			and controller.next_type == same_seed.next_type
+			and controller.active_origin == same_seed.active_origin,
+		"PieceQueue and spawn RNG stay deterministic after moving into GameSession."
+	)
+	controller.free()
+	same_seed.free()
+
+
+func _test_game_session_character_binding() -> void:
+	var scene: MainGameView = GAME_SCENE.instantiate()
+	root.add_child(scene)
+	await process_frame
+	await physics_frame
+	var controller: MainGameController = scene.get_node("GameController") as MainGameController
+	var character: MainCharacterController = scene.get_node(
+		"BoardPhysics/Character"
+	) as MainCharacterController
+	character.lives = 2
+	character.rotation_cooldown_remaining = 1.25
+	character.special_cooldown_remaining = 2.5
+	_expect(
+		controller.player_lives() == 2
+			and is_equal_approx(controller.player_rotation_cooldown_remaining(), 1.25)
+			and is_equal_approx(controller.player_special_cooldown_remaining(), 2.5),
+		"Character gameplay resources are written to the shared GameSession."
+	)
+	controller.set_player_lives(1)
+	controller.set_player_rotation_cooldown(0.75)
+	controller.set_player_special_cooldown(1.5)
+	_expect(
+		character.lives == 1
+			and is_equal_approx(character.rotation_cooldown_remaining, 0.75)
+			and is_equal_approx(character.special_cooldown_remaining, 1.5),
+		"CharacterController projects life and cooldown values from GameSession."
+	)
+	controller.reset_game(271828)
+	_expect(
+		character.lives == character.get_max_lives()
+			and is_zero_approx(character.rotation_cooldown_remaining)
+			and is_zero_approx(character.special_cooldown_remaining),
+		"A game reset restores session-owned life and gameplay cooldowns atomically."
+	)
+	scene.queue_free()
+	await process_frame
+
+
+func _test_water_path_failure_contract() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	controller.reset_game(20260902)
+	controller.board.reset()
+	_game_changed_count = 0
+	_captured_game_events.clear()
+	_event_controller = controller
+	_committed_state_was_visible = false
+	controller.game_changed.connect(_on_game_changed_counted)
+	controller.game_event_committed.connect(_on_game_event_captured)
+
+	var created: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(3, 21), 1)
+	)
+	var committed_cells: Array[Vector2i] = controller.water_path_snapshot()
+	var committed_direction: int = controller.water_path_direction()
+	var committed_remaining: float = controller.water_path_remaining()
+	var result_events: Array[MainGameEvent] = created.events
+	_expect(
+		created.ok
+			and created.code == MainCommandResult.OK
+			and result_events.size() == 1
+			and _captured_game_events.size() == 1
+			and _game_changed_count == 1
+			and _committed_state_was_visible
+			and committed_cells
+			== [Vector2i(3, 21), Vector2i(4, 21), Vector2i(5, 21)]
+			and committed_direction == 1
+			and is_equal_approx(
+				committed_remaining,
+				MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS
+			),
+		"물길 성공 결과와 typed 사건은 완전히 커밋된 동일 상태를 가리킨다."
+	)
+	var event_cells_copy: Array[Vector2i] = result_events[0].cells
+	event_cells_copy.clear()
+	var state_cells_copy: Array[Vector2i] = controller.water_path_snapshot()
+	state_cells_copy.clear()
+	result_events.clear()
+	_expect(
+		controller.water_path_snapshot() == committed_cells
+			and created.events.size() == 1
+			and _captured_game_events[0].cells == committed_cells,
+		"명령 결과·사건·상태 스냅샷의 배열은 외부 변경으로 원본이 오염되지 않는다."
+	)
+
+	var event_count_before_failures: int = _captured_game_events.size()
+	var change_count_before_failures: int = _game_changed_count
+	var zero_direction: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(5, 21), 0)
+	)
+	var oversized_direction: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(5, 21), 2)
+	)
+	_expect(
+		not zero_direction.ok
+			and zero_direction.code == MainCommandResult.INVALID_DIRECTION
+			and not oversized_direction.ok
+			and oversized_direction.code == MainCommandResult.INVALID_DIRECTION
+			and controller.water_path_snapshot() == committed_cells
+			and controller.water_path_direction() == committed_direction
+			and is_equal_approx(controller.water_path_remaining(), committed_remaining)
+			and _captured_game_events.size() == event_count_before_failures
+			and _game_changed_count == change_count_before_failures,
+		"-1/+1이 아닌 물길 방향은 기존 물길과 사건 수를 바꾸지 않는다."
+	)
+
+	var invalid_start: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(-1, 21), -1)
+	)
+	_expect(
+		not invalid_start.ok
+			and invalid_start.code == MainCommandResult.INVALID_START_CELL
+			and controller.water_path_snapshot() == committed_cells
+			and is_equal_approx(controller.water_path_remaining(), committed_remaining)
+			and _captured_game_events.size() == event_count_before_failures
+			and _game_changed_count == change_count_before_failures,
+		"범위 밖 시작점은 기존 물길과 사건 수를 바꾸지 않는다."
+	)
+
+	controller.state = MainGameController.GameState.PAUSED
+	var paused_creation: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(5, 21), -1)
+	)
+	_expect(
+		not paused_creation.ok
+			and paused_creation.code == MainCommandResult.GAME_NOT_PLAYING
+			and controller.water_path_snapshot() == committed_cells
+			and is_equal_approx(controller.water_path_remaining(), committed_remaining)
+			and _captured_game_events.size() == event_count_before_failures
+			and _game_changed_count == change_count_before_failures,
+		"일시정지 중 물길 명령은 기존 물길과 사건 수를 바꾸지 않는다."
+	)
+
+	controller.state = MainGameController.GameState.PLAYING
+	controller.board.set_cell(Vector2i(5, 21), MainTetrominoData.Type.T)
+	var blocked_creation: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(5, 21), -1)
+	)
+	_expect(
+		not blocked_creation.ok
+			and blocked_creation.code == MainCommandResult.PATH_BLOCKED
+			and controller.water_path_snapshot() == committed_cells
+			and is_equal_approx(controller.water_path_remaining(), committed_remaining)
+			and _captured_game_events.size() == event_count_before_failures
+			and _game_changed_count == change_count_before_failures,
+		"빈 후보가 없는 물길 명령은 기존 물길과 사건 수를 바꾸지 않는다."
+	)
+
+	var replacement: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(8, 21), -1)
+	)
+	var replacement_event: MainGameEvent = replacement.events[0]
+	_expect(
+		replacement.ok
+			and replacement_event.replaced_existing
+			and replacement_event.kind
+			== MainGameEvent.Kind.FIREFIGHTER_WATER_COMMITTED
+			and controller.water_path_snapshot()
+			== [Vector2i(8, 21), Vector2i(7, 21), Vector2i(6, 21)]
+			and is_equal_approx(
+				controller.water_path_remaining(),
+				MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS
+			)
+			and _captured_game_events.size() == event_count_before_failures + 1
+			and _game_changed_count == change_count_before_failures + 1,
+		"기존 물길 교체는 중간 제거 없이 한 사건으로 커밋하고 수명을 다시 시작한다."
+	)
+
+	controller.state = MainGameController.GameState.PAUSED
+	controller._physics_process(0.5)
+	var paused_remaining: float = controller.water_path_remaining()
+	controller.state = MainGameController.GameState.PLAYING
+	controller.meditation_active = true
+	controller._physics_process(0.25)
+	var meditation_remaining: float = controller.water_path_remaining()
+	controller.execute_clockmaker_cast(MainAbilityCastCommand.new(&"clockmaker"))
+	controller._physics_process(0.25)
+	_expect(
+		is_equal_approx(
+			paused_remaining,
+			MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS
+		)
+			and is_equal_approx(
+				meditation_remaining,
+				MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS - 0.25
+			)
+			and is_equal_approx(
+				controller.water_path_remaining(),
+				MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS - 0.5
+			),
+		"물길 수명은 pause에서 멈추고 명상 배율과 무관하며 낙하 동결 중에도 진행된다."
+	)
+
+	var events_before_expiry: int = _captured_game_events.size()
+	var changes_before_expiry: int = _game_changed_count
+	controller._advance_water_path(MainGameController.FIREFIGHTER_WATER_DURATION_SECONDS)
+	controller._advance_water_path(1.0)
+	var expiry_event: MainGameEvent = _captured_game_events[-1]
+	_expect(
+		not controller.has_water_path()
+			and controller.water_path_snapshot().is_empty()
+			and controller.water_path_direction() == 0
+			and is_zero_approx(controller.water_path_remaining())
+			and expiry_event.kind == MainGameEvent.Kind.FIREFIGHTER_WATER_CLEARED
+			and expiry_event.clear_reason == MainGameEvent.ClearReason.EXPIRED
+			and _captured_game_events.size() == events_before_expiry + 1
+			and _game_changed_count == changes_before_expiry + 1,
+		"물길 만료는 상태를 한 번에 비우고 제거 사건을 정확히 한 번 발행한다."
+	)
+	var clear_empty: MainCommandResult = controller.clear_water_path()
+	_expect(
+		not clear_empty.ok
+			and clear_empty.code == MainCommandResult.NO_ACTIVE_EFFECT
+			and _captured_game_events.size() == events_before_expiry + 1
+			and _game_changed_count == changes_before_expiry + 1,
+		"이미 빈 물길 제거는 실패 결과만 반환하고 새 사건을 발행하지 않는다."
+	)
+	var events_before_reset: int = _captured_game_events.size()
+	controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(3, 21), 1)
+	)
+	controller.reset_game(20260903)
+	_expect(
+		not controller.has_water_path()
+			and _captured_game_events.size() == events_before_reset + 3
+			and _captured_game_events[-1].kind
+			== MainGameEvent.Kind.FIREFIGHTER_WATER_CLEARED
+			and _captured_game_events[-1].clear_reason
+			== MainGameEvent.ClearReason.GAME_RESET,
+		"게임 재시작은 활성 물길을 한 제거 사건으로 정리하고 빈 불변식을 복원한다."
+	)
+	_event_controller = null
+	controller.free()
+
+
+func _test_other_ability_command_contracts() -> void:
+	var controller: MainGameController = GAME_CONTROLLER.new()
+	controller.reset_game(20260904)
+	controller.board.reset()
+	_captured_game_events.clear()
+	controller.game_event_committed.connect(_on_game_event_captured)
+	controller.game_changed.connect(_on_game_changed_counted)
+	_game_changed_count = 0
+
+	var shield_source: Array[Vector2i] = [Vector2i(1, 21), Vector2i(1, 20)]
+	var shield_command := MainAbilityCastCommand.new(
+		&"shield_guard", Vector2.ZERO, Vector2i.ZERO, 1, shield_source
+	)
+	shield_source.clear()
+	var shield_result: MainCommandResult = controller.execute_shield_guard_cast(shield_command)
+	var returned_cells: Array[Vector2i] = shield_result.events[0].cells
+	returned_cells.clear()
+	var detached_barrier: Array[Vector2i] = controller.transient_blocker_snapshot()
+	detached_barrier.clear()
+	_expect(
+		shield_result.ok
+			and shield_command.cells.size() == 2
+			and controller.transient_blocker_snapshot().size() == 2
+			and controller.barrier_direction() == 1
+			and is_equal_approx(
+				controller.barrier_remaining(),
+				MainGameController.SHIELD_BARRIER_DURATION_SECONDS
+			),
+		"방패 명령·사건·조회 배열은 외부 별칭 변경과 분리되고 수명·방향을 함께 커밋한다."
+	)
+
+	var events_before_failed_shield: int = _captured_game_events.size()
+	var changes_before_failed_shield: int = _game_changed_count
+	var barrier_before_failure: Array[Vector2i] = controller.transient_blocker_snapshot()
+	var failed_shield: MainCommandResult = controller.execute_shield_guard_cast(
+		MainAbilityCastCommand.new(
+			&"shield_guard", Vector2.ZERO, Vector2i.ZERO, -1, [Vector2i(-1, 21)]
+		)
+	)
+	_expect(
+		not failed_shield.ok
+			and failed_shield.code == MainCommandResult.NO_VALID_TARGET
+			and controller.transient_blocker_snapshot() == barrier_before_failure
+			and _captured_game_events.size() == events_before_failed_shield
+			and _game_changed_count == changes_before_failed_shield,
+		"실패한 방패 명령은 기존 보호벽·수명·사건·일반 변경 신호를 건드리지 않는다."
+	)
+
+	controller.clear_transient_blockers()
+	controller.board.set_cell(Vector2i(5, 21), MainTetrominoData.Type.T)
+	var cleaner_result: MainCommandResult = controller.execute_cleaner_cast(
+		MainAbilityCastCommand.new(&"cleaner", Vector2.ZERO, Vector2i(5, 21))
+	)
+	_expect(
+		cleaner_result.ok
+			and cleaner_result.events.size() == 1
+			and cleaner_result.events[0].ability_id == &"cleaner"
+			and cleaner_result.events[0].amount == 1
+			and cleaner_result.events[0].cells == [Vector2i(5, 21)]
+			and controller.board.get_cell(Vector2i(5, 21)) == MainBoardModel.EMPTY,
+		"청소부 명령 사건은 후보가 아니라 실제 제거된 셀만 보드 커밋 뒤 반환한다."
+	)
+
+	controller.board.set_cell(Vector2i(5, 20), MainTetrominoData.Type.J)
+	var boxer_result: MainCommandResult = controller.execute_boxer_cast(
+		MainAbilityCastCommand.new(
+			&"boxer", Vector2.ZERO, Vector2i.ZERO, 1, [Vector2i(5, 20)]
+		)
+	)
+	_expect(
+		boxer_result.ok
+			and boxer_result.events[0].ability_id == &"boxer"
+			and boxer_result.events[0].amount == 3
+			and controller.board.get_cell(Vector2i(8, 20)) == MainTetrominoData.Type.J,
+		"복서 명령은 입력 때 고정한 후보를 지연 뒤 검증하고 실제 이동량을 사건에 기록한다."
+	)
+
+	var clock_result: MainCommandResult = controller.execute_clockmaker_cast(
+		MainAbilityCastCommand.new(&"clockmaker")
+	)
+	_expect(
+		clock_result.ok
+			and clock_result.events[0].ability_id == &"clockmaker"
+			and is_equal_approx(
+				controller.fall_freeze_remaining(),
+				MainGameController.CLOCK_FREEZE_DURATION_SECONDS
+			),
+		"시계공 명령은 호출자 duration 없이 규칙의 3초 수명과 커밋 사건을 함께 만든다."
+	)
+	var freeze_before_pause: float = controller.fall_freeze_remaining()
+	var events_before_pause: int = _captured_game_events.size()
+	controller.state = MainGameController.GameState.PAUSED
+	var paused_clock: MainCommandResult = controller.execute_clockmaker_cast(
+		MainAbilityCastCommand.new(&"clockmaker")
+	)
+	_expect(
+		not paused_clock.ok
+			and paused_clock.code == MainCommandResult.GAME_NOT_PLAYING
+			and is_equal_approx(controller.fall_freeze_remaining(), freeze_before_pause)
+			and _captured_game_events.size() == events_before_pause,
+		"일시정지 중 시계공 명령 실패는 기존 동결 수명과 사건 이력을 보존한다."
+	)
+	controller.free()
 
 
 ## 상황: 새 피스가 벽에서 한 칸 떨어져 spawn하되 중앙이 막히면 벽 옆으로 fallback하는지 검사한다.
@@ -750,11 +1370,17 @@ func _test_restart_state_invariance() -> void:
 		restart_controller.total_lines = 12
 		restart_controller.level = 2
 		restart_controller.stage_time_remaining = 3.0
-		restart_controller.transient_blocker_cells = [Vector2i(3, 5)]
-		restart_controller.water_path_cells = [Vector2i(4, 6)]
-		restart_controller.water_path_direction = -1
-		restart_controller.fall_freeze_remaining = 1.5
-		restart_controller.future_gimmick_freeze_remaining = 1.5
+		restart_controller.execute_shield_guard_cast(
+			MainAbilityCastCommand.new(
+				&"shield_guard", Vector2.ZERO, Vector2i.ZERO, 1, [Vector2i(3, 5)]
+			)
+		)
+		restart_controller.execute_firefighter_cast(
+			MainFirefighterCastCommand.new(Vector2i(4, 21), -1)
+		)
+		restart_controller.execute_clockmaker_cast(
+			MainAbilityCastCommand.new(&"clockmaker")
+		)
 		restart_controller.boss_health = 1
 		restart_controller.boss_down = true
 		restart_controller.boss_seeds = [{"position": Vector2.ZERO}]
@@ -774,11 +1400,12 @@ func _test_restart_state_invariance() -> void:
 					restart_controller.stage_time_remaining,
 					restart_controller.stage_time_limit()
 				)
-				and restart_controller.transient_blocker_cells.is_empty()
-				and restart_controller.water_path_cells.is_empty()
-				and restart_controller.water_path_direction == 0
-				and restart_controller.fall_freeze_remaining == 0.0
-				and restart_controller.future_gimmick_freeze_remaining == 0.0
+				and restart_controller.transient_blocker_snapshot().is_empty()
+				and not restart_controller.has_water_path()
+				and restart_controller.water_path_direction() == 0
+				and is_zero_approx(restart_controller.water_path_remaining())
+				and restart_controller.fall_freeze_remaining() == 0.0
+				and restart_controller.future_gimmick_freeze_remaining() == 0.0
 				and restart_controller.boss_health == 0
 				and not restart_controller.boss_down
 				and restart_controller.boss_seeds.is_empty()
@@ -799,44 +1426,82 @@ func _test_runtime_cleanup() -> void:
 	await physics_frame
 	var controller: MainGameController = scene.get_node("GameController")
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	_captured_game_events.clear()
+	_event_controller = controller
+	controller.game_event_committed.connect(_on_game_event_captured)
+	controller.board.reset()
+	controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(3, 21), 1)
+	)
+	character.lives = 2
+	character._lose_life_and_respawn("test")
+	_expect(
+		controller.state == MainGameController.GameState.PLAYING
+			and not controller.has_water_path()
+			and _captured_game_events.size() == 2
+			and _captured_game_events[-1].clear_reason
+			== MainGameEvent.ClearReason.CHARACTER_RESET,
+		"캐릭터 생명 손실은 Controller 명령으로 활성 물길을 정확히 한 번 제거한다."
+	)
+	_captured_game_events.clear()
 	character.is_meditating = true
-	character._meditation_loop_player.play()
+	character._audio.start_meditation(MainCharacterController.SFX_MEDITATION_LOOP)
 	character.is_bound = true
 	character.binding_timer = 2.0
-	character._barrier_remaining = 2.0
-	character._water_remaining = 2.0
 	character._ninja_projectile = {"active": true}
-	controller.transient_blocker_cells = [Vector2i(2, 2)]
-	controller.water_path_cells = [Vector2i(3, 3)]
-	controller.fall_freeze_remaining = 2.0
-	controller.future_gimmick_freeze_remaining = 2.0
+	controller.board.reset()
+	controller.execute_shield_guard_cast(
+		MainAbilityCastCommand.new(
+			&"shield_guard", Vector2.ZERO, Vector2i.ZERO, 1, [Vector2i(0, 21)]
+		)
+	)
+	controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(3, 21), 1)
+	)
+	controller.execute_clockmaker_cast(MainAbilityCastCommand.new(&"clockmaker"))
 	controller.boss_seeds = [{"position": Vector2.ZERO}]
 	controller.end_game()
+	var cleared_abilities: Array[StringName] = []
+	for event: MainGameEvent in _captured_game_events:
+		if (
+			event.kind == MainGameEvent.Kind.ABILITY_CLEARED
+			or event.kind == MainGameEvent.Kind.FIREFIGHTER_WATER_CLEARED
+		):
+			cleared_abilities.append(event.ability_id)
+	_expect(
+		_captured_game_events.size() == 6
+			and cleared_abilities.count(&"shield_guard") == 1
+			and cleared_abilities.count(&"firefighter") == 1
+			and cleared_abilities.count(&"clockmaker") == 1
+			and _captured_game_events[-1].clear_reason
+			== MainGameEvent.ClearReason.GAME_RESET,
+		"게임오버 일괄 정리는 방패·물길·시간정지 사건을 각각 한 번 발행한다(count=%d, cleared=%s)."
+			% [_captured_game_events.size(), str(cleared_abilities)]
+	)
 	_expect(
 		controller.state == MainGameController.GameState.GAME_OVER
 			and not character.is_meditating
 			and not character.is_bound
 			and is_zero_approx(character.binding_timer)
-			and is_zero_approx(character._barrier_remaining)
-			and is_zero_approx(character._water_remaining)
+			and is_zero_approx(controller.barrier_remaining())
+			and is_zero_approx(character.water_remaining())
 			and character._ninja_projectile.is_empty()
-			and controller.transient_blocker_cells.is_empty()
-			and controller.water_path_cells.is_empty()
-			and is_zero_approx(controller.fall_freeze_remaining)
-			and is_zero_approx(controller.future_gimmick_freeze_remaining)
+			and controller.transient_blocker_snapshot().is_empty()
+			and not controller.has_water_path()
+			and controller.water_path_snapshot().is_empty()
+			and controller.water_path_direction() == 0
+			and is_zero_approx(controller.water_path_remaining())
+			and is_zero_approx(controller.fall_freeze_remaining())
+			and is_zero_approx(controller.future_gimmick_freeze_remaining())
 			and controller.boss_seeds.is_empty()
-			and not character._meditation_loop_player.playing
-			and character._sfx_player.stream == null
-			and character._sfx_cue_player.stream == null
-			and character._meditation_loop_player.stream == null,
+			and not character._audio.is_meditation_playing()
+			and character._audio.primary_stream() == null
+			and character._audio.cue_stream() == null
+			and character._audio.meditation_stream() == null,
 		"게임 종료는 명상·투사체·보호벽·물길·freeze·결박 상태를 한 번에 정리한다."
 	)
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
+	_event_controller = null
 	scene.free()
 	await process_frame
 
@@ -882,8 +1547,8 @@ func _test_spawn_side_margin() -> void:
 	# 한 칸 여백 후보는 모두 막히지만 x=0..3과 x=6..9의 벽 접촉 후보는 남는다.
 	controller.board.reset()
 	var i_spawn_row: int = MainGameController.SPAWN_Y + 1
-	controller.board.cells[i_spawn_row][4] = MainTetrominoData.Type.T
-	controller.board.cells[i_spawn_row][5] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(4, i_spawn_row), MainTetrominoData.Type.T)
+	controller.board.set_cell(Vector2i(5, i_spawn_row), MainTetrominoData.Type.T)
 	_expect(
 		controller._valid_spawn_origins(
 			MainTetrominoData.Type.I,
@@ -900,7 +1565,7 @@ func _test_spawn_side_margin() -> void:
 
 	controller.board.reset()
 	for x: int in range(MainBoardModel.WIDTH):
-		controller.board.cells[i_spawn_row][x] = MainTetrominoData.Type.T
+		controller.board.set_cell(Vector2i(x, i_spawn_row), MainTetrominoData.Type.T)
 	controller.next_type = MainTetrominoData.Type.I
 	_expect(
 		not controller.spawn_next_piece()
@@ -980,7 +1645,7 @@ func _test_boss_seeds() -> void:
 	controller.active_type = MainTetrominoData.Type.O
 	controller.active_rotation = 0
 	controller.active_cell_indices = [0, 1, 2, 3]
-	controller.board.cells[8][fixed_column] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(fixed_column, 8), MainTetrominoData.Type.T)
 	controller._advance_stage_gimmicks(0.4)
 	var fixed_seed_settled: bool = false
 	var fixed_seed_y: float = 0.0
@@ -1040,7 +1705,7 @@ func _test_boss_seeds() -> void:
 	lock_controller.stage_number = 5
 	lock_controller.reset_game(20260811)
 	lock_controller.board.reset()
-	lock_controller.board.cells[20][4] = MainTetrominoData.Type.T
+	lock_controller.board.set_cell(Vector2i(4, 20), MainTetrominoData.Type.T)
 	lock_controller.active_type = MainTetrominoData.Type.O
 	lock_controller.active_rotation = 0
 	lock_controller.active_origin = Vector2i(3, 18)
@@ -1086,7 +1751,7 @@ func _test_boss_seeds() -> void:
 		damage_controller.board.reset()
 		damage_controller.boss_health = MainGameController.BOSS_MAX_HEALTH - clear_index
 		for column: int in range(MainBoardModel.WIDTH):
-			damage_controller.board.cells[20][column] = MainTetrominoData.Type.T
+			damage_controller.board.set_cell(Vector2i(column, 20), MainTetrominoData.Type.T)
 		damage_controller.active_type = MainTetrominoData.Type.O
 		damage_controller.active_rotation = 0
 		damage_controller.active_origin = Vector2i(3, 18)
@@ -1155,12 +1820,7 @@ func _test_boss_seeds() -> void:
 			and not seed_is_still_at_contact,
 		"씨앗에 닿은 플레이어는 3초 속박되고 해당 씨앗은 즉시 사라진다."
 	)
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -1322,8 +1982,8 @@ func _test_release_punch() -> void:
 	character._play_character_special_sfx()
 	_expect(
 		MainCharacterController.CHARACTER_SPECIAL_SFX.size() == 8
-			and character._special_sfx_player.name == &"SpecialSfx"
-			and character._special_sfx_player.stream
+			and character._audio.special_player_name() == &"SpecialSfx"
+			and character._audio.special_stream()
 			== MainCharacterController.CHARACTER_SPECIAL_SFX["normal"],
 		"기본 8개 캐릭터는 특수 스킬 전용 효과음을 독립 SFX 채널로 재생한다."
 	)
@@ -1380,7 +2040,7 @@ func _test_release_punch() -> void:
 	_prepare_punch(controller, character, Vector2i(3, 19), Vector2(165.0, 912.0))
 	controller.active_type = MainTetrominoData.Type.O
 	controller.active_cell_indices = [0, 1, 2, 3]
-	controller.board.cells[19][6] = MainTetrominoData.Type.J
+	controller.board.set_cell(Vector2i(6, 19), MainTetrominoData.Type.J)
 	character._pending_punch_stage = 1
 	character._pending_punch_hit_remaining = 0.1
 	character._resolve_pending_punch(0.0)
@@ -1422,7 +2082,7 @@ func _test_release_punch() -> void:
 	Input.action_release(&"character_punch")
 
 	_prepare_punch(controller, character, Vector2i(7, 1), Vector2(165.0, 912.0))
-	controller.board.cells[20][4] = MainTetrominoData.Type.J
+	controller.board.set_cell(Vector2i(4, 20), MainTetrominoData.Type.J)
 	character._perform_tap_punch()
 	character._resolve_pending_punch(0.1)
 	_expect(
@@ -1431,12 +2091,7 @@ func _test_release_punch() -> void:
 		"기본 공격은 전방의 고정된 비활성 블록을 이동시키지 않는다."
 	)
 	Input.action_release(&"character_punch")
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	await create_timer(0.12).timeout
 	scene.free()
 	await process_frame
@@ -1449,6 +2104,8 @@ func _test_beta_specials() -> void:
 	await physics_frame
 	var controller: MainGameController = scene.get_node("GameController")
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
+	_captured_character_events.clear()
+	character.ability_event_committed.connect(_on_character_ability_event_captured)
 	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
 	character.velocity = Vector2(0.0, 10.0)
 	await physics_frame
@@ -1466,22 +2123,33 @@ func _test_beta_specials() -> void:
 			and is_equal_approx(character.current_move_speed(), normal_speed * 1.6),
 		"일반인 전력 질주는 스태미나를 쓰지 않고 2초 동안 이동속도를 60% 높인다."
 	)
+	_expect(
+		not _captured_character_events.is_empty()
+			and _captured_character_events[-1].ability_id == &"normal"
+			and is_equal_approx(_captured_character_events[-1].duration_seconds, 2.0),
+		"일반인 전력 질주는 캐릭터 원본 커밋 뒤 공용 typed 사건을 발행한다."
+	)
 
 	controller.board.reset()
 	character.set_character_id("boxer")
-	controller.board.cells[20][6] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(6, 20), MainTetrominoData.Type.T)
 	stamina_before = character.stamina
 	var boxer_started: bool = character._attempt_special_skill()
+	var boxer_cast_position: Vector2 = character.position
+	character.position.x -= MainCharacterController.CELL_SIZE
+	character.facing = -1
 	character._resolve_pending_special()
 	_expect(
 		boxer_started
 			and is_equal_approx(character.stamina, stamina_before)
 			and controller.board.get_cell(Vector2i(9, 20)) == MainTetrominoData.Type.T,
-		"복서 가드 브레이크는 전방 노출 고정 블록을 최대 3칸 밀고 스태미나를 쓰지 않는다."
+		"복서 가드 브레이크는 이동·회전 뒤에도 입력 순간 전방 블록을 최대 3칸 민다."
 	)
+	character.position = boxer_cast_position
+	character.facing = 1
 	controller.board.reset()
 	character.special_cooldown_remaining = 0.0
-	controller.board.cells[21][6] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(6, 21), MainTetrominoData.Type.T)
 	var boxer_floor_target_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
 	_expect(
@@ -1494,8 +2162,8 @@ func _test_beta_specials() -> void:
 	)
 	controller.board.reset()
 	character.special_cooldown_remaining = 0.0
-	controller.board.cells[21][6] = MainTetrominoData.Type.J
-	controller.board.cells[20][6] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(6, 21), MainTetrominoData.Type.J)
+	controller.board.set_cell(Vector2i(6, 20), MainTetrominoData.Type.T)
 	var boxer_upper_fallback_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
 	_expect(
@@ -1528,6 +2196,28 @@ func _test_beta_specials() -> void:
 		character.lives == 2,
 		"복서 가드 브레이크는 블록 이동 뒤 추가 피해 무효 효과를 부여하지 않는다."
 	)
+	var boxer_position_before_safety_test: Vector2 = character.position
+	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(6, 19)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	character.position = Vector2(
+		9.5 * MainLayout.CELL_SIZE,
+		17.5 * MainLayout.CELL_SIZE - MainCharacterController.CHARACTER_COLLIDER_OFFSET_Y
+	)
+	var unsafe_boxer_result: MainCommandResult = controller.execute_boxer_cast(
+		MainAbilityCastCommand.new(
+			&"boxer", Vector2.ZERO, Vector2i.ZERO, 1, [Vector2i(7, 19)]
+		)
+	)
+	_expect(
+		not unsafe_boxer_result.ok
+			and unsafe_boxer_result.code == MainCommandResult.PATH_BLOCKED
+			and controller.active_origin == Vector2i(6, 19),
+		"복서 커밋도 시전 뒤 이동한 캐릭터의 현재 점유 셀 안으로 활성 피스를 밀지 않는다."
+	)
+	character.position = boxer_position_before_safety_test
 	character.lives = 3
 	character._invulnerability_remaining = 0.0
 	controller.active_origin = Vector2i(3, 1)
@@ -1544,12 +2234,18 @@ func _test_beta_specials() -> void:
 	_expect(
 		shield_started
 			and character.barrier_remaining() > 0.0
-			and character._barrier_direction == 1
-			and controller.transient_blocker_cells.size() == 3
-			and Vector2i(6, 21) in controller.transient_blocker_cells
-			and Vector2i(6, 20) in controller.transient_blocker_cells
-			and Vector2i(6, 19) in controller.transient_blocker_cells,
+			and controller.barrier_direction() == 1
+			and controller.transient_blocker_snapshot().size() == 3
+			and Vector2i(6, 21) in controller.transient_blocker_snapshot()
+			and Vector2i(6, 20) in controller.transient_blocker_snapshot()
+			and Vector2i(6, 19) in controller.transient_blocker_snapshot(),
 		"방패병은 시전 방향 앞에 세로 3칸의 임시 보호벽을 만든다."
+	)
+	var shield_snapshot: Array[Vector2i] = controller.transient_blocker_snapshot()
+	shield_snapshot.clear()
+	_expect(
+		controller.transient_blocker_snapshot().size() == 3,
+		"방패병 View snapshot을 외부에서 바꿔도 Controller의 보호벽 원본은 유지된다."
 	)
 	character._cancel_character_skill_effects()
 
@@ -1559,15 +2255,15 @@ func _test_beta_specials() -> void:
 	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
 	character.facing = 1
 	character.special_cooldown_remaining = 0.0
-	controller.board.cells[20][6] = MainTetrominoData.Type.T
+	controller.board.set_cell(Vector2i(6, 20), MainTetrominoData.Type.T)
 	var partial_shield_started: bool = character._attempt_special_skill()
 	character._resolve_pending_special()
 	_expect(
 		partial_shield_started
-			and controller.transient_blocker_cells.size() == 2
-			and Vector2i(6, 21) in controller.transient_blocker_cells
-			and Vector2i(6, 19) in controller.transient_blocker_cells
-			and not Vector2i(6, 20) in controller.transient_blocker_cells,
+			and controller.transient_blocker_snapshot().size() == 2
+			and Vector2i(6, 21) in controller.transient_blocker_snapshot()
+			and Vector2i(6, 19) in controller.transient_blocker_snapshot()
+			and not Vector2i(6, 20) in controller.transient_blocker_snapshot(),
 		"방패병은 점유 칸을 제외하고 실제 생성된 보호막 칸만 판정에 사용한다."
 	)
 	character._cancel_character_skill_effects()
@@ -1587,14 +2283,23 @@ func _test_beta_specials() -> void:
 		character._resolve_pending_special()
 	_expect(
 		firefighter_started
-			and controller.water_path_direction == 1
-			and controller.water_path_cells
+			and controller.water_path_direction() == 1
+			and controller.water_path_snapshot()
 			== [Vector2i(6, 21), Vector2i(7, 21), Vector2i(8, 21)],
 		"소방관은 고정 지형을 따라 최대 3셀 중력 물길을 만든다."
 	)
+	_expect(
+		scene._water_path_commit_pulse_remaining > 0.0
+			and is_equal_approx(
+				character.water_remaining(),
+				controller.water_path_remaining()
+			),
+		"View는 커밋 사건으로 등장 pulse만 시작하고 물길 수명은 Controller에서 읽는다."
+	)
 	var water_visual_is_attached: bool = false
-	if not controller.water_path_cells.is_empty():
-		var water_cell: Vector2i = controller.water_path_cells[0]
+	var water_cells: Array[Vector2i] = controller.water_path_snapshot()
+	if not water_cells.is_empty():
+		var water_cell: Vector2i = water_cells[0]
 		var water_cell_rect: Rect2 = scene._cell_rect(water_cell)
 		var water_display_rect: Rect2 = scene._water_path_display_rect(water_cell)
 		var water_source_rect: Rect2 = scene._water_path_source_rect(0)
@@ -1619,13 +2324,11 @@ func _test_beta_specials() -> void:
 	controller.active_origin = Vector2i(3, 20)
 	controller.active_cell_indices = [0, 1, 2, 3]
 	var water_creation_origin: Vector2i = controller.active_origin
-	var overlapping_water_created: bool = controller.create_water_path(
-		Vector2i(4, 21),
-		1,
-		3
+	var overlapping_water_result: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(4, 21), 1)
 	)
 	_expect(
-		overlapping_water_created and controller.active_origin == water_creation_origin,
+		overlapping_water_result.ok and controller.active_origin == water_creation_origin,
 		"소방관 물길은 생성 순간 활성 블록을 밀지 않고 다음 자동 낙하 단계를 기다린다."
 	)
 
@@ -1634,18 +2337,24 @@ func _test_beta_specials() -> void:
 	controller.active_rotation = 0
 	controller.active_origin = Vector2i(3, 5)
 	controller.active_cell_indices = [0, 1, 2, 3]
-	controller.board.cells[5][6] = MainTetrominoData.Type.T
-	controller.water_path_cells = [Vector2i(4, 6)]
-	controller.water_path_direction = 1
+	controller.board.set_cell(Vector2i(4, 7), MainTetrominoData.Type.T)
+	var slide_water_result: MainCommandResult = controller.execute_firefighter_cast(
+		MainFirefighterCastCommand.new(Vector2i(4, 6), 1)
+	)
+	controller.board.set_cell(Vector2i(4, 7), MainBoardModel.EMPTY)
+	controller.board.set_cell(Vector2i(6, 5), MainTetrominoData.Type.T)
 	controller._fall_accumulator = 0.0
 	controller._advance_gravity(MainGameController.GRAVITY_INTERVAL_SECONDS)
 	var blocked_slide_still_descended: bool = controller.active_origin == Vector2i(3, 6)
 	controller._advance_gravity(MainGameController.GRAVITY_INTERVAL_SECONDS)
 	_expect(
-		blocked_slide_still_descended and controller.active_origin == Vector2i(4, 7),
+		slide_water_result.ok
+			and blocked_slide_still_descended
+			and controller.active_origin == Vector2i(4, 7),
 		"물길은 각 자동 낙하 단계에서 옆 이동을 한 번 먼저 시도하고 막혀도 아래로 낙하한다."
 	)
 	character._cancel_character_skill_effects()
+	controller.clear_water_path()
 	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 912.0)
 	character.facing = 1
 
@@ -1654,7 +2363,10 @@ func _test_beta_specials() -> void:
 	character.special_cooldown_remaining = 0.0
 	character.position = Vector2(5.5 * MainCharacterController.CELL_SIZE, 864.0)
 	for x: int in range(4, 7):
-		controller.board.cells[MainBoardModel.HEIGHT - 1][x] = MainTetrominoData.Type.T
+		controller.board.set_cell(
+			Vector2i(x, MainBoardModel.HEIGHT - 1),
+			MainTetrominoData.Type.T
+		)
 	_expect(
 		character._cell_below_feet() == Vector2i(5, 21),
 		"청소부의 발밑 행은 고정 블록 위에서도 공통 42×90 콜라이더 아랫면을 따른다."
@@ -1678,7 +2390,7 @@ func _test_beta_specials() -> void:
 	controller.active_origin = Vector2i(4, 20)
 	controller.active_cell_indices = [0]
 	for x: int in range(4, 7):
-		controller.board.cells[21][x] = MainTetrominoData.Type.J
+		controller.board.set_cell(Vector2i(x, 21), MainTetrominoData.Type.J)
 	var removed_around_active: int = controller.clean_exposed_cells(Vector2i(5, 21))
 	_expect(
 		removed_around_active == 2
@@ -1702,6 +2414,14 @@ func _test_beta_specials() -> void:
 			and character.chef_meat_guard_available()
 			and is_equal_approx(character.current_move_speed(), chef_base_speed * 1.2),
 		"성녀의 성역의 가호는 3초 동안 이동속도를 20% 높이고 다음 피해 방어를 준비한다."
+	)
+	_expect(
+		_captured_character_events[-1].ability_id == &"chef"
+			and is_equal_approx(
+				_captured_character_events[-1].duration_seconds,
+				MainCharacterController.CHEF_MEAT_DURATION
+			),
+		"성녀 버프는 속도·방어 원본을 함께 커밋한 뒤 공용 typed 사건을 발행한다."
 	)
 	character.lives = 3
 	character._invulnerability_remaining = 0.0
@@ -1767,12 +2487,12 @@ func _test_beta_specials() -> void:
 		clockmaker_started
 			and is_equal_approx(character.stamina, stamina_before)
 			and controller.active_origin == frozen_origin
-			and is_equal_approx(controller.fall_freeze_remaining, 2.0),
+			and is_equal_approx(controller.fall_freeze_remaining(), 2.0),
 		"시계공 정지 태엽은 3초 동안 활성 블록의 낙하와 고정 시간을 멈춘다."
 	)
 	character._cancel_character_skill_effects()
 	_expect(
-		is_zero_approx(controller.fall_freeze_remaining),
+		is_zero_approx(controller.fall_freeze_remaining()),
 		"시계공의 시간 정지는 캐릭터 변경·피격용 임시 효과 정리에서 해제된다."
 	)
 
@@ -1786,6 +2506,9 @@ func _test_beta_specials() -> void:
 	stamina_before = character.stamina
 	var ninja_origin_before: Vector2i = controller.active_origin
 	var ninja_started: bool = character._attempt_special_skill()
+	var ninja_cast_position: Vector2 = character.position
+	character.position.x -= MainCharacterController.CELL_SIZE
+	character.facing = -1
 	character._resolve_pending_special()
 	var ninja_waits_for_visual_contact: bool = controller.active_origin == ninja_origin_before
 	character._advance_ninja_projectile(0.5)
@@ -1794,7 +2517,45 @@ func _test_beta_specials() -> void:
 			and is_equal_approx(character.stamina, stamina_before)
 			and ninja_waits_for_visual_contact
 			and controller.active_origin == ninja_origin_before + Vector2i.RIGHT,
-		"닌자 표창은 활성 미노에 명중하면 도형 전체를 정확히 1칸 민다."
+		"닌자 표창은 이동·회전 뒤에도 입력 순간 방향으로 활성 미노를 정확히 1칸 민다."
+	)
+	character.position = ninja_cast_position
+	character.facing = 1
+	_expect(
+		_captured_character_events.size() >= 2
+			and _captured_character_events[-2].ability_id == &"ninja"
+			and _captured_character_events[-1].kind
+			== MainGameEvent.Kind.NINJA_PROJECTILE_IMPACTED
+			and _captured_character_events[-1].succeeded,
+		"닌자는 발사 커밋과 보드 충돌 결과를 서로 다른 typed 사건으로 남긴다."
+	)
+
+	# 입력 당시 위치가 아니라 실제 충돌 순간의 캐릭터 점유 셀로 안전성을 재검증한다.
+	controller.board.reset()
+	controller.active_type = MainTetrominoData.Type.O
+	controller.active_rotation = 0
+	controller.active_origin = Vector2i(6, 19)
+	controller.active_cell_indices = [0, 1, 2, 3]
+	character._start_ninja_projectile(
+		MainAbilityCastCommand.new(
+			&"ninja",
+			Vector2(5.5 * MainLayout.CELL_SIZE, 17.5 * MainLayout.CELL_SIZE),
+			Vector2i(5, 19),
+			1
+		)
+	)
+	character.position = Vector2(
+		9.5 * MainLayout.CELL_SIZE,
+		17.5 * MainLayout.CELL_SIZE - MainCharacterController.CHARACTER_COLLIDER_OFFSET_Y
+	)
+	character._advance_ninja_projectile(0.5)
+	var live_collision_result: MainNinjaProjectileSnapshot = character.ninja_projectile_snapshot()
+	_expect(
+		controller.active_origin == Vector2i(6, 19)
+			and live_collision_result != null
+			and live_collision_result.contact == MainGameController.SHURIKEN_CONTACT_ACTIVE
+			and not live_collision_result.succeeded,
+		"닌자 충돌 커밋은 시전 뒤 이동한 캐릭터의 현재 점유 셀을 침범하지 않는다."
 	)
 	var ninja_result: Dictionary = character.ninja_special_result()
 	var ninja_board_position: Vector2 = ninja_result["position"] as Vector2
@@ -1830,7 +2591,7 @@ func _test_beta_specials() -> void:
 
 	controller.board.reset()
 	controller.active_origin = Vector2i(6, 10)
-	controller.board.cells[10][4] = MainTetrominoData.Type.Z
+	controller.board.set_cell(Vector2i(4, 10), MainTetrominoData.Type.Z)
 	var blocked_origin: Vector2i = controller.active_origin
 	var fixed_result: Dictionary = controller.throw_shuriken_at_active_piece(
 		Vector2i(1, 10),
@@ -1849,7 +2610,7 @@ func _test_beta_specials() -> void:
 
 	controller.board.reset()
 	controller.active_origin = Vector2i(6, 10)
-	controller.board.cells[10][9] = MainTetrominoData.Type.J
+	controller.board.set_cell(Vector2i(9, 10), MainTetrominoData.Type.J)
 	var destination_blocked: Dictionary = controller.throw_shuriken_at_active_piece(
 		Vector2i(1, 10),
 		1,
@@ -1927,7 +2688,7 @@ func _test_beta_specials() -> void:
 		for x: int in range(2, 9):
 			var blocking_cell := Vector2i(x, y)
 			if blocking_cell not in controller.active_board_cells():
-				controller.board.cells[y][x] = MainTetrominoData.Type.J
+				controller.board.set_cell(Vector2i(x, y), MainTetrominoData.Type.J)
 	character.rotation_cooldown_remaining = 0.0
 	character._attempt_rotation_kick()
 	_expect(
@@ -1951,12 +2712,7 @@ func _test_beta_specials() -> void:
 		"위·아래 방향 블록 플립은 SRS kick 없이 같은 원점에서 회전한다."
 	)
 
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -1996,7 +2752,7 @@ func _test_hanging_character_is_pushed_below_descending_piece() -> void:
 		"매달리는 중 활성 블록이 머리로 내려오면 아래로 밀려나며 매달림 적색도 즉시 해제된다."
 	)
 	controller.board.reset()
-	controller.board.cells[15][5] = MainTetrominoData.Type.O
+	controller.board.set_cell(Vector2i(5, 15), MainTetrominoData.Type.O)
 	controller.active_type = MainTetrominoData.Type.J
 	controller.active_rotation = 0
 	controller.active_cell_indices = [0]
@@ -2195,12 +2951,7 @@ func _test_ice_gimmick_movement() -> void:
 	)
 
 	Input.action_release(&"character_grab")
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -2217,8 +2968,8 @@ func _test_fixed_support_grab() -> void:
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
 	controller.board.reset()
 	for x: int in range(MainBoardModel.WIDTH):
-		controller.board.cells[18][x] = MainTetrominoData.Type.J
-	controller.board.cells[16][5] = MainTetrominoData.Type.J
+		controller.board.set_cell(Vector2i(x, 18), MainTetrominoData.Type.J)
+	controller.board.set_cell(Vector2i(5, 16), MainTetrominoData.Type.J)
 	board_physics._sync_from_model()
 	await physics_frame
 
@@ -2245,12 +2996,7 @@ func _test_fixed_support_grab() -> void:
 		"고정 지지면 위 C-grab은 매달림 상태로 전환되지 않는다."
 	)
 	Input.action_release(&"character_grab")
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -2266,8 +3012,8 @@ func _test_standing_wall_visual_alignment() -> void:
 	var board_physics: MainBoardPhysics = scene.get_node("BoardPhysics")
 	var character: MainCharacterController = scene.get_node("BoardPhysics/Character")
 	controller.board.reset()
-	controller.board.cells[20][5] = MainTetrominoData.Type.J
-	controller.board.cells[21][5] = MainTetrominoData.Type.J
+	controller.board.set_cell(Vector2i(5, 20), MainTetrominoData.Type.J)
+	controller.board.set_cell(Vector2i(5, 21), MainTetrominoData.Type.J)
 	board_physics._sync_from_model()
 	await physics_frame
 	scene.process_mode = Node.PROCESS_MODE_DISABLED
@@ -2338,12 +3084,7 @@ func _test_standing_wall_visual_alignment() -> void:
 		"A nearby wall outside the collider contact tolerance does not pull the standing sprite."
 	)
 
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -2612,12 +3353,7 @@ func _test_hang_face_bounds() -> void:
 	)
 	character._exit_hang()
 
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	scene.free()
 	await process_frame
 
@@ -2632,7 +3368,7 @@ func _prepare_hang_fixture(
 	character._exit_hang()
 	controller.board.reset()
 	for cell: Vector2i in cells:
-		controller.board.cells[cell.y][cell.x] = MainTetrominoData.Type.J
+		controller.board.set_cell(cell, MainTetrominoData.Type.J)
 	controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	await physics_frame

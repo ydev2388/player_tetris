@@ -62,6 +62,7 @@ func _run() -> void:
 		await process_frame
 		_set_up_pressed(true)
 		await process_frame
+		character._input_frame = character._input_adapter.capture()
 		character._try_start_hang()
 		if not character.is_hanging:
 			failures.append("%s: boundary grab failed" % character_id)
@@ -104,6 +105,7 @@ func _run() -> void:
 		await process_frame
 		_set_up_pressed(true)
 		await process_frame
+		character._input_frame = character._input_adapter.capture()
 		character._try_start_hang()
 		if not character.is_hanging:
 			failures.append("%s: locked block grab failed" % character_id)
@@ -284,6 +286,7 @@ func _run() -> void:
 	await process_frame
 	_set_up_pressed(true)
 	await process_frame
+	character._input_frame = character._input_adapter.capture()
 	character._try_start_hang()
 	if not character.is_hanging:
 		print(
@@ -316,9 +319,7 @@ func _run() -> void:
 				failures.append("normal: active piece descent left the mantle target behind")
 			for local_cell: Vector2i in game.controller.active_local_cells():
 				var active_cell: Vector2i = game.controller.active_origin + local_cell
-				game.controller.board.cells[active_cell.y][active_cell.x] = (
-					MainTetrominoData.Type.O
-				)
+				game.controller.board.set_cell(active_cell, MainTetrominoData.Type.O)
 			var target_before_lock: Vector2 = character._hang_corner_climb_target_global
 			game.controller.active_origin = Vector2i(3, 0)
 			character._handle_hanging(1.0 / 60.0)
@@ -357,8 +358,8 @@ func _run() -> void:
 		failures.append("normal: locked support shift fixture did not start mantle")
 	else:
 		var locked_target_before_shift: Vector2 = character._hang_corner_climb_target_global
-		game.controller.board.cells[10][5] = MainBoardModel.EMPTY
-		game.controller.board.cells[11][5] = MainTetrominoData.Type.J
+		game.controller.board.set_cell(Vector2i(5, 10), MainBoardModel.EMPTY)
+		game.controller.board.set_cell(Vector2i(5, 11), MainTetrominoData.Type.J)
 		character._handle_hanging(1.0 / 60.0)
 		if (
 			not character._hang_corner_climb_active
@@ -379,7 +380,7 @@ func _run() -> void:
 	if not character._hang_corner_climb_active:
 		failures.append("normal: blocked landing fixture did not start mantle")
 	else:
-		game.controller.board.cells[9][5] = MainTetrominoData.Type.T
+		game.controller.board.set_cell(Vector2i(5, 9), MainTetrominoData.Type.T)
 		character._handle_hanging(1.0 / 60.0)
 		if character.is_hanging:
 			failures.append("normal: newly blocked landing kept the mantle active")
@@ -391,6 +392,7 @@ func _run() -> void:
 	await process_frame
 	_set_up_pressed(true)
 	await process_frame
+	character._input_frame = character._input_adapter.capture()
 	character._try_start_hang()
 	if not character.is_hanging:
 		failures.append("normal: left-facing locked block grab failed")
@@ -455,12 +457,7 @@ func _run() -> void:
 	_set_up_pressed(false)
 	Input.action_release(&"character_grab")
 	print("CORNER_HANG_RUNTIME_RESULT failures=", failures)
-	character._sfx_player.stop()
-	character._sfx_cue_player.stop()
-	character._meditation_loop_player.stop()
-	character._sfx_player.stream = null
-	character._sfx_cue_player.stream = null
-	character._meditation_loop_player.stream = null
+	character._audio.stop_all(true)
 	game.free()
 	# 빠른 캐릭터 교체로 예약된 wall-climb playback이 Dummy audio driver에서
 	# 해제될 시간을 주어 테스트 종료 시 오디오 리소스가 남지 않게 한다.
@@ -483,8 +480,8 @@ func _prepare_boundary_diagonal_fixture(
 ) -> void:
 	character._exit_hang()
 	game.controller.board.reset()
-	game.controller.board.cells[14][8] = MainTetrominoData.Type.O
-	game.controller.board.cells[15][8] = MainTetrominoData.Type.O
+	game.controller.board.set_cell(Vector2i(8, 14), MainTetrominoData.Type.O)
+	game.controller.board.set_cell(Vector2i(8, 15), MainTetrominoData.Type.O)
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	# AnimatableBody2D의 sync_to_physics transform과 RayCast가 같은 tick에
@@ -513,10 +510,13 @@ func _prepare_locked_corner_fixture(
 	game.controller.active_rotation = 0
 	game.controller.active_origin = Vector2i(3, 0)
 	var block_x: int = 5 if direction > 0 else 4
-	game.controller.board.cells[10][block_x] = MainTetrominoData.Type.J
+	game.controller.board.set_cell(Vector2i(block_x, 10), MainTetrominoData.Type.J)
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	await physics_frame
+	# The live controller captures InputFrame during the synchronization tick.
+	# Start the manual fixture from a fresh motor state after that tick.
+	character._exit_hang()
 	character.set_character_id(character_id)
 	character.position = Vector2(216.0 if direction > 0 else 264.0, 440.0)
 	character.velocity = Vector2.ZERO
@@ -541,7 +541,7 @@ func _prepare_active_corner_fixture(
 	game.controller._fall_accumulator = 0.0
 	game.controller._lock_accumulator = 0.0
 	game.controller._lock_resets = 0
-	game.controller.fall_freeze_remaining = 0.0
+	game.controller.clear_fall_freeze()
 	game.controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	# ActivePiece is an AnimatableBody2D with sync_to_physics, so wait for both

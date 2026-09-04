@@ -1,6 +1,12 @@
 extends SceneTree
 
 const GAME_SCENE: PackedScene = preload("res://scenes/main.tscn")
+var _cleaner_removed_count: int = 0
+
+
+func _on_game_event(event: MainGameEvent) -> void:
+	if event.kind == MainGameEvent.Kind.ABILITY_COMMITTED and event.ability_id == &"cleaner":
+		_cleaner_removed_count = event.amount
 
 
 func _init() -> void:
@@ -15,10 +21,11 @@ func _run() -> void:
 	var controller: MainGameController = game.controller
 	var character: MainCharacterController = game.character
 	var board_physics: MainBoardPhysics = game.get_node("BoardPhysics")
+	controller.game_event_committed.connect(_on_game_event)
 
 	controller.board.reset()
 	for x: int in range(4, 7):
-		controller.board.cells[21][x] = MainTetrominoData.Type.T
+		controller.board.set_cell(Vector2i(x, 21), MainTetrominoData.Type.T)
 	controller.state = MainGameController.GameState.PLAYING
 	board_physics._sync_from_model()
 	character.set_character_id("cleaner")
@@ -57,10 +64,12 @@ func _run() -> void:
 			original_targets_removed
 			and controller.board.get_cell(Vector2i(x, 21)) == MainBoardModel.EMPTY
 		)
+	original_targets_removed = original_targets_removed and _cleaner_removed_count == 3
 	print(
 		"CLEANER_SPECIAL_RUNTIME_RESULT grounded=", stood_on_fixed_blocks,
 		" input=", input_was_accepted,
-		" original_targets_removed=", original_targets_removed
+		" original_targets_removed=", original_targets_removed,
+		" removed_event=", _cleaner_removed_count
 	)
 	Input.action_release(&"character_special")
 	game.queue_free()

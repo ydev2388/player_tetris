@@ -1,6 +1,17 @@
 extends SceneTree
 
 const GAME_SCENE: PackedScene = preload("res://scenes/main.tscn")
+var _ninja_launch_count: int = 0
+var _ninja_impact_count: int = 0
+
+
+func _on_ability_event(event: MainGameEvent) -> void:
+	if event.ability_id != &"ninja":
+		return
+	if event.kind == MainGameEvent.Kind.ABILITY_COMMITTED:
+		_ninja_launch_count += 1
+	elif event.kind == MainGameEvent.Kind.NINJA_PROJECTILE_IMPACTED:
+		_ninja_impact_count += 1
 
 
 func _init() -> void:
@@ -14,6 +25,7 @@ func _run() -> void:
 	await physics_frame
 	var controller: MainGameController = game.controller
 	var character: MainCharacterController = game.character
+	character.ability_event_committed.connect(_on_ability_event)
 
 	controller.state = MainGameController.GameState.PLAYING
 	controller.board.reset()
@@ -40,20 +52,25 @@ func _run() -> void:
 		or character.special_cooldown_remaining > 0.0
 	)
 	Input.action_release(&"character_special")
+	# 발사 지연 중 위치·방향을 바꿔도 최초 cast context를 사용한다.
+	character.position.x -= MainLayout.CELL_SIZE
+	character.facing = -1
 	for _frame: int in range(32):
 		await physics_frame
 
-	var result: Dictionary = character.ninja_special_result()
+	var result: MainNinjaProjectileSnapshot = character.ninja_projectile_snapshot()
 	var collision_succeeded: bool = (
-		not result.is_empty()
-		and not bool(result.get("in_flight", true))
-		and bool(result.get("success", false))
-		and result.get("contact") == MainGameController.SHURIKEN_CONTACT_ACTIVE
+		result != null
+		and not result.in_flight
+		and result.succeeded
+		and result.contact == MainGameController.SHURIKEN_CONTACT_ACTIVE
 		and controller.active_origin.x == origin_before.x + 1
+		and _ninja_launch_count == 1
+		and _ninja_impact_count == 1
 	)
 	var visual_position_matches: bool = false
-	if result.has("position"):
-		var board_position: Vector2 = result["position"] as Vector2
+	if result != null:
+		var board_position: Vector2 = result.position
 		var canvas_position: Vector2 = game.ninja_shuriken_canvas_position(board_position)
 		visual_position_matches = (
 			canvas_position == MainLayout.BOARD_ORIGIN + board_position
@@ -64,7 +81,8 @@ func _run() -> void:
 		"NINJA_SPECIAL_RUNTIME_RESULT input=", input_was_accepted,
 		" collision=", collision_succeeded,
 		" visual=", visual_position_matches,
-		" result=", result
+		" launch_events=", _ninja_launch_count,
+		" impact_events=", _ninja_impact_count
 	)
 	Input.action_release(&"character_special")
 	game.queue_free()

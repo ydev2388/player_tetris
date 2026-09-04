@@ -20,7 +20,7 @@ func _run() -> void:
 	# Use a tall wall so the climb cycle can expose all eight animation frames
 	# before reaching the top-lip transition exercised by the corner test.
 	for row: int in range(3, 18):
-		game.controller.board.cells[row][5] = MainTetrominoData.Type.J
+		game.controller.board.set_cell(Vector2i(5, row), MainTetrominoData.Type.J)
 	board_physics._sync_from_model()
 	game.controller.set_physics_process(false)
 	await physics_frame
